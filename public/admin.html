@@ -2276,13 +2276,22 @@ n        <th>Date/Time</th>
         });
 
         async function fetchSystemInfo() {
-            const response = await fetch('/api/settings');
-            const settings = await response.json();
-            document.getElementById('system_status_text').innerText = settings.system_status || 'Running';
-            
-            // Mock uptime
-            const uptime = Math.floor(Math.random() * 100) + " days, " + Math.floor(Math.random() * 24) + " hours";
-            document.getElementById('system_uptime').innerText = uptime;
+            try {
+                // Fetch system status from /api/settings
+                const settingsResponse = await fetch('/api/settings');
+                const settings = await settingsResponse.json();
+                document.getElementById('system_status_text').innerText = settings.system_status || 'Running';
+
+                // Fetch system stats (including uptime) from /api/stats
+                const statsResponse = await fetch('/api/stats');
+                const stats = await statsResponse.json();
+                document.getElementById('system_uptime').innerText = stats.systemUptime || 'Calculating...';
+
+            } catch (e) {
+                console.error('Error fetching system info:', e);
+                document.getElementById('system_status_text').innerText = 'Error';
+                document.getElementById('system_uptime').innerText = 'Error';
+            }
         }
 
         async function fetchEWallet() {

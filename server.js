@@ -431,6 +431,7 @@ function getMachineId() {
     }
 }
 
+let serverStartTime = new Date(); // Store the server start time
 let startMeasure = getCpuStats();
 setInterval(() => {
     const endMeasure = getCpuStats();
@@ -1318,6 +1319,14 @@ app.get('/api/stats', isAuthenticated, (req, res) => {
     
     // Mock CPU Temp (since it's hard to get cross-platform without extra tools)
     stats.cpuTemp = (40 + Math.random() * 20).toFixed(1);
+
+    // Application Uptime
+    const now = new Date();
+    const appUptimeSeconds = Math.floor((now.getTime() - serverStartTime.getTime()) / 1000);
+    const appDays = Math.floor(appUptimeSeconds / (3600 * 24));
+    const appHours = Math.floor((appUptimeSeconds % (3600 * 24)) / 3600);
+    const appMinutes = Math.floor((appUptimeSeconds % 3600) / 60);
+    stats.systemUptime = `${appDays} days, ${appHours} hours, ${appMinutes} minutes`;
 
     db.get(`SELECT SUM(amount) as total FROM sales WHERE date(created_at) = date('now')`, (err, row) => {
         stats.todayEarnings = row ? (row.total || 0) : 0;
