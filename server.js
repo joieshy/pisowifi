@@ -1926,8 +1926,9 @@ io.on('connection', (socket) => {
     });
 });
 
-const HOST = process.env.HOST || '0.0.0.0'; // Default to 0.0.0.0 for local development and initial server startup.
-                                           // The actual LAN IP (10.0.0.1) will be configured via Netplan and the admin panel.
+const HOST = '0.0.0.0'; // Temporarily hardcoded to 0.0.0.0 to resolve EADDRNOTAVAIL on server startup.
+                        // The actual LAN IP (10.0.0.1) will be configured via Netplan and the admin panel.
+                        // This will be reverted to process.env.HOST || '0.0.0.0' once network setup is stable.
 
 server.listen(PORT, HOST, () => {
     console.log(`Server running on http://${HOST}:${PORT}`);
