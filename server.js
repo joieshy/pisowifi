@@ -327,7 +327,7 @@ async function initNetwork() {
         // This rule is for the captive portal and requires the LAN interface to be active.
         // It will be applied via the admin panel once the LAN interface is set up.
         // For now, we'll skip it during initial server startup if the LAN interface is not ready.
-        execSync(`sudo iptables -t nat -A PREROUTING -i ${lanInterface} -p tcp --dport 80 -j DNAT --to-destination ${lanIpAddress}:${PORT}`);
+        // execSync(`sudo iptables -t nat -A PREROUTING -i ${lanInterface} -p tcp --dport 80 -j DNAT --to-destination ${lanIpAddress}:${PORT}`);
         
         // Allow DNS traffic (UDP 53) so users can resolve the portal domain
         execSync('sudo iptables -I FORWARD -p udp --dport 53 -j ACCEPT');
@@ -1926,10 +1926,9 @@ io.on('connection', (socket) => {
     });
 });
 
-const HOST = '0.0.0.0'; // Temporarily hardcoded to 0.0.0.0 to resolve EADDRNOTAVAIL on server startup.
-                        // The actual LAN IP (10.0.0.1) will be configured via Netplan and the admin panel.
-                        // This will be reverted to process.env.HOST || '0.0.0.0' once network setup is stable.
-
+const HOST = process.env.HOST || '0.0.0.0'; // Use environment variable for host, default to 0.0.0.0.
+                                            // The actual LAN IP (10.0.0.1) will be configured via Netplan and the admin panel.
+                                            // If you want to bind to a specific IP, set HOST in your .env file.
 server.listen(PORT, HOST, () => {
     console.log(`Server running on http://${HOST}:${PORT}`);
 });
