@@ -324,6 +324,9 @@ async function initNetwork() {
         execSync(`sudo iptables -t nat -A POSTROUTING -o ${wanInterface} -j MASQUERADE`);
         
         // Redirect all traffic from LAN to local portal if not authenticated
+        // This rule is for the captive portal and requires the LAN interface to be active.
+        // It will be applied via the admin panel once the LAN interface is set up.
+        // For now, we'll skip it during initial server startup if the LAN interface is not ready.
         execSync(`sudo iptables -t nat -A PREROUTING -i ${lanInterface} -p tcp --dport 80 -j DNAT --to-destination ${lanIpAddress}:${PORT}`);
         
         // Allow DNS traffic (UDP 53) so users can resolve the portal domain
@@ -1923,7 +1926,8 @@ io.on('connection', (socket) => {
     });
 });
 
-const HOST = process.env.HOST || '0.0.0.0'; // Default to 0.0.0.0 for local development, use 10.0.0.1 for Linux server
+const HOST = process.env.HOST || '0.0.0.0'; // Default to 0.0.0.0 for local development and initial server startup.
+                                           // The actual LAN IP (10.0.0.1) will be configured via Netplan and the admin panel.
 
 server.listen(PORT, HOST, () => {
     console.log(`Server running on http://${HOST}:${PORT}`);
