@@ -1,0 +1,2978 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PisoWiFi Admin - Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary-color: #4e73df;
+            --secondary-color: #858796;
+            --success-color: #1cc88a;
+            --info-color: #36b9cc;
+            --warning-color: #f6c23e;
+            --danger-color: #e74a3b;
+            --dark-bg: #222e3c;
+            --light-bg: #f8f9fc;
+        }
+
+        body {
+            font-family: 'Nunito', sans-serif;
+            font-weight: 600; /* Increased font-weight for general bolding */
+            background: linear-gradient(rgba(248, 249, 252, 0.85), rgba(248, 249, 252, 0.85)), 
+                        url('https://images.unsplash.com/photo-1557683316-973673baf926?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80');
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        /* Sidebar / Mobile Nav */
+        .sidebar {
+            width: 250px;
+            background-color: var(--dark-bg);
+            height: 100vh;
+            color: white;
+            position: fixed;
+            z-index: 1000;
+            transition: transform 0.3s ease;
+            overflow-y: auto;
+        }
+
+        .sidebar-header {
+            padding: 1.5rem;
+            font-size: 1.2rem;
+            font-weight: bold;
+            text-align: center;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .sidebar-menu {
+            list-style: none;
+            padding: 0;
+            margin-top: 1rem;
+            padding-bottom: 60px; /* Added padding to ensure logout button is reachable on scroll */
+        }
+
+        .sidebar-menu li {
+            padding: 1rem 1.5rem;
+            cursor: pointer;
+            transition: background 0.3s;
+            display: flex;
+            align-items: center;
+        }
+
+        .sidebar-menu li:hover, .sidebar-menu li.active {
+            background-color: rgba(255,255,255,0.1);
+            border-left: 4px solid var(--primary-color);
+        }
+
+        .sidebar-menu i {
+            margin-right: 12px;
+            width: 24px;
+            font-size: 1.1rem;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            display: inline-block;
+            text-align: center;
+        }
+
+        /* Sidebar Icon Animations */
+        @keyframes side-bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-4px); }
+        }
+
+        @keyframes side-pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.3); opacity: 0.8; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        @keyframes side-spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        @keyframes side-shake {
+            0%, 100% { transform: rotate(0deg); }
+            25% { transform: rotate(15deg); }
+            75% { transform: rotate(-15deg); }
+        }
+
+        @keyframes side-wiggle {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-2px); }
+            75% { transform: translateX(2px); }
+        }
+
+        .sidebar-menu li:hover i {
+            filter: drop-shadow(0 0 5px currentColor);
+        }
+
+        /* Assign specific animations on hover */
+        .sidebar-menu li:hover i.fa-tachometer-alt { animation: side-pulse 1s infinite; }
+        .sidebar-menu li:hover i.fa-users { animation: side-bounce 0.6s infinite; }
+        .sidebar-menu li:hover i.fa-tags { animation: side-shake 0.5s infinite; }
+        .sidebar-menu li:hover i.fa-ticket-alt { animation: side-wiggle 0.4s infinite; }
+        .sidebar-menu li:hover i.fa-coins { animation: side-bounce 0.5s infinite; }
+        .sidebar-menu li:hover i.fa-bullhorn { animation: side-shake 0.4s infinite; }
+        .sidebar-menu li:hover i.fa-network-wired { animation: side-pulse 1.2s infinite; }
+        .sidebar-menu li:hover i.fa-wallet { animation: side-bounce 0.7s infinite; }
+        .sidebar-menu li:hover i.fa-shield-alt { animation: side-pulse 1.5s infinite; }
+        .sidebar-menu li:hover i.fa-tools { animation: side-shake 0.6s infinite; }
+        .sidebar-menu li:hover i.fa-key { animation: side-wiggle 0.5s infinite; }
+        .sidebar-menu li:hover i.fa-cogs { animation: side-spin 3s linear infinite; }
+        .sidebar-menu li:hover i.fa-server { animation: side-pulse 2s infinite; }
+        .sidebar-menu li:hover i.fa-user-shield { animation: side-bounce 0.8s infinite; }
+        .sidebar-menu li:hover i.fa-sign-out-alt { transform: translateX(5px); }
+
+        .sidebar-menu li:nth-child(1) i { color: #36b9cc; } /* Dashboard - Cyan */
+        .sidebar-menu li:nth-child(2) i { color: #4e73df; } /* Users - Blue */
+        .sidebar-menu li:nth-child(3) i { color: #f6c23e; } /* Rates - Yellow */
+        .sidebar-menu li:nth-child(4) i { color: #1cc88a; } /* Vouchers - Green */
+        .sidebar-menu li:nth-child(5) i { color: #e74a3b; } /* Sales - Red */
+        .sidebar-menu li:nth-child(6) i { color: #fd7e14; } /* Announcements - Orange */
+        .sidebar-menu li:nth-child(7) i { color: #20c997; } /* Bandwidth - Teal */
+        .sidebar-menu li:nth-child(8) i { color: #4e73df; } /* Network - Blue */
+        .sidebar-menu li:nth-child(9) i { color: #36b9cc; } /* E-Wallet - Cyan */
+        .sidebar-menu li:nth-child(10) i { color: #e74a3b; } /* Security - Red */
+        .sidebar-menu li:nth-child(11) i { color: #1cc88a; } /* Diagnostics - Green */
+        .sidebar-menu li:nth-child(12) i { color: #f6c23e; } /* License - Yellow */
+        .sidebar-menu li:nth-child(13) i { color: #6f42c1; } /* Settings - Purple */
+        .sidebar-menu li:nth-child(14) i { color: #e83e8c; } /* System - Pink */
+        .sidebar-menu li.super-admin-item i { color: #000000; } /* Super Admin - Black */
+        .sidebar-menu li:nth-child(16) i { color: #858796; } /* Logout - Gray */
+
+        /* Mobile Toggle */
+        .mobile-toggle {
+            display: none;
+            background: var(--dark-bg);
+            color: white;
+            padding: 1rem;
+            font-size: 1.5rem;
+            cursor: pointer;
+            position: sticky;
+            top: 0;
+            z-index: 1001;
+        }
+
+        /* Main Content */
+        .main-content {
+            margin-left: 250px;
+            flex: 1;
+            padding: 1.5rem;
+            transition: margin 0.3s ease;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .system-stats-header {
+            display: flex;
+            gap: 20px;
+            background: rgba(255,255,255,0.9);
+            padding: 10px 20px;
+            border-radius: 10px;
+            box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.1);
+        }
+
+        .stat-bar-container {
+            width: 100px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .stat-bar-label {
+            font-size: 0.7rem;
+            font-weight: bold;
+            color: #5a5c69;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .stat-bar-bg {
+            height: 8px;
+            background: #eaecf4;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .stat-bar-fill {
+            height: 100%;
+            background: var(--primary-color);
+            width: 0%;
+            transition: width 0.5s ease;
+        }
+
+        .stat-bar-fill.warning { background: var(--warning-color); }
+        .stat-bar-fill.danger { background: var(--danger-color); }
+
+        /* Dashboard Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(5px);
+            padding: 1.5rem;
+            border-radius: 10px;
+            box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
+            border-left: 4px solid var(--primary-color);
+        }
+
+        .card.success { border-left-color: var(--success-color); }
+        .card.info { border-left-color: var(--info-color); }
+        .card.warning { border-left-color: var(--warning-color); }
+
+        .card-title {
+            font-size: 0.7rem;
+            font-weight: bold;
+            color: var(--primary-color);
+            text-transform: uppercase;
+            margin-bottom: 0.5rem;
+        }
+
+        .card-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #5a5c69;
+        }
+
+        /* Table */
+        .data-table {
+            background: rgba(255, 255, 255, 0.95); /* Slightly more opaque */
+            backdrop-filter: blur(8px); /* Stronger blur */
+            border-radius: 15px; /* Softer corners */
+            box-shadow: 0 0.25rem 2rem 0 rgba(58, 59, 69, 0.18); /* Deeper shadow */
+            padding: 1.5rem; /* More padding */
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: separate; /* Use separate for border-spacing */
+            border-spacing: 0 8px; /* Space between rows */
+            margin-top: 1rem;
+            min-width: 500px;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 14px 18px; /* More padding */
+            border-bottom: none; /* Remove default border-bottom */
+        }
+
+        th {
+            background-color: #eef2f7; /* Lighter header background */
+            color: #4e73df;
+            font-weight: 700;
+            text-transform: uppercase; /* Uppercase headers */
+            font-size: 0.85rem;
+            letter-spacing: 0.5px;
+            border-top: 1px solid #e3e6f0;
+            border-bottom: 1px solid #e3e6f0;
+        }
+        th:first-child { border-top-left-radius: 8px; border-bottom-left-radius: 8px; }
+        th:last-child { border-top-right-radius: 8px; border-bottom-right-radius: 8px; }
+
+        td {
+            background-color: #ffffff; /* White background for rows */
+            border: 1px solid #e3e6f0; /* Subtle border for rows */
+            border-radius: 8px; /* Rounded corners for cells */
+            box-shadow: 0 2px 5px rgba(0,0,0,0.03); /* Light shadow for rows */
+        }
+        td:first-child { border-left: 4px solid var(--primary-color); } /* Accent border */
+        tr:hover td {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+            transition: all 0.2s ease;
+        }
+        tr:hover td:first-child { border-left-color: var(--success-color); } /* Change accent color on hover */
+
+        .badge {
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: white;
+            display: inline-block;
+        }
+
+        .badge-online { background-color: #1cc88a; }
+        .badge-offline { background-color: #e74a3b; }
+        .badge-info { background-color: #36b9cc; }
+        .badge-warning { background-color: #f6c23e; }
+        .badge-voucher { 
+            background-color: transparent; 
+            color: #d1d3e2; 
+            font-weight: 400;
+            padding: 0;
+            font-size: 0.85rem;
+        }
+
+        /* Shop Name Animations */
+        .anim-none { animation: none; }
+        
+        .anim-rainbow {
+            background: linear-gradient(to right, red, orange, yellow, green, blue, indigo, violet);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-size: 400% 400%;
+            animation: rainbow 5s ease infinite;
+        }
+        @keyframes rainbow {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .anim-glow { animation: glow 1.5s ease-in-out infinite alternate; }
+        @keyframes glow {
+            from { text-shadow: 0 0 5px #fff, 0 0 10px #fff, 0 0 15px var(--primary-color); }
+            to { text-shadow: 0 0 10px #fff, 0 0 20px #fff, 0 0 30px var(--primary-color); }
+        }
+
+        .anim-bounce { animation: bounce 2s infinite; }
+        @keyframes bounce {
+            0%, 20%, 50%, 80%, 100% {transform: translateY(0);}
+            40% {transform: translateY(-10px);}
+            60% {transform: translateY(-5px);}
+        }
+
+        .anim-pulse { animation: pulse 2s infinite; }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+
+        .anim-slide { animation: slide 3s linear infinite; }
+        @keyframes slide {
+            0% { transform: translateX(-10px); opacity: 0; }
+            50% { transform: translateX(0); opacity: 1; }
+            100% { transform: translateX(10px); opacity: 0; }
+        }
+
+        .anim-fade { animation: fade 2s ease-in-out infinite; }
+        @keyframes fade {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 1; }
+        }
+
+        .anim-rotate { animation: rotate 4s linear infinite; display: inline-block; }
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .anim-shake { animation: shake 0.5s infinite; display: inline-block; }
+        @keyframes shake {
+            0% { transform: translate(1px, 1px) rotate(0deg); }
+            10% { transform: translate(-1px, -2px) rotate(-1deg); }
+            20% { transform: translate(-3px, 0px) rotate(1deg); }
+            30% { transform: translate(3px, 2px) rotate(0deg); }
+            40% { transform: translate(1px, -1px) rotate(1deg); }
+            50% { transform: translate(-1px, 2px) rotate(-1deg); }
+        }
+
+        .anim-zoom { animation: zoom 3s infinite; display: inline-block; }
+        @keyframes zoom {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+        }
+
+        .anim-wave { animation: wave 2s ease-in-out infinite; display: inline-block; }
+        @keyframes wave {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px) rotate(5deg); }
+        }
+
+        /* Responsive Adjustments */
+        @media (max-width: 768px) {
+            .sidebar {
+                transform: translateX(-100%);
+                width: 200px;
+                padding-top: 60px;
+            }
+            .sidebar.active {
+                transform: translateX(0);
+            }
+            .sidebar-header {
+                display: none;
+            }
+            .mobile-toggle {
+                display: block;
+            }
+            .main-content {
+                margin-left: 0;
+                padding: 1rem;
+            }
+            .stats-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+            .header h2 {
+                font-size: 1.2rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(3px);
+        }
+
+        .modal-content {
+            background: white;
+            max-width: 400px;
+            margin: 100px auto;
+            padding: 2rem;
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: bold;
+            color: #5a5c69;
+        }
+
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            box-sizing: border-box;
+            font-family: inherit;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: opacity 0.3s;
+        }
+
+        .btn-primary { background: var(--primary-color); color: white; }
+        .btn-success { background: var(--success-color); color: white; }
+        .btn-info { background: var(--info-color); color: white; }
+        .btn-warning { background: var(--warning-color); color: white; }
+        .btn-secondary { background: var(--secondary-color); color: white; }
+        .btn:hover { opacity: 0.9; }
+
+        footer {
+            text-align: center;
+            padding: 2rem;
+            color: var(--secondary-color);
+            font-size: 0.9rem;
+            margin-top: auto;
+        }
+
+    </style>
+</head>
+<body>
+    <div class="mobile-toggle" onclick="toggleSidebar()">
+        <i class="fas fa-bars"></i> <span id="mobileWifiName">PisoWiFi</span>
+    </div>
+
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <span><i class="fas fa-wifi"></i> <span id="sidebarWifiName">PisoWiFi</span></span>
+            <i class="fas fa-times" style="cursor:pointer; display:none;" id="closeSidebar" onclick="toggleSidebar()"></i>
+        </div>
+        <ul class="sidebar-menu">
+            <li onclick="showSection('dashboard')"><i class="fas fa-tachometer-alt"></i> Dashboard</li>
+            <li onclick="showSection('users')"><i class="fas fa-users"></i> Users</li>
+            <li onclick="showSection('rates')"><i class="fas fa-tags"></i> Rates</li>
+            <li onclick="showSection('vouchers')"><i class="fas fa-ticket-alt"></i> Vouchers</li>
+            <li onclick="showSection('sales')"><i class="fas fa-coins"></i> Sales</li>
+            <li onclick="showSection('announcements')"><i class="fas fa-bullhorn"></i> Announcements</li>
+            <li onclick="showSection('bandwidth')"><i class="fas fa-tachometer-alt"></i> Bandwidth</li>
+            <li onclick="showSection('network')"><i class="fas fa-network-wired"></i> Network</li>
+            <li onclick="showSection('ewallet')"><i class="fas fa-wallet"></i> E-Wallet & API</li>
+            <li onclick="showSection('security')"><i class="fas fa-shield-alt"></i> Security & Filtering</li>
+            <li onclick="showSection('diagnostics')"><i class="fas fa-tools"></i> Diagnostics</li>
+            <li onclick="showSection('license')"><i class="fas fa-key"></i> License</li>
+            <li onclick="showSection('settings')"><i class="fas fa-cogs"></i> Settings</li>
+            <li onclick="showSection('system')"><i class="fas fa-server"></i> System</li>
+            <li id="superAdminTab" class="super-admin-item" style="display: none;" onclick="showSection('superadmin')"><i class="fas fa-user-shield"></i> Super Admin</li>
+            <li onclick="window.location.href='/api/logout'"><i class="fas fa-sign-out-alt"></i> Logout</li>
+        </ul>
+    </div>
+
+    <div class="main-content">
+        <!-- Dashboard Section -->
+        <div id="dashboardSection">
+            <div class="header">
+                <h2>Dashboard Overview</h2>
+                <div style="display: flex; align-items: center; gap: 20px;">
+                    <div class="system-stats-header">
+                        <div class="stat-bar-container">
+                            <div class="stat-bar-label">
+                                <span>CPU</span>
+                                <span id="cpu_usage_text">0%</span>
+                            </div>
+                            <div class="stat-bar-bg">
+                                <div id="cpu_usage_bar" class="stat-bar-fill"></div>
+                            </div>
+                        </div>
+                        <div class="stat-bar-container">
+                            <div class="stat-bar-label">
+                                <span>RAM</span>
+                                <span id="ram_usage_text">0%</span>
+                            </div>
+                            <div class="stat-bar-bg">
+                                <div id="ram_usage_bar" class="stat-bar-fill"></div>
+                            </div>
+                        </div>
+                        <div style="font-size: 0.8rem; font-weight: bold; color: #5a5c69; display: flex; align-items: center;">
+                            <i class="fas fa-thermometer-half" style="margin-right: 5px; color: var(--danger-color);"></i>
+                            <span id="cpu_temp_text">0°C</span>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="fetchStats()">
+                        <i class="fas fa-sync"></i> Refresh Stats
+                    </button>
+                </div>
+            </div>
+
+            <div class="stats-grid">
+                <div class="card">
+                    <div class="card-title">Earnings (Today)</div>
+                    <div class="card-value" id="dashTodayEarnings">₱ 0.00</div>
+                </div>
+                <div class="card success">
+                    <div class="card-title">Total Devices</div>
+                    <div class="card-value" id="totalDevices">0</div>
+                </div>
+                <div class="card info">
+                    <div class="card-title">Active Sessions</div>
+                    <div class="card-value" id="activeSessions">0</div>
+                </div>
+                <div class="card warning">
+                    <div class="card-title">System Uptime</div>
+                    <div class="card-value">Online</div>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 1.5rem;">
+                <div class="data-table">
+                    <h3 style="color: var(--primary-color);"><i class="fas fa-users"></i> Active Users</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>IP Address</th>
+                                <th>Time Left</th>
+                            </tr>
+                        </thead>
+                        <tbody id="activeUsersTableBody">
+                            <tr>
+                                <td colspan="3" style="text-align: center;">Loading active users...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="data-table">
+                    <h3 style="color: #1cc88a; display: flex; align-items: center; gap: 10px; font-size: 1.25rem;">
+                        <i class="fas fa-coins"></i> Recent Sales
+                    </h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Type</th>
+                                <th>Description</th>
+                                <th>Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recentSalesTableBody">
+                            <tr>
+                                <td colspan="4" style="text-align: center;">Loading recent sales...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Users Section -->
+        <div id="usersSection" style="display: none;">
+            <div class="header">
+                <h2>Registered Users</h2>
+            </div>
+            <div class="data-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>IP Address</th>
+                            <th>MAC Address</th>
+                            <th>Time Left</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="userTableBody">
+                        <tr>
+                            <td colspan="5" style="text-align: center;">Loading users...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Rates Section -->
+        <div id="ratesSection" style="display: none;">
+            <div class="header">
+                <h2>Manage Rates</h2>
+                <button onclick="document.getElementById('addRateModal').style.display='block'" class="btn btn-success" style="padding: 10px 20px; border-radius: 8px; font-size: 1rem;">
+                    <i class="fas fa-plus" style="margin-right: 8px;"></i> Add New Rate
+                </button>
+            </div>
+            <div class="data-table">
+                <h3 style="margin-top: 0; color: var(--primary-color); border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 1.5rem;">
+                    <i class="fas fa-tags"></i> Current Rates
+                </h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Amount (PHP)</th>
+                            <th>Duration</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rateTableBody">
+                        <tr>
+                            <td colspan="3" style="text-align: center;">Loading rates...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Vouchers Section -->
+        <div id="vouchersSection" style="display: none;">
+            <div class="header">
+                <h2>Manage Vouchers</h2>
+                <div style="display: flex; gap: 10px;">
+                    <button onclick="clearUsedVouchers()" class="btn btn-danger">
+                        <i class="fas fa-trash-alt"></i> Delete All Used
+                    </button>
+                    <button onclick="openVoucherModal()" class="btn btn-primary">
+                        <i class="fas fa-plus"></i> Generate Vouchers
+                    </button>
+                </div>
+            </div>
+            <div class="data-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Code</th>
+                            <th>Duration</th>
+                            <th>Amount</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="voucherTableBody">
+                        <tr>
+                            <td colspan="5" style="text-align: center;">Loading vouchers...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Sales Section -->
+        <div id="salesSection" style="display: none;">
+            <div class="header">
+                <h2>Sales Report</h2>
+                <button class="btn btn-primary" onclick="fetchSales()">
+                    <i class="fas fa-sync"></i> Refresh Data
+                </button>
+            </div>
+            <div class="stats-grid">
+                <div class="card">
+                    <div class="card-title">Total Sales (All Time)</div>
+                    <div class="card-value" id="totalSales">₱ 0.00</div>
+                </div>
+                <div class="card success">
+                    <div class="card-title">Coin Sales</div>
+                    <div class="card-value" id="coinSales">₱ 0.00</div>
+                </div>
+                <div class="card info">
+                    <div class="card-title">Voucher Sales</div>
+                    <div class="card-value" id="voucherSales">₱ 0.00</div>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; align-items: start;">
+                <div class="card">
+                    <h3 style="margin-top: 0; color: var(--primary-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-chart-line"></i> Sales Trend (Last 7 Days)
+                    </h3>
+                    <div style="height: 200px; position: relative;">
+                        <canvas id="salesTrendChart"></canvas>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3 style="margin-top: 0; color: var(--info-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-chart-pie"></i> Sales by Type
+                    </h3>
+                    <div style="height: 200px; position: relative; display: flex; justify-content: center; align-items: center;">
+                        <canvas id="salesTypeChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="data-table">
+                <h3>Transaction History</h3>
+                <table>
+                    <thead>
+                        <tr>
+n        <th>Date/Time</th>
+                            <th>Type</th>
+                            <th>Description</th>
+                            <th>Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody id="salesTableBody">
+                        <tr>
+                            <td colspan="4" style="text-align: center;">Loading sales data...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Announcements Section -->
+        <div id="announcementsSection" style="display: none;">
+            <div class="header">
+                <h2>Manage Announcements</h2>
+            </div>
+            <div class="card" style="max-width: 600px;">
+                <form id="announcementForm">
+                    <div class="form-group">
+                        <label>Announcement Text</label>
+                        <textarea id="announcement_text" name="announcement" rows="4"></textarea>
+                        <p style="font-size: 0.8rem; color: #858796;">This will appear on the landing page. Leave empty to hide.</p>
+                    </div>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-save"></i> Save Announcement
+                    </button>
+                    <div id="announcementMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">Announcement saved!</div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Bandwidth Limiter Section -->
+        <div id="bandwidthSection" style="display: none;">
+            <div class="header">
+                <h2>Bandwidth Limiter</h2>
+            </div>
+            <div class="card" style="max-width: 600px;">
+                <h3 style="margin-top: 0; color: var(--info-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                    <i class="fas fa-tachometer-alt"></i> Speed Limits
+                </h3>
+                <form id="bandwidthForm">
+                    <div class="form-group">
+                        <label>Download Limit (Mbps)</label>
+                        <input type="number" id="download_limit" name="download_limit" min="0" step="0.1">
+                        <p style="font-size: 0.8rem; color: #858796;">Set to 0 for unlimited.</p>
+                    </div>
+                    <div class="form-group">
+                        <label>Upload Limit (Mbps)</label>
+                        <input type="number" id="upload_limit" name="upload_limit" min="0" step="0.1">
+                        <p style="font-size: 0.8rem; color: #858796;">Set to 0 for unlimited.</p>
+                    </div>
+                    <button type="submit" class="btn btn-info">
+                        <i class="fas fa-save"></i> Save Bandwidth Limits
+                    </button>
+                    <div id="bandwidthMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">Limits updated!</div>
+                </form>
+            </div>
+        </div>
+
+        <!-- System/Maintenance Section -->
+        <div id="systemSection" style="display: none;">
+            <div class="header">
+                <h2>System & Maintenance</h2>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
+                <div class="card">
+                    <h3 style="margin-top: 0; color: var(--danger-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-tools"></i> Maintenance Actions
+                    </h3>
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <button class="btn btn-warning" onclick="systemAction('reboot')">
+                            <i class="fas fa-sync"></i> Reboot System
+                        </button>
+                        <button class="btn btn-danger" onclick="systemAction('shutdown')">
+                            <i class="fas fa-power-off"></i> Shutdown System
+                        </button>
+                        <hr>
+                        <button class="btn btn-secondary" onclick="systemAction('reset-database')">
+                            <i class="fas fa-database"></i> Reset Database
+                        </button>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3 style="margin-top: 0; color: var(--success-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-cloud-upload-alt"></i> Backup & Restore
+                    </h3>
+                    <div style="display: flex; flex-direction: column; gap: 15px;">
+                        <div>
+                            <label style="display:block; margin-bottom:5px; font-weight:bold;">Backup Database</label>
+                            <button class="btn btn-success" onclick="window.location.href='/api/system/backup'" style="width:100%;">
+                                <i class="fas fa-download"></i> Download Backup (.db)
+                            </button>
+                        </div>
+                        <hr>
+                        <div>
+                            <label style="display:block; margin-bottom:5px; font-weight:bold;">Restore Database</label>
+                            <input type="file" id="restoreInput" accept=".db" style="display:none;">
+                            <button class="btn btn-info" onclick="document.getElementById('restoreInput').click()" style="width:100%;">
+                                <i class="fas fa-upload"></i> Upload & Restore
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3 style="margin-top: 0; color: var(--warning-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-microchip"></i> Firmware Update
+                    </h3>
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <p style="font-size: 0.8rem; color: #858796;">Upload a firmware update file (.bin or .zip) to update the system.</p>
+                        <input type="file" id="firmwareInput" style="display:none;">
+                        <button class="btn btn-warning" onclick="document.getElementById('firmwareInput').click()" style="color:white;">
+                            <i class="fas fa-upload"></i> Upload Firmware
+                        </button>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3 style="margin-top: 0; color: var(--primary-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-info-circle"></i> System Information
+                    </h3>
+                    <div id="systemInfo">
+                        <p><strong>Status:</strong> <span id="system_status_text">Running</span></p>
+                        <p><strong>Uptime:</strong> <span id="system_uptime">Calculating...</span></p>
+                        <p><strong>Version:</strong> 2.1.0-Stable</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Diagnostics & Tools Section -->
+        <div id="diagnosticsSection" style="display: none;">
+            <div class="header">
+                <h2>Diagnostics & Tools</h2>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
+                <!-- Ping Test -->
+                <div class="card">
+                    <h3 style="margin-top: 0; color: var(--primary-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-network-wired"></i> Ping Test
+                    </h3>
+                    <div class="form-group">
+                        <label>Host / IP Address</label>
+                        <div style="display: flex; gap: 10px;">
+                            <input type="text" id="pingHost" value="8.8.8.8" style="flex: 2;">
+                            <button class="btn btn-primary" onclick="runPing()" style="flex: 1;">Ping</button>
+                        </div>
+                    </div>
+                    <pre id="pingOutput" style="background: #222; color: #0f0; padding: 10px; border-radius: 5px; font-size: 0.8rem; min-height: 100px; overflow-y: auto; white-space: pre-wrap;"></pre>
+                </div>
+
+                <!-- Speed Test -->
+                <div class="card">
+                    <h3 style="margin-top: 0; color: var(--success-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-tachometer-alt"></i> Speed Test
+                    </h3>
+                    <div style="text-align: center; padding: 20px;">
+                        <div id="speedtestResult" style="display: none; margin-bottom: 20px;">
+                            <div style="display: flex; justify-content: space-around;">
+                                <div>
+                                    <div style="font-size: 0.7rem; color: #888;">DOWNLOAD</div>
+                                    <div style="font-size: 1.5rem; font-weight: bold; color: var(--success-color);"><span id="stDownload">0</span> Mbps</div>
+                                </div>
+                                <div>
+                                    <div style="font-size: 0.7rem; color: #888;">UPLOAD</div>
+                                    <div style="font-size: 1.5rem; font-weight: bold; color: var(--info-color);"><span id="stUpload">0</span> Mbps</div>
+                                </div>
+                            </div>
+                            <div style="margin-top: 10px; font-size: 0.8rem; color: #555;">Ping: <span id="stPing">0</span> ms</div>
+                        </div>
+                        <button id="btnSpeedtest" class="btn btn-success" onclick="runSpeedtest()" style="width: 100%;">
+                            <i class="fas fa-play"></i> Start Speed Test
+                        </button>
+                    </div>
+                </div>
+
+                <!-- System Logs -->
+                <div class="card" style="grid-column: 1 / -1;">
+                    <h3 style="margin-top: 0; color: var(--warning-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-list-alt"></i> System Logs
+                    </h3>
+                    <div id="logContainer" style="background: #f8f9fc; border: 1px solid #ddd; border-radius: 5px; padding: 10px; font-family: monospace; font-size: 0.8rem; max-height: 200px; overflow-y: auto;">
+                        Loading logs...
+                    </div>
+                    <button class="btn btn-secondary" onclick="fetchLogs()" style="margin-top: 10px; width: 100%;">
+                        <i class="fas fa-sync"></i> Refresh Logs
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Network Section -->
+        <div id="networkSection" style="display: none;">
+            <div class="header">
+                <h2>Network Settings</h2>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
+                <!-- DNS Settings -->
+                <div class="card">
+                    <h3 style="margin-top: 0; color: var(--primary-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-globe"></i> DNS Settings
+                    </h3>
+                    <form id="dnsForm">
+                        <div class="form-group">
+                            <label>Primary DNS</label>
+                            <input type="text" id="dns_primary" name="dns_primary" placeholder="8.8.8.8">
+                        </div>
+                        <div class="form-group">
+                            <label>Secondary DNS</label>
+                            <input type="text" id="dns_secondary" name="dns_secondary" placeholder="8.8.4.4">
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="width: 100%;">Save DNS Settings</button>
+                    </form>
+                </div>
+
+                <!-- IP Range / DHCP -->
+                <div class="card">
+                    <h3 style="margin-top: 0; color: var(--success-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-project-diagram"></i> IP Range (DHCP)
+                    </h3>
+                    <form id="ipRangeForm">
+                        <div class="form-group">
+                            <label>Start IP Address</label>
+                            <input type="text" id="ip_range_start" name="ip_range_start" placeholder="192.168.1.100">
+                        </div>
+                        <div class="form-group">
+                            <label>End IP Address</label>
+                            <input type="text" id="ip_range_end" name="ip_range_end" placeholder="192.168.1.200">
+                        </div>
+                        <button type="submit" class="btn btn-success" style="width: 100%;">Save IP Range</button>
+                    </form>
+                </div>
+
+                <!-- WiFi Channel Selection -->
+                <div class="card">
+                    <h3 style="margin-top: 0; color: var(--info-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-wifi"></i> WiFi Channel Selection
+                    </h3>
+                    <form id="wifiChannelForm">
+                        <div class="form-group">
+                            <label>WiFi Channel</label>
+                            <select id="wifi_channel" name="channel">
+                                <option value="auto">Auto</option>
+                                <option value="1">Channel 1</option>
+                                <option value="2">Channel 2</option>
+                                <option value="3">Channel 3</option>
+                                <option value="4">Channel 4</option>
+                                <option value="5">Channel 5</option>
+                                <option value="6">Channel 6</option>
+                                <option value="7">Channel 7</option>
+                                <option value="8">Channel 8</option>
+                                <option value="9">Channel 9</option>
+                                <option value="10">Channel 10</option>
+                                <option value="11">Channel 11</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-info" style="width: 100%;">Set WiFi Channel</button>
+                    </form>
+                </div>
+
+
+
+
+                <!-- Game Anti-Lag (QoS) -->
+                <div class="card">
+                    <h3 style="margin-top: 0; color: #e74a3b; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-gamepad"></i> Game Anti-Lag (QoS)
+                    </h3>
+                    <form id="qosForm">
+                        <div class="form-group">
+                            <label>QoS Status</label>
+                            <select id="qos_enabled" name="qos_enabled">
+                                <option value="false">Disabled</option>
+                                <option value="true">Enabled (Prioritize Gaming)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Gaming Priority</label>
+                            <select id="qos_gaming_priority" name="qos_gaming_priority">
+                                <option value="highest">Highest</option>
+                                <option value="high">High</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-danger" style="width: 100%;">Apply Anti-Lag</button>
+                    </form>
+                </div>
+
+                <!-- Group Settings (VLAN) -->
+                <div class="card">
+                    <h3 style="margin-top: 0; color: #6f42c1; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-network-wired"></i> Group Settings (VLAN)
+                    </h3>
+                    <form id="groupSettingsForm">
+                        <div class="form-group">
+                            <label>Group Type</label>
+                            <select id="group_type" name="group_type" onchange="toggleVlanInput()">
+                                <option value="direct">Direct</option>
+                                <option value="vlan">VLAN</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="vlanIdGroup" style="display: none;">
+                            <label>VLAN ID</label>
+                            <input type="number" id="vlan_id" name="vlan_id" placeholder="Enter VLAN ID (e.g. 10)" min="1" max="4094">
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="width: 100%; background-color: #6f42c1; border-color: #6f42c1;">Save Group Settings</button>
+                    </form>
+                    <div id="groupMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">Group settings updated!</div>
+                </div>
+
+                <!-- Port Triggering -->
+                <div class="card" style="grid-column: 1 / -1;">
+                    <h3 style="margin-top: 0; color: #6f42c1; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-door-open"></i> Port Triggering
+                    </h3>
+                    <form id="addPortTriggerForm" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 15px;">
+                        <input type="text" name="name" placeholder="App Name (e.g. Steam)" required>
+                        <input type="number" name="trigger_port" placeholder="Trigger Port" required>
+                        <select name="trigger_proto">
+                            <option value="TCP">TCP</option>
+                            <option value="UDP">UDP</option>
+                            <option value="BOTH">BOTH</option>
+                        </select>
+                        <input type="text" name="open_port" placeholder="Open Ports (e.g. 27000-27015)" required>
+                        <button type="submit" class="btn btn-primary">Add Trigger</button>
+                    </form>
+                    <div style="max-height: 200px; overflow-y: auto;">
+                        <table style="font-size: 0.8rem;">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Trigger</th>
+                                    <th>Open Ports</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="portTriggersTable">
+                                <tr><td colspan="4" style="text-align: center;">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="networkMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">Network settings updated!</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Security & Filtering Section -->
+        <div id="securitySection" style="display: none;">
+            <div class="header">
+                <h2>Security & Filtering</h2>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
+                <!-- Website Blocker -->
+                <div class="card">
+                    <h3 style="margin-top: 0; color: var(--danger-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-ban"></i> Website Blocker
+                    </h3>
+                    <form id="blockWebsiteForm" style="margin-bottom: 15px;">
+                        <div class="form-group">
+                            <label>Domain to Block</label>
+                            <div style="display: flex; gap: 10px;">
+                                <input type="text" name="domain" placeholder="e.g. facebook.com" required style="flex: 2;">
+                                <button type="submit" class="btn btn-danger" style="flex: 1;">Block</button>
+                            </div>
+                        </div>
+                    </form>
+                    <div style="max-height: 200px; overflow-y: auto;">
+                        <table style="font-size: 0.8rem; min-width: 0;">
+                            <thead>
+                                <tr>
+                                    <th>Domain</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="blockedWebsitesTable">
+                                <tr><td colspan="2" style="text-align: center;">No blocked websites</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- MAC Address Filtering -->
+                <div class="card">
+                    <h3 style="margin-top: 0; color: var(--primary-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-filter"></i> MAC Filtering
+                    </h3>
+                    <form id="macFilterSettingsForm" style="margin-bottom: 15px;">
+                        <div class="form-group">
+                            <label>Filtering Mode</label>
+                            <select id="mac_filter_mode" name="mac_filter_mode">
+                                <option value="disabled">Disabled</option>
+                                <option value="allow">Allow List (Whitelist)</option>
+                                <option value="block">Block List (Blacklist)</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="width: 100%;">Save Mode</button>
+                    </form>
+                    <hr>
+                    <form id="addMacFilterForm" style="margin-top: 15px;">
+                        <div class="form-group">
+                            <label>Add MAC Address</label>
+                            <input type="text" name="mac_address" placeholder="AA:BB:CC:DD:EE:FF" required style="margin-bottom: 5px;">
+                            <input type="text" name="description" placeholder="Device Description" required>
+                        </div>
+                        <button type="submit" class="btn btn-success" style="width: 100%;">Add to List</button>
+                    </form>
+                    <div style="max-height: 200px; overflow-y: auto; margin-top: 15px;">
+                        <table style="font-size: 0.8rem; min-width: 0;">
+                            <thead>
+                                <tr>
+                                    <th>MAC / Desc</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="macFiltersTable">
+                                <tr><td colspan="2" style="text-align: center;">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Anti-Tethering -->
+                <div class="card">
+                    <h3 style="margin-top: 0; color: var(--warning-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-mobile-alt"></i> Anti-Tethering
+                    </h3>
+                    <p style="font-size: 0.8rem; color: #858796;">Prevents users from sharing their connection via mobile hotspots or tethering.</p>
+                    <form id="antiTetheringForm">
+                        <div class="form-group">
+                            <label>Status</label>
+                            <select id="anti_tethering" name="anti_tethering">
+                                <option value="false">Disabled</option>
+                                <option value="true">Enabled (TTL Modification)</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-warning" style="width: 100%; color: white;">Save Anti-Tethering</button>
+                        <div id="securityMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">Security settings updated!</div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- E-Wallet & API Section -->
+        <div id="ewalletSection" style="display: none;">
+            <div class="header">
+                <h2>E-Wallet & API Integration</h2>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
+                <div class="card">
+                    <h3 style="margin-top: 0; color: var(--primary-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-wallet"></i> Payment Gateway
+                    </h3>
+                    <form id="ewalletForm">
+                        <div class="form-group">
+                            <label>Enable E-Wallet Payments</label>
+                            <select id="ewallet_enabled" name="ewallet_enabled">
+                                <option value="false">Disabled</option>
+                                <option value="true">Enabled</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Maya Environment</label>
+                            <select id="maya_env" name="maya_env">
+                                <option value="sandbox">Sandbox (Testing)</option>
+                                <option value="production">Production (Live)</option>
+                            </select>
+                            <p style="font-size: 0.7rem; color: #858796;">Gamitin ang Sandbox kung tinitest pa lang. Production kung totoong pera na.</p>
+                        </div>
+                        <div class="form-group">
+                            <label>Merchant ID</label>
+                            <input type="text" id="merchant_id" name="merchant_id" placeholder="Enter Merchant ID">
+                        </div>
+                        <div class="form-group">
+                            <label>GCash API Key</label>
+                            <input type="password" id="gcash_api_key" name="gcash_api_key" placeholder="Enter GCash API Key">
+                        </div>
+                        <div class="form-group">
+                            <label>Maya Public Key</label>
+                            <input type="text" id="maya_public_key" name="maya_public_key" placeholder="Enter Maya Public Key">
+                        </div>
+                        <div class="form-group">
+                            <label>Maya Secret Key</label>
+                            <input type="password" id="maya_api_key" name="maya_api_key" placeholder="Enter Maya Secret Key">
+                        </div>
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-save"></i> Save API Settings
+                        </button>
+                        <div id="ewalletMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">API settings saved!</div>
+                    </form>
+                </div>
+                <div class="card">
+                    <h3 style="margin-top: 0; color: var(--info-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-code"></i> Webhook Configuration
+                    </h3>
+                    <div class="form-group">
+                        <label>Webhook URL</label>
+                        <div style="display: flex; gap: 5px;">
+                            <input type="text" id="webhook_url_display" readonly value="" style="background: #f8f9fc; flex: 1;">
+                            <button class="btn btn-info" onclick="copyWebhookUrl()" title="Copy to clipboard">
+                                <i class="fas fa-copy"></i>
+                            </button>
+                        </div>
+                        <p style="font-size: 0.8rem; color: #858796; margin-top: 5px;">I-copy ang URL na ito at ilagay sa iyong Maya Dashboard. <strong>Paalala:</strong> Siguraduhin na ang gamit mong IP ay Public IP o Domain para ma-reach ng Maya ang iyong server.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- License Section -->
+        <div id="licenseSection" style="display: none;">
+            <div class="header">
+                <h2>System License</h2>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
+                <div class="card">
+                    <h3 style="margin-top: 0; color: var(--warning-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-id-card"></i> License Status
+                    </h3>
+                    <div style="padding: 10px 0;">
+                        <p><strong>Status:</strong> <span id="license_status_text" class="badge badge-offline">Unactivated</span></p>
+                        <p><strong>License Key:</strong> <span id="license_key_display">****-****-****-****</span></p>
+                        <p><strong>Expiry Date:</strong> <span id="license_expiry_text">Never</span></p>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3 style="margin-top: 0; color: var(--primary-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-check-circle"></i> Activate License
+                    </h3>
+                    <form id="licenseForm">
+                        <div class="form-group">
+                            <label>Enter License Key</label>
+                            <input type="text" id="license_key_input" name="key" placeholder="PISO-XXXX-XXXX-XXXX" required>
+                            <p style="font-size: 0.7rem; color: #858796; margin-top: 5px;">Format: PISO-XXXX-XXXX-XXXX-XXXX</p>
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="width: 100%;">Activate Now</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Section -->
+        <div id="settingsSection" style="display: none;">
+            <div class="header">
+                <h2>System Settings</h2>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
+                <!-- General Settings -->
+                <div class="card">
+                    <h3 style="margin-top: 0; color: var(--primary-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-sliders-h"></i> General Settings
+                    </h3>
+                    <form id="settingsForm">
+                        <div class="form-group">
+                            <label>WiFi Name (SSID)</label>
+                            <input type="text" id="wifi_name" name="wifi_name">
+                        </div>
+                        <div class="form-group">
+                            <label>WiFi Name Color</label>
+                            <input type="color" id="wifi_name_color" name="wifi_name_color">
+                        </div>
+                        <div class="form-group">
+                            <label>Sidebar Color</label>
+                            <input type="color" id="sidebar_color" name="sidebar_color">
+                        </div>
+                        <div class="form-group">
+                        <label>Shop Name Animation</label>
+                        <select id="shop_animation" name="shop_animation">
+                            <option value="none">None</option>
+                            <option value="rainbow">Rainbow</option>
+                            <option value="glow">Glow</option>
+                            <option value="bounce">Bounce</option>
+                            <option value="pulse">Pulse</option>
+                            <option value="slide">Slide</option>
+                            <option value="fade">Fade</option>
+                            <option value="rotate">Rotate</option>
+                            <option value="shake">Shake</option>
+                            <option value="zoom">Zoom</option>
+                            <option value="wave">Wave</option>
+                        </select>
+                        </div>
+                        <div id="settingsMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">Settings saved successfully!</div>
+                    </form>
+                    <hr>
+                    <h3 style="margin-top: 20px; color: var(--danger-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-clock"></i> Auto Reboot
+                    </h3>
+                    <form id="autoRebootForm">
+                        <div class="form-group">
+                            <label>Enable Auto Reboot</label>
+                            <select id="auto_reboot_enabled" name="auto_reboot_enabled">
+                                <option value="false">Disabled</option>
+                                <option value="true">Enabled</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Reboot Time (24h format)</label>
+                            <input type="time" id="auto_reboot_time" name="auto_reboot_time">
+                            <p style="font-size: 0.8rem; color: #858796;">System will reboot daily at this time.</p>
+                        </div>
+                        <button type="submit" class="btn btn-danger" style="width: 100%;">Save Reboot Schedule</button>
+                    </form>
+                    <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+                    <h3 style="margin-top: 20px; color: var(--primary-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-user-lock"></i> Admin Change Password
+                    </h3>
+                    <form id="changePasswordForm">
+                        <div class="form-group">
+                            <label>Current Password</label>
+                            <input type="password" id="current_password" name="current_password" required>
+                        </div>
+                        <div class="form-group">
+                            <label>New Password</label>
+                            <input type="password" id="new_password" name="new_password" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Confirm New Password</label>
+                            <input type="password" id="confirm_new_password" name="confirm_new_password" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="width: 100%;">Change Password</button>
+                        <div id="passwordChangeMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">Password changed successfully!</div>
+                    </form>
+                </div>
+
+                <!-- Landing Page Customization -->
+                <div class="card">
+                    <h3 style="margin-top: 0; color: var(--info-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-paint-brush"></i> Landing Page Customization
+                    </h3>
+                    
+
+                    <!-- Banner Upload -->
+                    <div class="form-group">
+                        <label>Landing Page Banner (4" x 2in)</label>
+                        <div id="logoPreview" style="width: 4in; height: 2in; background: #eee; border-radius: 5px; margin-bottom: 10px; display: flex; align-items: center; justify-content: center; color: #888; border: 2px dashed #ccc; margin-left: auto; margin-right: auto; max-width: 100%;">
+                            <img id="logoImage" src="" alt="Banner Logo" style="width: 100%; height: 100%; object-fit: fill; display: none;">
+                            <span id="noBannerText">No Banner</span>
+                        </div>
+                        <input type="file" id="logoInput" accept="image/*" style="display: none;">
+                        <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                            <button type="button" class="btn btn-info" onclick="document.getElementById('logoInput').click()" style="flex: 2;">
+                                <i class="fas fa-upload"></i> Upload Banner
+                            </button>
+                            <button type="button" class="btn btn-secondary" onclick="clearLogo()" style="flex: 1;">
+                                <i class="fas fa-trash"></i> Clear
+                            </button>
+                        </div>
+                        
+                        <label>Banner Border Animation</label>
+                        <select id="banner_animation" name="banner_animation" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; margin-bottom: 10px;">
+                            <option value="none">None</option>
+                            <option value="aura">Aura (Dragon Ball)</option>
+                            <option value="lightning">Lightning Strike</option>
+                            <option value="rainbow-border">Rainbow Spin</option>
+                            <option value="fire">Fire Glow</option>
+                            <option value="neon">Neon Pulse</option>
+                            <option value="gold">Gold Shine</option>
+                            <option value="ghost">Ghostly Fade</option>
+                            <option value="matrix">Matrix Code</option>
+                            <option value="water">Water Ripple</option>
+                            <option value="portal">Portal Spin</option>
+                            <option value="glitch">Cyber Glitch</option>
+                        </select>
+                        <button type="button" class="btn btn-success" onclick="saveBannerAnimation()" style="width: 100%;">
+                            <i class="fas fa-magic"></i> Apply Animation
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Audio Customization -->
+                <div class="card">
+                    <h3 style="margin-top: 0; color: var(--warning-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-volume-up"></i> Audio Customization
+                    </h3>
+                    <div class="form-group">
+                        <label>Insert Coin Countdown (Seconds)</label>
+                        <input type="number" id="insert_coin_countdown" name="insert_coin_countdown" min="10" max="300">
+                        <p style="font-size: 0.8rem; color: #858796;">Duration of the "Insert Coin" window.</p>
+                    </div>
+                    
+                    <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+
+                    <!-- Countdown Tick Sound -->
+                    <div class="form-group">
+                        <label>Countdown Tick Sound (Every Second)</label>
+                        <audio id="countdownTickAudioPreview" controls style="width: 100%; margin-bottom: 10px;"></audio>
+                        <input type="file" id="countdownTickAudioInput" name="audio" accept="audio/*" style="display: none;">
+                        <div style="display: flex; gap: 10px;">
+                            <button type="button" class="btn btn-warning" onclick="document.getElementById('countdownTickAudioInput').click()" style="flex: 2; color: white;">
+                                <i class="fas fa-upload"></i> Upload Sound
+                            </button>
+                            <button type="button" class="btn btn-secondary" onclick="clearAudio('countdown_tick')" style="flex: 1;">
+                                <i class="fas fa-trash"></i> Reset
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+                    
+                    <!-- Voice Prompt -->
+                    <div class="form-group">
+                        <label>Voice Prompt (Maaari na maghulog...)</label>
+                        <audio id="audioPreview" controls style="width: 100%; margin-bottom: 10px;"></audio>
+                        <input type="file" id="audioInput" accept="audio/*" style="display: none;">
+                        <div style="display: flex; gap: 10px;">
+                            <button type="button" class="btn btn-warning" onclick="document.getElementById('audioInput').click()" style="flex: 2; color: white;">
+                                <i class="fas fa-upload"></i> Upload Voice
+                            </button>
+                            <button type="button" class="btn btn-secondary" onclick="clearAudio('voice')" style="flex: 1;">
+                                <i class="fas fa-trash"></i> Reset
+                            </button>
+                        </div>
+                    </div>
+
+                    <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+
+                    <!-- Coin Drop Audio -->
+                    <div class="form-group">
+                        <label>Coins Drop Upload (coins.wav)</label>
+                        <audio id="coinAudioPreview" controls style="width: 100%; margin-bottom: 10px;"></audio>
+                        <input type="file" id="coinAudioInput" accept="audio/*" style="display: none;">
+                        <div style="display: flex; gap: 10px;">
+                            <button type="button" class="btn btn-warning" onclick="document.getElementById('coinAudioInput').click()" style="flex: 2; color: white;">
+                                <i class="fas fa-upload"></i> Upload Sound
+                            </button>
+                            <button type="button" class="btn btn-secondary" onclick="clearAudio('coin_drop')" style="flex: 1;">
+                                <i class="fas fa-trash"></i> Reset
+                            </button>
+                        </div>
+                    </div>
+
+                    <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+
+                    <!-- Salamat Audio -->
+                    <div class="form-group">
+                        <label>Thanks Settings (Salamat...)</label>
+                        <audio id="salamatAudioPreview" controls style="width: 100%; margin-bottom: 10px;"></audio>
+                        <input type="file" id="salamatAudioInput" accept="audio/*" style="display: none;">
+                        <div style="display: flex; gap: 10px;">
+                            <button type="button" class="btn btn-warning" onclick="document.getElementById('salamatAudioInput').click()" style="flex: 2; color: white;">
+                                <i class="fas fa-upload"></i> Upload Sound
+                            </button>
+                            <button type="button" class="btn btn-secondary" onclick="clearAudio('salamat')" style="flex: 1;">
+                                <i class="fas fa-trash"></i> Reset
+                            </button>
+                        </div>
+                    </div>
+                    <p style="font-size: 0.8rem; color: #858796; margin-top: 10px;">Recommended: Short MP3 or M4A. Max 2MB.</p>
+                </div>
+            </div>
+            <button type="submit" form="settingsForm" class="btn btn-success" style="margin-top: 25px; width: 100%; padding: 15px; font-size: 1.1rem;">
+                <i class="fas fa-save"></i> SAVE ALL SETTINGS
+            </button>
+            <div id="uploadMsg" style="position: fixed; bottom: 20px; right: 20px; padding: 15px 25px; border-radius: 10px; background: white; box-shadow: 0 5px 15px rgba(0,0,0,0.2); display: none; z-index: 3000; font-weight: bold;"></div>
+        </div>
+        <!-- Super Admin Section -->
+        <div id="superadminSection" style="display: none;">
+            <div class="header">
+                <h2>Super Admin Panel</h2>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
+                <div class="card" style="border-left-color: #000;">
+                    <h3 style="margin-top: 0; color: #000; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-key"></i> License Generator
+                    </h3>
+                    <div style="margin-bottom: 15px; padding: 10px; background: #f8f9fc; border-radius: 5px; border: 1px solid #eee;">
+                        <small style="color: #858796; display: block; margin-bottom: 5px;">Current Machine ID:</small>
+                        <code id="current_machine_id" style="font-weight: bold; color: var(--primary-color);">Loading...</code>
+                    </div>
+                    <p style="font-size: 0.8rem; color: #858796;">Generate a valid license key for this system.</p>
+                    <div class="form-group">
+                        <label>Generated Key</label>
+                        <input type="text" id="generated_license_key" readonly style="background: #f8f9fc; font-family: monospace; font-weight: bold; text-align: center; font-size: 1.2rem;">
+                    </div>
+                    <button class="btn btn-dark" onclick="generateLicense()" style="width: 100%; background: #000; color: white;">
+                        <i class="fas fa-magic"></i> Generate New License
+                    </button>
+                </div>
+                <div class="card" style="border-left-color: #e74a3b;">
+                    <h3 style="margin-top: 0; color: #e74a3b; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-user-slash"></i> Session Control
+                    </h3>
+                    <p style="font-size: 0.8rem; color: #858796;">Hide this panel and require password again.</p>
+                    <button class="btn btn-danger" onclick="hideSuperAdmin()" style="width: 100%;">
+                        <i class="fas fa-eye-slash"></i> Hide Super Admin Tab
+                    </button>
+                </div>
+                <div class="card" style="border-left-color: #f6c23e;">
+                    <h3 style="margin-top: 0; color: #f6c23e; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-database"></i> Data Management
+                    </h3>
+                    <p style="font-size: 0.8rem; color: #858796;">Burahin ang lahat ng sales data at natitirang oras ng mga user sa system.</p>
+                    <button class="btn btn-warning" onclick="clearSalesData()" style="width: 100%; color: white;">
+                        <i class="fas fa-trash-alt"></i> Clear All Data
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            &copy; 2026 PisoWiFi System. Shaiderbam.
+        </footer>
+    </div>
+
+    <!-- Modals -->
+    <div id="addRateModal" class="modal">
+        <div class="modal-content">
+            <h3>Add New Rate</h3>
+            <form id="addRateForm">
+                <div class="form-group">
+                    <label>Amount (PHP)</label>
+                    <input type="number" name="amount" required>
+                </div>
+                <div class="form-group">
+                    <label>Duration</label>
+                    <input type="number" name="duration" required>
+                </div>
+                <div class="form-group">
+                    <label>Unit</label>
+                    <select name="unit">
+                        <option value="minutes">Minutes</option>
+                        <option value="hour">Hour</option>
+                        <option value="hours">Hours</option>
+                        <option value="day">Day</option>
+                        <option value="days">Days</option>
+                    </select>
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <button type="submit" class="btn btn-success" style="flex:1;">Save</button>
+                    <button type="button" onclick="document.getElementById('addRateModal').style.display='none'" class="btn btn-secondary" style="flex:1;">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="addVoucherModal" class="modal">
+        <div class="modal-content">
+            <h3>Generate Vouchers</h3>
+            <form id="addVoucherForm">
+                <div class="form-group">
+                    <label>Select Rate</label>
+                    <select id="voucher_rate_select" name="rate_id" onchange="toggleCustomVoucherFields()">
+                        <option value="">-- Custom Rate --</option>
+                    </select>
+                </div>
+                <div id="customVoucherFields">
+                    <div class="form-group">
+                        <label>Amount (PHP)</label>
+                        <input type="number" name="amount" value="0" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>Duration</label>
+                        <input type="number" name="duration">
+                    </div>
+                    <div class="form-group">
+                        <label>Unit</label>
+                        <select name="unit">
+                            <option value="minutes">Minutes</option>
+                            <option value="hour">Hour</option>
+                            <option value="hours">Hours</option>
+                            <option value="day">Day</option>
+                            <option value="days">Days</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>How many vouchers?</label>
+                    <input type="number" name="count" value="1" min="1" required>
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <button type="submit" class="btn btn-success" style="flex:1;">Generate</button>
+                    <button type="button" onclick="document.getElementById('addVoucherModal').style.display='none'" class="btn btn-secondary" style="flex:1;">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Super Admin Auth Modal -->
+    <div id="superAdminAuthModal" class="modal">
+        <div class="modal-content" style="border-top: 5px solid #000; text-align: center;">
+            <div style="font-size: 3rem; color: #000; margin-bottom: 1rem;">
+                <i class="fas fa-user-shield"></i>
+            </div>
+            <h3 style="margin-bottom: 0.5rem;">Super Admin Access</h3>
+            <p style="color: #858796; font-size: 0.9rem; margin-bottom: 1.5rem;">Mangyaring ilagay ang password para magpatuloy.</p>
+            <form id="superAdminAuthForm">
+                <div class="form-group">
+                    <input type="password" id="superAdminPasswordInput" placeholder="Enter Password" required 
+                           style="text-align: center; font-size: 1.2rem; letter-spacing: 5px; padding: 15px; border: 2px solid #eee; border-radius: 10px; transition: border-color 0.3s;">
+                </div>
+                <div id="superAdminAuthError" style="color: var(--danger-color); font-size: 0.8rem; margin-bottom: 1rem; display: none;">
+                    Maling password! Subukan muli.
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <button type="submit" class="btn btn-dark" style="flex:2; background: #000; color: white; padding: 12px;">
+                        <i class="fas fa-unlock"></i> Unlock Panel
+                    </button>
+                    <button type="button" onclick="closeSuperAdminModal()" class="btn btn-secondary" style="flex:1; padding: 12px;">
+                        Cancel
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function showSection(section) {
+            const sections = ['dashboard', 'users', 'rates', 'vouchers', 'settings', 'announcements', 'sales', 'bandwidth', 'system', 'ewallet', 'diagnostics', 'security', 'network', 'license', 'superadmin'];
+            sections.forEach(s => {
+                const el = document.getElementById(s + 'Section');
+                if (el) el.style.display = 'none';
+            });
+            
+            const targetSection = document.getElementById(section + 'Section');
+            if (targetSection) targetSection.style.display = 'block';
+            
+            // Update sidebar active state
+            const menuItems = document.querySelectorAll('.sidebar-menu li');
+            menuItems.forEach(item => {
+                item.classList.remove('active');
+                const onClickAttr = item.getAttribute('onclick');
+                if (onClickAttr && onClickAttr.includes(`'${section}'`)) {
+                    item.classList.add('active');
+                }
+            });
+
+            // Save current section to localStorage
+            localStorage.setItem('adminActiveSection', section);
+            console.log('Saved active section to localStorage:', section);
+
+            if (section === 'settings') fetchSettings();
+            if (section === 'bandwidth') fetchBandwidth();
+            if (section === 'system') fetchSystemInfo();
+            if (section === 'ewallet') fetchEWallet();
+            if (section === 'security') fetchSecurity();
+            if (section === 'network') fetchNetwork();
+            if (section === 'license') fetchLicense();
+            if (section === 'diagnostics') fetchLogs();
+            if (section === 'announcements') fetchAnnouncement();
+            if (section === 'users') fetchUsers();
+            if (section === 'rates') fetchRates();
+            if (section === 'vouchers') fetchVouchers();
+            if (section === 'sales') fetchSales();
+            if (section === 'dashboard') fetchStats();
+            
+            // Only toggle sidebar if it was a click (has event) and on mobile
+            if (window.event && window.innerWidth <= 768) toggleSidebar();
+        }
+
+        async function fetchStats() {
+            try {
+                const response = await fetch('/api/stats');
+                const stats = await response.json();
+                document.getElementById('dashTodayEarnings').innerText = `₱ ${stats.todayEarnings.toFixed(2)}`;
+                document.getElementById('totalDevices').innerText = stats.totalDevices;
+                document.getElementById('activeSessions').innerText = stats.activeSessions;
+
+                // Update System Stats Bars
+                if (stats.cpuUsage !== undefined) {
+                    const cpuBar = document.getElementById('cpu_usage_bar');
+                    const cpuText = document.getElementById('cpu_usage_text');
+                    cpuBar.style.width = stats.cpuUsage + '%';
+                    cpuText.innerText = stats.cpuUsage + '%';
+                    cpuBar.className = 'stat-bar-fill ' + (stats.cpuUsage > 80 ? 'danger' : (stats.cpuUsage > 50 ? 'warning' : ''));
+                }
+
+                if (stats.ramUsage !== undefined) {
+                    const ramBar = document.getElementById('ram_usage_bar');
+                    const ramText = document.getElementById('ram_usage_text');
+                    ramBar.style.width = stats.ramUsage + '%';
+                    ramText.innerText = stats.ramUsage + '%';
+                    ramBar.className = 'stat-bar-fill ' + (stats.ramUsage > 80 ? 'danger' : (stats.ramUsage > 50 ? 'warning' : ''));
+                }
+
+                if (stats.cpuTemp !== undefined) {
+                    document.getElementById('cpu_temp_text').innerText = stats.cpuTemp + '°C';
+                }
+
+                if (stats.machineId) {
+                    const midEl = document.getElementById('current_machine_id');
+                    if (midEl) midEl.innerText = stats.machineId;
+                }
+
+                // Update dashboard tables
+                fetchActiveUsers();
+                fetchRecentSales();
+            } catch (e) { console.error(e); }
+        }
+
+        let salesTrendChart = null;
+        let salesTypeChart = null;
+
+        async function fetchSales() {
+            try {
+                const response = await fetch('/api/sales');
+                const sales = await response.json();
+                const tableBody = document.getElementById('salesTableBody');
+                tableBody.innerHTML = '';
+                
+                let total = 0;
+                let coins = 0;
+                let vouchers = 0;
+                let ewallet = 0;
+
+                // Data for charts
+                const salesByDay = {};
+                const last7Days = [];
+                for (let i = 6; i >= 0; i--) {
+                    const d = new Date();
+                    d.setDate(d.getDate() - i);
+                    const dateStr = d.toISOString().split('T')[0];
+                    last7Days.push(dateStr);
+                    salesByDay[dateStr] = 0;
+                }
+
+                sales.forEach(sale => {
+                    const amount = sale.amount || 0;
+                    total += amount;
+                    const saleType = (sale.type || 'unknown').toLowerCase();
+                    
+                    if (saleType === 'coin') coins += amount;
+                    else if (saleType === 'voucher') vouchers += amount;
+                    else ewallet += amount;
+
+                    const dateObj = new Date(sale.created_at);
+                    const dateStr = dateObj.toISOString().split('T')[0];
+                    if (salesByDay[dateStr] !== undefined) {
+                        salesByDay[dateStr] += sale.amount;
+                    }
+
+                    let typeDisplay = saleType.toUpperCase();
+                    let badgeClass = 'badge-info';
+                    
+                    if (saleType === 'coin' || saleType === 'voucher') {
+                        badgeClass = 'badge-online';
+                        typeDisplay = saleType.toUpperCase();
+                    } else {
+                        badgeClass = 'badge-warning';
+                    }
+
+                    const dateDisplay = dateObj.toLocaleString();
+                    tableBody.innerHTML += `
+                        <tr>
+                            <td>${dateDisplay}</td>
+                            <td><span class="badge ${badgeClass}">${typeDisplay}</span></td>
+                            <td><small>${sale.description || '-'}</small></td>
+                            <td>₱ ${amount.toFixed(2)}</td>
+                        </tr>
+                    `;
+                });
+
+                document.getElementById('totalSales').innerText = `₱ ${total.toFixed(2)}`;
+                document.getElementById('coinSales').innerText = `₱ ${coins.toFixed(2)}`;
+                document.getElementById('voucherSales').innerText = `₱ ${vouchers.toFixed(2)}`;
+
+                // Render Charts
+                renderSalesCharts(last7Days, last7Days.map(d => salesByDay[d]), coins, vouchers);
+            } catch (e) { console.error(e); }
+        }
+
+        function renderSalesCharts(labels, data, coins, vouchers) {
+            if (salesTrendChart) salesTrendChart.destroy();
+            if (salesTypeChart) salesTypeChart.destroy();
+
+            const ctxTrend = document.getElementById('salesTrendChart').getContext('2d');
+            salesTrendChart = new Chart(ctxTrend, {
+                type: 'line',
+                data: {
+                    labels: labels.map(l => new Date(l).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })),
+                    datasets: [{
+                        label: 'Daily Sales (PHP)',
+                        data: data,
+                        borderColor: '#4e73df',
+                        backgroundColor: 'rgba(78, 115, 223, 0.05)',
+                        fill: true,
+                        tension: 0.3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { beginAtZero: true, ticks: { callback: value => '₱' + value } }
+                    }
+                }
+            });
+
+            const ctxType = document.getElementById('salesTypeChart').getContext('2d');
+            salesTypeChart = new Chart(ctxType, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Coins', 'Vouchers'],
+                    datasets: [{
+                        data: [coins, vouchers],
+                        backgroundColor: ['#1cc88a', '#36b9cc'],
+                        hoverBackgroundColor: ['#17a673', '#2c9faf'],
+                        hoverBorderColor: "rgba(234, 236, 244, 1)",
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom' }
+                    },
+                    cutout: '70%'
+                }
+            });
+        }
+
+        async function fetchUsers() {
+            try {
+                const response = await fetch('/api/users');
+                const users = await response.json();
+                const tableBody = document.getElementById('userTableBody');
+                tableBody.innerHTML = '';
+                users.forEach(user => {
+                    const isOnline = user.status === 'Online';
+                    tableBody.innerHTML += `
+                        <tr>
+                            <td>${user.username}</td>
+                            <td>${user.ip_address}</td>
+                            <td>${user.mac_address}</td>
+                            <td>${user.time_left} mins</td>
+                            <td><span class="badge ${isOnline ? 'badge-online' : 'badge-offline'}">${user.status}</span></td>
+                            <td>
+                                <button onclick="toggleUserAccess('${user.mac_address}', ${isOnline})" class="btn ${isOnline ? 'btn-danger' : 'btn-success'} btn-sm">
+                                    <i class="fas ${isOnline ? 'fa-ban' : 'fa-check'}"></i> ${isOnline ? 'Block' : 'Allow'}
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            } catch (e) { console.error(e); }
+        }
+
+        async function toggleUserAccess(mac, isCurrentlyAllowed) {
+            const action = isCurrentlyAllowed ? 'block' : 'allow';
+            if (!confirm(`Are you sure you want to ${action} this user?`)) return;
+            
+            try {
+                const response = await fetch(`/api/users/${action}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mac })
+                });
+                if (response.ok) {
+                    fetchUsers();
+                    if (document.getElementById('dashboardSection').style.display !== 'none') {
+                        fetchActiveUsers();
+                    }
+                }
+            } catch (e) { alert('Action failed'); }
+        }
+
+        async function fetchRates() {
+            try {
+                const response = await fetch('/api/rates');
+                const rates = await response.json();
+                const tableBody = document.getElementById('rateTableBody');
+                tableBody.innerHTML = '';
+                rates.forEach(rate => {
+                    tableBody.innerHTML += `
+                        <tr>
+                            <td>₱ ${rate.amount}</td>
+                            <td>${rate.duration} ${rate.unit}</td>
+                            <td>
+                                <button onclick="deleteRate(${rate.id})" style="color:var(--danger-color); border:none; background:none; cursor:pointer;">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            } catch (e) { console.error(e); }
+        }
+
+        async function deleteRate(id) {
+            if (confirm('Delete this rate?')) {
+                await fetch(`/api/rates/${id}`, { method: 'DELETE' });
+                fetchRates();
+            }
+        }
+
+        document.getElementById('addRateForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target).entries());
+            await fetch('/api/rates', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            document.getElementById('addRateModal').style.display = 'none';
+            e.target.reset();
+            fetchRates();
+        });
+
+        async function fetchVouchers() {
+            try {
+                const response = await fetch('/api/vouchers');
+                const vouchers = await response.json();
+                const tableBody = document.getElementById('voucherTableBody');
+                tableBody.innerHTML = '';
+                vouchers.forEach(v => {
+                    tableBody.innerHTML += `
+                        <tr>
+                            <td style="font-family:monospace; font-weight:bold;">${v.code}</td>
+                            <td>${v.duration} ${v.unit}</td>
+                            <td>₱ ${v.amount || 0}</td>
+                            <td><span class="badge ${v.status === 'unused' ? 'badge-online' : 'badge-offline'}">${v.status}</span></td>
+                            <td>
+                                <button onclick="deleteVoucher(${v.id})" style="color:var(--danger-color); border:none; background:none; cursor:pointer;">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            } catch (e) { console.error(e); }
+        }
+
+        async function deleteVoucher(id) {
+            if (confirm('Delete this voucher?')) {
+                await fetch(`/api/vouchers/${id}`, { method: 'DELETE' });
+                fetchVouchers();
+            }
+        }
+
+        async function clearUsedVouchers() {
+            if (confirm('Are you sure you want to delete ALL used vouchers?')) {
+                try {
+                    const response = await fetch('/api/vouchers/clear-used', { method: 'DELETE' });
+                    if (response.ok) {
+                        alert('All used vouchers have been deleted.');
+                        fetchVouchers();
+                    } else {
+                        alert('Failed to delete used vouchers.');
+                    }
+                } catch (e) {
+                    console.error(e);
+                    alert('An error occurred.');
+                }
+            }
+        }
+
+        function openVoucherModal() {
+            fetchRatesForVouchers();
+            document.getElementById('addVoucherModal').style.display = 'block';
+            toggleCustomVoucherFields();
+        }
+
+        async function fetchRatesForVouchers() {
+            try {
+                const response = await fetch('/api/rates');
+                const rates = await response.json();
+                const select = document.getElementById('voucher_rate_select');
+                select.innerHTML = '<option value="">-- Custom Rate --</option>';
+                rates.forEach(rate => {
+                    select.innerHTML += `<option value="${rate.id}">₱${rate.amount} - ${rate.duration} ${rate.unit}</option>`;
+                });
+            } catch (e) { console.error(e); }
+        }
+
+        function toggleCustomVoucherFields() {
+            const select = document.getElementById('voucher_rate_select');
+            const customFields = document.getElementById('customVoucherFields');
+            if (select.value) {
+                customFields.style.display = 'none';
+            } else {
+                customFields.style.display = 'block';
+            }
+        }
+
+        document.getElementById('addVoucherForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target).entries());
+            
+            // Clean up data if rate_id is selected
+            if (data.rate_id) {
+                delete data.amount;
+                delete data.duration;
+                delete data.unit;
+            }
+
+            const response = await fetch('/api/vouchers', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            
+            if (response.ok) {
+                document.getElementById('addVoucherModal').style.display = 'none';
+                e.target.reset();
+                fetchVouchers();
+            } else {
+                const result = await response.json();
+                alert(result.error || 'Failed to generate vouchers');
+            }
+        });
+
+        async function fetchSettings() {
+            const response = await fetch('/api/settings');
+            const settings = await response.json();
+            document.getElementById('wifi_name').value = settings.wifi_name;
+            if (document.getElementById('insert_coin_countdown')) {
+                document.getElementById('insert_coin_countdown').value = settings.insert_coin_countdown || 60;
+            }
+            
+            // Also update bandwidth fields if they exist
+            if (document.getElementById('download_limit')) {
+                document.getElementById('download_limit').value = settings.download_limit !== undefined ? parseFloat(settings.download_limit) : 0;
+                document.getElementById('upload_limit').value = settings.upload_limit !== undefined ? parseFloat(settings.upload_limit) : 0;
+            }
+            
+            if (document.getElementById('system_status_text')) {
+                document.getElementById('system_status_text').innerText = settings.system_status || 'Running';
+            }
+
+            if (document.getElementById('auto_reboot_enabled')) {
+                document.getElementById('auto_reboot_enabled').value = settings.auto_reboot_enabled || 'false';
+                document.getElementById('auto_reboot_time').value = settings.auto_reboot_time || '04:00';
+            }
+
+            document.getElementById('wifi_name_color').value = settings.wifi_name_color || '#1a73e8';
+            document.getElementById('sidebar_color').value = settings.sidebar_color || '#222e3c';
+            document.getElementById('shop_animation').value = settings.shop_animation || 'none';
+            document.getElementById('banner_animation').value = settings.banner_animation || 'none';
+
+
+            const logoPreview = document.getElementById('logoPreview');
+            const logoImage = document.getElementById('logoImage');
+            const noBannerText = document.getElementById('noBannerText');
+
+            if (settings.landing_logo) {
+                logoImage.src = settings.landing_logo;
+                logoImage.style.display = 'block';
+                noBannerText.style.display = 'none';
+                logoPreview.style.border = 'none'; // Remove border when image is present
+            } else {
+                logoImage.src = '';
+                logoImage.style.display = 'none';
+                noBannerText.style.display = 'block';
+                logoPreview.style.border = '2px dashed #ccc'; // Add border when no image
+            }
+
+            const audioPreview = document.getElementById('audioPreview');
+            if (settings.insert_coin_audio) {
+                audioPreview.src = settings.insert_coin_audio;
+            }
+
+            const coinAudioPreview = document.getElementById('coinAudioPreview');
+            if (settings.coin_drop_audio) {
+                coinAudioPreview.src = settings.coin_drop_audio;
+            }
+
+            const salamatAudioPreview = document.getElementById('salamatAudioPreview');
+            if (settings.salamat_audio) {
+                salamatAudioPreview.src = settings.salamat_audio;
+            }
+
+            const countdownTickAudioPreview = document.getElementById('countdownTickAudioPreview');
+            if (settings.countdown_tick_audio) {
+                countdownTickAudioPreview.src = settings.countdown_tick_audio;
+            }
+            // Removed background music audio preview logic
+        }
+
+
+        async function clearLogo() {
+            if (!confirm('Are you sure you want to remove the logo?')) return;
+            const response = await fetch('/api/clear-logo', { method: 'POST' });
+            if (response.ok) {
+                fetchSettings();
+                alert('Logo cleared!');
+            }
+        }
+
+        async function clearAudio(type) {
+            if (!confirm('Reset audio to default?')) return;
+            const response = await fetch('/api/clear-audio', { 
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type })
+            });
+            if (response.ok) {
+                fetchSettings();
+                alert('Audio reset to default!');
+            }
+        }
+
+        async function saveBannerAnimation() {
+            const animation = document.getElementById('banner_animation').value;
+            const response = await fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ banner_animation: animation })
+            });
+            if (response.ok) {
+                alert('Banner animation updated!');
+            }
+        }
+
+        async function fetchAnnouncement() {
+            const response = await fetch('/api/settings');
+            const settings = await response.json();
+            document.getElementById('announcement_text').value = settings.announcement || '';
+        }
+
+        document.getElementById('announcementForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target).entries());
+            const response = await fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            if (response.ok) {
+                const msg = document.getElementById('announcementMsg');
+                msg.style.display = 'block';
+                setTimeout(() => msg.style.display = 'none', 3000);
+            }
+        });
+
+        async function fetchBandwidth() {
+            const response = await fetch('/api/settings');
+            const settings = await response.json();
+            document.getElementById('download_limit').value = settings.download_limit !== undefined ? parseFloat(settings.download_limit) : 0;
+            document.getElementById('upload_limit').value = settings.upload_limit !== undefined ? parseFloat(settings.upload_limit) : 0;
+        }
+
+        document.getElementById('bandwidthForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target).entries());
+            const response = await fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            if (response.ok) {
+                const msg = document.getElementById('bandwidthMsg');
+                msg.style.display = 'block';
+                setTimeout(() => msg.style.display = 'none', 3000);
+            }
+        });
+
+        async function fetchSystemInfo() {
+            const response = await fetch('/api/settings');
+            const settings = await response.json();
+            document.getElementById('system_status_text').innerText = settings.system_status || 'Running';
+            
+            // Mock uptime
+            const uptime = Math.floor(Math.random() * 100) + " days, " + Math.floor(Math.random() * 24) + " hours";
+            document.getElementById('system_uptime').innerText = uptime;
+        }
+
+        async function fetchEWallet() {
+            const response = await fetch('/api/settings');
+            const settings = await response.json();
+            document.getElementById('ewallet_enabled').value = settings.ewallet_enabled || 'false';
+            if (document.getElementById('maya_env')) {
+                document.getElementById('maya_env').value = settings.maya_env || 'sandbox';
+            }
+            document.getElementById('merchant_id').value = settings.merchant_id || '';
+            document.getElementById('gcash_api_key').value = settings.gcash_api_key || '';
+            document.getElementById('maya_public_key').value = settings.maya_public_key || '';
+            document.getElementById('maya_api_key').value = settings.maya_api_key || '';
+
+            // Auto-populate Webhook URL display
+            const webhookUrl = window.location.protocol + '//' + window.location.host + '/api/maya/webhook';
+            document.getElementById('webhook_url_display').value = webhookUrl;
+        }
+
+        function copyWebhookUrl() {
+            const copyText = document.getElementById("webhook_url_display");
+            copyText.select();
+            copyText.setSelectionRange(0, 99999); // For mobile devices
+            navigator.clipboard.writeText(copyText.value);
+            
+            const msg = document.getElementById('uploadMsg');
+            msg.style.display = 'block';
+            msg.style.color = 'var(--success-color)';
+            msg.innerText = 'Webhook URL copied to clipboard!';
+            setTimeout(() => msg.style.display = 'none', 3000);
+        }
+
+        document.getElementById('ewalletForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target).entries());
+            const response = await fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            if (response.ok) {
+                const msg = document.getElementById('ewalletMsg');
+                msg.style.display = 'block';
+                setTimeout(() => msg.style.display = 'none', 3000);
+            }
+        });
+
+        async function runPing() {
+            const host = document.getElementById('pingHost').value;
+            const output = document.getElementById('pingOutput');
+            output.innerText = 'Pinging ' + host + '...';
+            
+            try {
+                const response = await fetch('/api/diagnostics/ping', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ host })
+                });
+                const result = await response.json();
+                output.innerText = result.output;
+            } catch (e) {
+                output.innerText = 'Error: ' + e.message;
+            }
+        }
+
+        async function runSpeedtest() {
+            const btn = document.getElementById('btnSpeedtest');
+            const resultDiv = document.getElementById('speedtestResult');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Testing Download (5MB)...';
+            resultDiv.style.display = 'none';
+
+            try {
+                const response = await fetch('/api/diagnostics/speedtest');
+                const result = await response.json();
+                if (result.error) throw new Error(result.error);
+                
+                document.getElementById('stDownload').innerText = result.download;
+                document.getElementById('stUpload').innerText = result.upload;
+                document.getElementById('stPing').innerText = result.ping;
+                resultDiv.style.display = 'block';
+            } catch (e) {
+                alert('Speed test failed: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-play"></i> Start Speed Test';
+            }
+        }
+
+        async function fetchLogs() {
+            const container = document.getElementById('logContainer');
+            container.innerHTML = 'Loading logs...';
+            try {
+                const response = await fetch('/api/diagnostics/logs');
+                const result = await response.json();
+                container.innerHTML = result.logs.map(log => `<div>${log}</div>`).join('');
+                container.scrollTop = container.scrollHeight;
+            } catch (e) {
+                container.innerHTML = 'Error loading logs';
+            }
+        }
+
+        async function fetchSecurity() {
+            const response = await fetch('/api/settings');
+            const settings = await response.json();
+            document.getElementById('anti_tethering').value = settings.anti_tethering || 'false';
+            document.getElementById('mac_filter_mode').value = settings.mac_filter_mode || 'disabled';
+            
+            fetchBlockedWebsites();
+            fetchMacFilters();
+        }
+
+        async function fetchBlockedWebsites() {
+            const response = await fetch('/api/security/websites');
+            const websites = await response.json();
+            const tbody = document.getElementById('blockedWebsitesTable');
+            tbody.innerHTML = websites.length ? websites.map(w => `
+                <tr>
+                    <td>${w.domain}</td>
+                    <td><button onclick="deleteWebsite(${w.id})" class="btn btn-danger btn-sm"><i class="fas fa-trash"></i></button></td>
+                </tr>
+            `).join('') : '<tr><td colspan="2" style="text-align:center;">No blocked websites</td></tr>';
+        }
+
+        async function deleteWebsite(id) {
+            if (confirm('Unblock this website?')) {
+                await fetch(`/api/security/websites/${id}`, { method: 'DELETE' });
+                fetchBlockedWebsites();
+            }
+        }
+
+        document.getElementById('blockWebsiteForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target).entries());
+            await fetch('/api/security/websites', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            e.target.reset();
+            fetchBlockedWebsites();
+        });
+
+        async function fetchMacFilters() {
+            const response = await fetch('/api/security/mac-filters');
+            const filters = await response.json();
+            const tbody = document.getElementById('macFiltersTable');
+            tbody.innerHTML = filters.length ? filters.map(f => `
+                <tr>
+                    <td><strong>${f.mac_address}</strong><br><small>${f.description}</small></td>
+                    <td><button onclick="deleteMacFilter(${f.id})" class="btn btn-danger btn-sm"><i class="fas fa-trash"></i></button></td>
+                </tr>
+            `).join('') : '<tr><td colspan="2" style="text-align:center;">No MAC filters</td></tr>';
+        }
+
+        async function deleteMacFilter(id) {
+            if (confirm('Remove this MAC filter?')) {
+                await fetch(`/api/security/mac-filters/${id}`, { method: 'DELETE' });
+                fetchMacFilters();
+            }
+        }
+
+        document.getElementById('addMacFilterForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target).entries());
+            await fetch('/api/security/mac-filters', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            e.target.reset();
+            fetchMacFilters();
+        });
+
+        document.getElementById('macFilterSettingsForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target).entries());
+            await fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            alert('MAC Filtering mode updated!');
+        });
+
+        document.getElementById('antiTetheringForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target).entries());
+            await fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            const msg = document.getElementById('securityMsg');
+            msg.style.display = 'block';
+            setTimeout(() => msg.style.display = 'none', 3000);
+        });
+
+        async function fetchNetwork() {
+            const response = await fetch('/api/settings');
+            const settings = await response.json();
+            document.getElementById('dns_primary').value = settings.dns_primary || '8.8.8.8';
+            document.getElementById('dns_secondary').value = settings.dns_secondary || '8.8.4.4';
+            document.getElementById('ip_range_start').value = settings.ip_range_start || '192.168.1.100';
+            document.getElementById('ip_range_end').value = settings.ip_range_end || '192.168.1.200';
+            document.getElementById('wifi_channel').value = settings.wifi_channel || 'auto';
+            document.getElementById('qos_enabled').value = settings.qos_enabled || 'false';
+            document.getElementById('qos_gaming_priority').value = settings.qos_gaming_priority || 'high';
+            
+            // Group Settings
+            document.getElementById('group_type').value = settings.group_type || 'direct';
+            document.getElementById('vlan_id').value = settings.vlan_id || '';
+            toggleVlanInput();
+
+            fetchPortTriggers();
+        }
+
+        function toggleVlanInput() {
+            const type = document.getElementById('group_type').value;
+            const vlanGroup = document.getElementById('vlanIdGroup');
+            if (type === 'vlan') {
+                vlanGroup.style.display = 'block';
+                document.getElementById('vlan_id').required = true;
+            } else {
+                vlanGroup.style.display = 'none';
+                document.getElementById('vlan_id').required = false;
+            }
+        }
+
+        document.getElementById('groupSettingsForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target).entries());
+            const response = await fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            if (response.ok) {
+                const msg = document.getElementById('groupMsg');
+                msg.style.display = 'block';
+                setTimeout(() => msg.style.display = 'none', 3000);
+            }
+        });
+
+        async function fetchPortTriggers() {
+            const response = await fetch('/api/network/port-triggers');
+            const triggers = await response.json();
+            const tbody = document.getElementById('portTriggersTable');
+            tbody.innerHTML = triggers.length ? triggers.map(t => `
+                <tr>
+                    <td>${t.name}</td>
+                    <td>${t.trigger_port} (${t.trigger_proto})</td>
+                    <td>${t.open_port} (${t.open_proto || 'TCP/UDP'})</td>
+                    <td><button onclick="deletePortTrigger(${t.id})" class="btn btn-danger btn-sm"><i class="fas fa-trash"></i></button></td>
+                </tr>
+            `).join('') : '<tr><td colspan="4" style="text-align:center;">No port triggers defined</td></tr>';
+        }
+
+        async function deletePortTrigger(id) {
+            if (confirm('Delete this port trigger?')) {
+                await fetch(`/api/network/port-triggers/${id}`, { method: 'DELETE' });
+                fetchPortTriggers();
+            }
+        }
+
+        document.getElementById('addPortTriggerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target).entries());
+            await fetch('/api/network/port-triggers', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            e.target.reset();
+            fetchPortTriggers();
+        });
+
+        document.getElementById('qosForm').addEventListener('submit', saveNetworkSettings);
+
+        async function saveNetworkSettings(e) {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target).entries());
+            const response = await fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            if (response.ok) {
+                const msg = document.getElementById('networkMsg');
+                msg.style.display = 'block';
+                setTimeout(() => msg.style.display = 'none', 3000);
+            }
+        }
+
+        document.getElementById('dnsForm').addEventListener('submit', saveNetworkSettings);
+        document.getElementById('ipRangeForm').addEventListener('submit', saveNetworkSettings);
+        
+        async function generateLicense() {
+            try {
+                const response = await fetch('/api/license/generate', { method: 'POST' });
+                const result = await response.json();
+                document.getElementById('generated_license_key').value = result.key;
+            } catch (e) {
+                alert('Failed to generate license');
+            }
+        }
+
+        async function clearSalesData() {
+            if (!confirm("Sigurado ka bang gusto mong burahin ang LAHAT ng sales data at natitirang oras ng mga user? Hindi na ito mababawi.")) return;
+            
+            try {
+                const response = await fetch('/api/sales/clear', { method: 'POST' });
+                const result = await response.json();
+                if (response.ok) {
+                    alert(result.message);
+                    // Refresh data if sections are visible
+                    if (document.getElementById('salesSection').style.display !== 'none') {
+                        fetchSales();
+                    }
+                    if (document.getElementById('dashboardSection').style.display !== 'none') {
+                        fetchStats();
+                    }
+                } else {
+                    alert(result.error || "Failed to clear sales data");
+                }
+            } catch (e) {
+                alert("Error: " + e.message);
+            }
+        }
+
+        async function fetchLicense() {
+            const response = await fetch('/api/settings');
+            const settings = await response.json();
+            const status = settings.license_status || 'Unactivated';
+            const statusEl = document.getElementById('license_status_text');
+            
+            statusEl.innerText = status;
+            statusEl.className = 'badge ' + (status === 'Activated' ? 'badge-online' : 'badge-offline');
+            
+            document.getElementById('license_key_display').innerText = settings.license_key ? settings.license_key.replace(/.(?=.{4})/g, '*') : '****-****-****-****';
+            document.getElementById('license_expiry_text').innerText = settings.license_expiry || 'Never';
+        }
+
+        document.getElementById('licenseForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target).entries());
+            const response = await fetch('/api/license/activate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            const result = await response.json();
+            if (response.ok) {
+                alert(result.message);
+                fetchLicense();
+            } else {
+                alert(result.error);
+            }
+        });
+
+        async function systemAction(action) {
+            if (!confirm(`Are you sure you want to ${action}?`)) return;
+            
+            try {
+                const response = await fetch(`/api/system/${action}`, { method: 'POST' });
+                const result = await response.json();
+                alert(result.message);
+            } catch (e) {
+                alert('Action failed: ' + e.message);
+            }
+        }
+
+        document.getElementById('restoreInput').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            if (!confirm('Restoring will overwrite your current database. Continue?')) return;
+            handleFileUpload(file, 'database', '/api/system/restore');
+        });
+
+        document.getElementById('firmwareInput').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            if (!confirm('Proceed with firmware update? System will reboot.')) return;
+            handleFileUpload(file, 'firmware', '/api/system/firmware-update');
+        });
+
+
+        document.getElementById('logoInput').addEventListener('change', async (e) => {
+            handleFileUpload(e.target.files[0], 'logo', '/api/upload-logo');
+        });
+
+        document.getElementById('audioInput').addEventListener('change', async (e) => {
+            handleFileUpload(e.target.files[0], 'audio', '/api/upload-audio');
+        });
+
+        document.getElementById('coinAudioInput').addEventListener('change', async (e) => {
+            handleFileUpload(e.target.files[0], 'audio', '/api/upload-audio?type=coin_drop');
+        });
+
+        document.getElementById('salamatAudioInput').addEventListener('change', async (e) => {
+            handleFileUpload(e.target.files[0], 'audio', '/api/upload-audio?type=salamat');
+        });
+
+        document.getElementById('countdownTickAudioInput').addEventListener('change', async (e) => {
+            handleFileUpload(e.target.files[0], 'audio', '/api/upload-audio?type=countdown_tick');
+        });
+
+        // Removed backgroundMusicAudioInput event listener
+
+        async function handleFileUpload(file, fieldName, url) {
+            console.log('handleFileUpload called:');
+            console.log('  file:', file);
+            console.log('  fieldName:', fieldName);
+            console.log('  url:', url);
+
+            if (!file) {
+                console.log('No file selected.');
+                return;
+            }
+
+            const maxSize = fieldName === 'wallpaper' ? 10 : 2;
+            if (file.size > maxSize * 1024 * 1024) {
+                alert(`File is too large. Max ${maxSize}MB.`);
+                console.log('File too large:', file.size, 'bytes');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append(fieldName, file);
+            console.log('FormData created:', formData);
+
+            const msg = document.getElementById('uploadMsg');
+            msg.style.display = 'block';
+            msg.style.color = 'var(--primary-color)';
+            msg.innerText = 'Uploading...';
+            console.log('Upload message displayed.');
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    body: formData
+                });
+                console.log('Fetch response received:', response);
+                
+                let result;
+                try {
+                    result = await response.json();
+                    console.log('Server response JSON:', result);
+                } catch (e) {
+                    result = { error: 'Server returned an invalid response' };
+                    console.error('Error parsing server response:', e);
+                }
+
+                if (response.ok) {
+                    msg.style.color = 'var(--success-color)';
+                    let displayFieldName = fieldName.charAt(0).toUpperCase() + fieldName.slice(1);
+                    if (fieldName === 'logo') displayFieldName = 'Banner';
+                    msg.innerText = `${displayFieldName} uploaded successfully!`;
+                    console.log('Upload successful.');
+                    fetchSettings();
+                } else {
+                    msg.style.color = 'var(--danger-color)';
+                    msg.innerText = result.error || 'Upload failed';
+                    console.error('Upload failed:', result.error);
+                }
+            } catch (error) {
+                msg.style.color = 'var(--danger-color)';
+                msg.innerText = 'Error uploading file.';
+                console.error('Network or unexpected error during upload:', error);
+            }
+
+            setTimeout(() => msg.style.display = 'none', 5000);
+        }
+
+        document.getElementById('settingsForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const settings = Object.fromEntries(new FormData(e.target).entries());
+            const response = await fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(settings)
+            });
+            if (response.ok) {
+                const msg = document.getElementById('settingsMsg');
+                msg.style.display = 'block';
+                setTimeout(() => msg.style.display = 'none', 3000);
+                fetchConfig();
+            }
+        });
+
+        document.getElementById('autoRebootForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target).entries());
+            const response = await fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            if (response.ok) {
+                alert('Auto reboot schedule saved!');
+            }
+        });
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('active');
+            const closeBtn = document.getElementById('closeSidebar');
+            if (window.innerWidth <= 768) {
+                closeBtn.style.display = sidebar.classList.contains('active') ? 'block' : 'none';
+            }
+        }
+
+        async function fetchConfig() {
+            const response = await fetch('/api/config');
+            const config = await response.json();
+            
+            const wifiName = config.wifi_name;
+            const wifiNameColor = config.wifi_name_color || '#1a73e8';
+            const sidebarColor = config.sidebar_color || '#222e3c';
+            const animation = config.shop_animation || 'none';
+
+            // Apply WiFi Name
+            const sidebarWifiNameEl = document.getElementById('sidebarWifiName');
+            const mobileWifiNameEl = document.getElementById('mobileWifiName');
+            
+            sidebarWifiNameEl.innerText = wifiName;
+            mobileWifiNameEl.innerText = wifiName;
+
+            // Apply WiFi Name Color (only if animation is not rainbow)
+            if (animation !== 'rainbow') {
+                sidebarWifiNameEl.style.color = wifiNameColor;
+                mobileWifiNameEl.style.color = wifiNameColor;
+            } else {
+                sidebarWifiNameEl.style.color = '';
+                mobileWifiNameEl.style.color = '';
+            }
+
+            // Apply Sidebar Color
+            document.getElementById('sidebar').style.backgroundColor = sidebarColor;
+            document.querySelector('.mobile-toggle').style.backgroundColor = sidebarColor;
+
+            // Apply Animation
+            
+            // Reset classes
+            sidebarWifiNameEl.className = '';
+            mobileWifiNameEl.className = '';
+            
+            if (animation !== 'none') {
+                sidebarWifiNameEl.classList.add('anim-' + animation);
+                mobileWifiNameEl.classList.add('anim-' + animation);
+            }
+        }
+
+        async function fetchActiveUsers() {
+            try {
+                const response = await fetch('/api/users');
+                const users = await response.json();
+                const tableBody = document.getElementById('activeUsersTableBody');
+                if (!tableBody) return;
+                tableBody.innerHTML = '';
+                
+                const activeUsers = users.filter(u => u.status === 'Online');
+                
+                if (activeUsers.length === 0) {
+                    tableBody.innerHTML = '<tr><td colspan="3" style="text-align: center;">No active users</td></tr>';
+                    return;
+                }
+
+                activeUsers.forEach(user => {
+                    tableBody.innerHTML += `
+                        <tr>
+                            <td><strong>${user.username}</strong></td>
+                            <td>${user.ip_address}</td>
+                            <td><span class="badge badge-online">${user.time_left} mins</span></td>
+                        </tr>
+                    `;
+                });
+            } catch (e) { console.error(e); }
+        }
+
+        async function fetchRecentSales() {
+            try {
+                const response = await fetch('/api/sales');
+                const sales = await response.json();
+                const tableBody = document.getElementById('recentSalesTableBody');
+                if (!tableBody) return;
+                tableBody.innerHTML = '';
+                
+                // Show only last 5 sales
+                const recentSales = sales.slice(0, 5);
+                
+                if (recentSales.length === 0) {
+                    tableBody.innerHTML = '<tr><td colspan="4" style="text-align: center;">No sales yet</td></tr>';
+                    return;
+                }
+
+                recentSales.forEach(sale => {
+                    const date = new Date(sale.created_at).toLocaleTimeString();
+                    const saleType = (sale.type || 'unknown').toLowerCase();
+                    const amount = sale.amount || 0;
+                    
+                    let typeDisplay = saleType.toUpperCase();
+                    let badgeClass = 'badge-info';
+                    
+                    if (saleType === 'coin' || saleType === 'voucher') {
+                        badgeClass = 'badge-online';
+                        typeDisplay = saleType.toUpperCase();
+                    } else {
+                        badgeClass = 'badge-warning';
+                    }
+
+                    tableBody.innerHTML += `
+                        <tr>
+                            <td>${date}</td>
+                            <td><span class="badge ${badgeClass}">${typeDisplay}</span></td>
+                            <td><small>${sale.description || '-'}</small></td>
+                            <td>₱ ${amount.toFixed(2)}</td>
+                        </tr>
+                    `;
+                });
+            } catch (e) { console.error(e); }
+        }
+
+        // Super Admin Access Check (Simple prompt for demo/testing)
+        // In a real app, this would be based on a specific super admin login
+        function checkSuperAdmin() {
+            const pass = localStorage.getItem('superAdminPass');
+            if (pass === 'superadmin123') {
+                document.getElementById('superAdminTab').style.display = 'flex';
+            }
+        }
+
+        // Secret key combination to reveal Super Admin tab: Press 'S' + 'A' + 'P' together
+        let keysPressed = {};
+        document.addEventListener('keydown', (event) => {
+            // Ignore if typing in an input or textarea
+            if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') return;
+
+            keysPressed[event.key.toLowerCase()] = true;
+            
+            // Only trigger if all keys are pressed and tab is not yet visible
+            if (keysPressed['s'] && keysPressed['a'] && keysPressed['p']) {
+                if (document.getElementById('superAdminTab').style.display === 'flex') return;
+
+                // Clear keys state
+                keysPressed = {};
+                
+                // Show custom modal instead of prompt
+                document.getElementById('superAdminAuthModal').style.display = 'block';
+                document.getElementById('superAdminPasswordInput').focus();
+            }
+        });
+
+        document.addEventListener('keyup', (event) => {
+            delete keysPressed[event.key.toLowerCase()];
+        });
+
+        function closeSuperAdminModal() {
+            document.getElementById('superAdminAuthModal').style.display = 'none';
+            document.getElementById('superAdminAuthForm').reset();
+            document.getElementById('superAdminAuthError').style.display = 'none';
+        }
+
+        document.getElementById('superAdminAuthForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const pass = document.getElementById('superAdminPasswordInput').value;
+            const errorMsg = document.getElementById('superAdminAuthError');
+            
+            if (pass === "superadmin123") {
+                localStorage.setItem('superAdminPass', 'superadmin123');
+                document.getElementById('superAdminTab').style.display = 'flex';
+                closeSuperAdminModal();
+                alert("Super Admin access granted!");
+            } else {
+                errorMsg.style.display = 'block';
+                document.getElementById('superAdminPasswordInput').style.borderColor = 'var(--danger-color)';
+                document.getElementById('superAdminPasswordInput').value = '';
+                document.getElementById('superAdminPasswordInput').focus();
+            }
+        });
+
+        function hideSuperAdmin() {
+            if (confirm("Sigurado ka bang gusto mong i-hide ang Super Admin tab?")) {
+                localStorage.removeItem('superAdminPass');
+                document.getElementById('superAdminTab').style.display = 'none';
+                showSection('dashboard');
+                alert("Super Admin tab is now hidden.");
+            }
+        }
+
+        checkSuperAdmin();
+        fetchConfig();
+        
+        // Restore last active section or default to dashboard
+        const savedSection = localStorage.getItem('adminActiveSection') || 'dashboard';
+        console.log('Attempting to show section on load:', savedSection);
+        showSection(savedSection);
+
+        setInterval(fetchStats, 5000); // Update stats every 5 seconds for responsive CPU bar
+
+        document.getElementById('changePasswordForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const currentPassword = document.getElementById('current_password').value;
+            const newPassword = document.getElementById('new_password').value;
+            const confirmNewPassword = document.getElementById('confirm_new_password').value;
+            const passwordChangeMsg = document.getElementById('passwordChangeMsg');
+
+            if (newPassword !== confirmNewPassword) {
+                passwordChangeMsg.style.color = 'var(--danger-color)';
+                passwordChangeMsg.innerText = 'New passwords do not match!';
+                passwordChangeMsg.style.display = 'block';
+                setTimeout(() => passwordChangeMsg.style.display = 'none', 3000);
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/admin/change-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    passwordChangeMsg.style.color = 'var(--success-color)';
+                    passwordChangeMsg.innerText = result.message;
+                    document.getElementById('changePasswordForm').reset();
+                } else {
+                    passwordChangeMsg.style.color = 'var(--danger-color)';
+                    passwordChangeMsg.innerText = result.error || 'Failed to change password.';
+                }
+                passwordChangeMsg.style.display = 'block';
+                setTimeout(() => passwordChangeMsg.style.display = 'none', 3000);
+
+            } catch (error) {
+                passwordChangeMsg.style.color = 'var(--danger-color)';
+                passwordChangeMsg.innerText = 'An error occurred while changing password.';
+                passwordChangeMsg.style.display = 'block';
+                setTimeout(() => passwordChangeMsg.style.display = 'none', 3000);
+                console.error('Error changing password:', error);
+            }
+        });
+    </script>
+</body>
+</html>

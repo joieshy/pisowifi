@@ -1,0 +1,1313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PisoWiFi - Welcome</title>
+    <style>
+        /* Banner Border Animations */
+        .banner-border {
+            border-radius: 10px;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        /* 1. Aura (Dragon Ball Style) */
+        @keyframes aura-glow {
+            0% { box-shadow: 0 0 5px #fff, 0 0 15px #4e73df; border: 3px solid #fff; }
+            50% { box-shadow: 0 0 20px #fff, 0 0 40px #4e73df; border: 3px solid #4e73df; }
+            100% { box-shadow: 0 0 5px #fff, 0 0 15px #4e73df; border: 3px solid #fff; }
+        }
+        .anim-aura { animation: aura-glow 2s ease-in-out infinite; }
+
+        /* 2. Lightning */
+        @keyframes lightning-border {
+            0%, 100% { border: 3px solid #36b9cc; box-shadow: 0 0 5px #36b9cc; }
+            10%, 90% { border: 3px solid #fff; box-shadow: 0 0 20px #fff, 0 0 40px #36b9cc; }
+            15%, 85% { border: 3px solid #36b9cc; box-shadow: 0 0 5px #36b9cc; }
+        }
+        .anim-lightning { animation: lightning-border 4s linear infinite; }
+        .anim-lightning::after {
+            content: ""; position: absolute; top: -50%; left: -100%; width: 200%; height: 200%;
+            background: linear-gradient(45deg, transparent, rgba(255,255,255,0.8), transparent);
+            transform: rotate(45deg); animation: lightning-flash 2s linear infinite;
+        }
+        @keyframes lightning-flash { 0% { left: -100%; } 10% { left: 100%; } 100% { left: 100%; } }
+
+        /* 3. Rainbow Spin */
+        @keyframes rainbow-border {
+            0% { border-color: red; box-shadow: 0 0 15px red; }
+            20% { border-color: yellow; box-shadow: 0 0 15px yellow; }
+            40% { border-color: green; box-shadow: 0 0 15px green; }
+            60% { border-color: blue; box-shadow: 0 0 15px blue; }
+            80% { border-color: purple; box-shadow: 0 0 15px purple; }
+            100% { border-color: red; box-shadow: 0 0 15px red; }
+        }
+        .anim-rainbow-border { border: 3px solid red; animation: rainbow-border 3s linear infinite; }
+
+        /* 4. Fire */
+        @keyframes fire-glow {
+            0% { border-color: #ff4500; box-shadow: 0 0 10px #ff4500, 0 -5px 15px #ff8c00; }
+            50% { border-color: #ff8c00; box-shadow: 0 0 20px #ff8c00, 0 -10px 25px #ff4500; }
+            100% { border-color: #ff4500; box-shadow: 0 0 10px #ff4500, 0 -5px 15px #ff8c00; }
+        }
+        .anim-fire { border: 3px solid #ff4500; animation: fire-glow 1s ease-in-out infinite; }
+
+        /* 5. Neon Pulse */
+        @keyframes neon-pulse {
+            0% { border-color: #00ff00; box-shadow: 0 0 5px #00ff00, inset 0 0 5px #00ff00; }
+            100% { border-color: #00ff00; box-shadow: 0 0 20px #00ff00, inset 0 0 10px #00ff00; }
+        }
+        .anim-neon { border: 3px solid #00ff00; animation: neon-pulse 0.8s ease-in-out infinite alternate; }
+
+        /* 6. Gold Shine */
+        @keyframes gold-shine {
+            0% { border-color: #ffd700; box-shadow: 0 0 5px #ffd700; }
+            50% { border-color: #fff; box-shadow: 0 0 25px #ffd700; }
+            100% { border-color: #ffd700; box-shadow: 0 0 5px #ffd700; }
+        }
+        .anim-gold { border: 3px solid #ffd700; animation: gold-shine 2s linear infinite; }
+
+        /* 7. Ghostly */
+        @keyframes ghost-fade {
+            0% { opacity: 1; border-color: #fff; box-shadow: 0 0 10px #fff; }
+            50% { opacity: 0.4; border-color: #ccc; box-shadow: 0 0 30px #fff; }
+            100% { opacity: 1; border-color: #fff; box-shadow: 0 0 10px #fff; }
+        }
+        .anim-ghost { border: 3px solid #fff; animation: ghost-fade 2s ease-in-out infinite; }
+
+        /* 8. Matrix */
+        @keyframes matrix-glow {
+            0% { border-color: #003b00; box-shadow: 0 0 5px #00ff41; }
+            50% { border-color: #00ff41; box-shadow: 0 0 15px #00ff41; }
+            100% { border-color: #003b00; box-shadow: 0 0 5px #00ff41; }
+        }
+        .anim-matrix { border: 3px solid #003b00; animation: matrix-glow 1.5s steps(5) infinite; }
+
+        /* 9. Water Ripple */
+        @keyframes water-ripple {
+            0% { border-color: #00bfff; box-shadow: 0 0 0 0 rgba(0, 191, 255, 0.7); }
+            100% { border-color: #1e90ff; box-shadow: 0 0 0 15px rgba(0, 191, 255, 0); }
+        }
+        .anim-water { border: 3px solid #00bfff; animation: water-ripple 2s infinite; }
+
+        /* 10. Portal */
+        @keyframes portal-spin {
+            0% { border-color: #8a2be2; box-shadow: 0 0 10px #8a2be2, inset 0 0 10px #ff00ff; transform: scale(1); }
+            50% { border-color: #ff00ff; box-shadow: 0 0 25px #ff00ff, inset 0 0 20px #8a2be2; transform: scale(1.02); }
+            100% { border-color: #8a2be2; box-shadow: 0 0 10px #8a2be2, inset 0 0 10px #ff00ff; transform: scale(1); }
+        }
+        .anim-portal { border: 3px solid #8a2be2; animation: portal-spin 3s ease-in-out infinite; }
+
+        /* 11. Glitch */
+        @keyframes glitch-border {
+            0% { border-color: #ff00ff; transform: translate(0); }
+            20% { border-color: #00ffff; transform: translate(-2px, 2px); }
+            40% { border-color: #ff00ff; transform: translate(-2px, -2px); }
+            60% { border-color: #00ffff; transform: translate(2px, 2px); }
+            80% { border-color: #ff00ff; transform: translate(2px, -2px); }
+            100% { border-color: #00ffff; transform: translate(0); }
+        }
+        .anim-glitch { border: 3px solid #ff00ff; animation: glitch-border 0.2s infinite; }
+
+        /* Shop Name Animations */
+        .anim-none { animation: none; }
+        
+        .anim-rainbow {
+            background: linear-gradient(to right, red, orange, yellow, green, blue, indigo, violet);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-size: 400% 400%;
+            animation: rainbow 5s ease infinite;
+        }
+        @keyframes rainbow {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .anim-glow { animation: glow 1.5s ease-in-out infinite alternate; }
+        @keyframes glow {
+            from { text-shadow: 0 0 5px #fff, 0 0 10px #fff, 0 0 15px #1a73e8; }
+            to { text-shadow: 0 0 10px #fff, 0 0 20px #fff, 0 0 30px #1a73e8; }
+        }
+
+        .anim-bounce { animation: bounce 2s infinite; display: inline-block; }
+        @keyframes bounce {
+            0%, 20%, 50%, 80%, 100% {transform: translateY(0);}
+            40% {transform: translateY(-10px);}
+            60% {transform: translateY(-5px);}
+        }
+
+        .anim-pulse { animation: pulse 2s infinite; display: inline-block; }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+
+        .anim-slide { animation: slide 3s linear infinite; display: inline-block; }
+        @keyframes slide {
+            0% { transform: translateX(-10px); opacity: 0; }
+            50% { transform: translateX(0); opacity: 1; }
+            100% { transform: translateX(10px); opacity: 0; }
+        }
+
+        .anim-fade { animation: fade 2s ease-in-out infinite; }
+        @keyframes fade {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 1; }
+        }
+
+        .anim-rotate { animation: rotate 4s linear infinite; display: inline-block; }
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .anim-shake { animation: shake 0.5s infinite; display: inline-block; }
+        @keyframes shake {
+            0% { transform: translate(1px, 1px) rotate(0deg); }
+            10% { transform: translate(-1px, -2px) rotate(-1deg); }
+            20% { transform: translate(-3px, 0px) rotate(1deg); }
+            30% { transform: translate(3px, 2px) rotate(0deg); }
+            40% { transform: translate(1px, -1px) rotate(1deg); }
+            50% { transform: translate(-1px, 2px) rotate(-1deg); }
+        }
+
+        .anim-zoom { animation: zoom 3s infinite; display: inline-block; }
+        @keyframes zoom {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+        }
+
+        .anim-wave { animation: wave 2s ease-in-out infinite; display: inline-block; }
+        @keyframes wave {
+            0% { transform: translateY(0); }
+            50% { transform: translateY(-5px) rotate(5deg); }
+        }
+
+        /* Icon Animations */
+        @keyframes ringing {
+            0% { transform: rotate(0); }
+            5% { transform: rotate(15deg); }
+            10% { transform: rotate(-15deg); }
+            15% { transform: rotate(10deg); }
+            20% { transform: rotate(-10deg); }
+            25% { transform: rotate(0); }
+            100% { transform: rotate(0); }
+        }
+        .fa-bullhorn { animation: ringing 2s infinite; display: inline-block; }
+
+        @keyframes coin-bounce {
+            0%, 100% { transform: translateY(0) rotate(0); }
+            50% { transform: translateY(-10px) rotate(20deg); }
+        }
+        .fa-coins { animation: coin-bounce 2s ease-in-out infinite; display: inline-block; color: #f1c40f; }
+
+        @keyframes pulse-status {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        .status-icon { animation: pulse-status 1.5s infinite; margin-right: 5px; }
+
+        @keyframes spin-slow {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .fa-spinner { animation: spin-slow 2s linear infinite; }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-3px); }
+        }
+        .rate-icon { 
+            animation: float 3s ease-in-out infinite; 
+            margin-right: 8px; 
+            color: #4e73df;
+            width: 15px;
+            text-align: center;
+        }
+
+        .insert-coin-btn:hover i {
+            animation: coin-bounce 0.5s infinite;
+        }
+
+        html, body {
+            min-height: 100%;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f2f5;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start; /* Changed to flex-start to allow content to flow from the top */
+            transition: background-image 0.5s ease-in-out;
+            position: relative;
+            width: 100%;
+            padding: 20px 0;
+            overflow-y: auto; /* Added to enable vertical scrolling */
+        }
+
+        .container {
+            background-color: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 2rem;
+            border-radius: 24px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+            text-align: center;
+            width: 90%;
+            max-width: 400px;
+            display: flex;
+            flex-direction: column;
+            z-index: 10;
+            position: relative;
+            border: 1px solid rgba(255, 255, 255, 0.5);
+        }
+        h1 {
+            color: #1a73e8;
+            margin-top: 0.5rem;
+            margin-bottom: 1.5rem;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+        }
+        .status {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 16px;
+            margin-bottom: 1.5rem;
+            font-weight: 600;
+            color: #495057;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            border: 1px solid #e9ecef;
+            transition: all 0.3s ease;
+        }
+        .insert-coin-btn {
+            background: linear-gradient(135deg, #34a853 0%, #2d8e47 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            width: 100%;
+            margin-bottom: 1rem;
+            box-shadow: 0 4px 15px rgba(52, 168, 83, 0.3);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .insert-coin-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(52, 168, 83, 0.4);
+            background: linear-gradient(135deg, #2d8e47 0%, #247239 100%);
+        }
+        .insert-coin-btn:active {
+            transform: translateY(-1px);
+        }
+
+        .voucher-btn {
+            background: linear-gradient(135deg, #4e73df 0%, #224abe 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            width: 100%;
+            margin-bottom: 1rem;
+            box-shadow: 0 4px 15px rgba(78, 115, 223, 0.3);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .voucher-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(78, 115, 223, 0.4);
+            background: linear-gradient(135deg, #224abe 0%, #1a3b99 100%);
+        }
+        .voucher-btn:active {
+            transform: translateY(-1px);
+        }
+
+        .connect-internet-btn {
+            background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%); /* Yellow/Orange gradient */
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            width: 100%;
+            margin-bottom: 1rem;
+            box-shadow: 0 4px 15px rgba(255, 193, 7, 0.3);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .connect-internet-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(255, 193, 7, 0.4);
+            background: linear-gradient(135deg, #e0a800 0%, #c69500 100%);
+        }
+        .connect-internet-btn:active {
+            transform: translateY(-1px);
+        }
+
+        .voucher-input {
+            width: 100%;
+            padding: 12px 15px;
+            margin: 15px 0;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 1.2rem;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            transition: border-color 0.3s;
+            box-sizing: border-box;
+        }
+        .voucher-input:focus {
+            border-color: #4e73df;
+            outline: none;
+        }
+        .info {
+            font-size: 0.9rem;
+            color: #5f6368;
+        }
+        /* ===== Improved Rates UI ===== */
+        .rates{margin-top:1.25rem;text-align:left;border-top:1px solid rgba(0,0,0,0.06);padding-top:1rem}.rates-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.rates-title{font-size:1.05rem;font-weight:800;letter-spacing:-0.2px;color:#1f2937}.rates-subtitle{font-size:0.82rem;color:#6b7280;margin-top:2px}.rates-pill{display:flex;align-items:center;gap:8px;font-size:0.75rem;font-weight:800;color:#1a73e8;background:rgba(26,115,232,0.10);border:1px solid rgba(26,115,232,0.20);padding:8px 10px;border-radius:999px;white-space:nowrap}.rates-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}@media (min-width:420px){.rates-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}.rate-card{cursor:pointer;position:relative;background:linear-gradient(180deg,rgba(255,255,255,0.95),rgba(248,250,252,0.95));border:1px solid rgba(15,23,42,0.08);border-radius:16px;padding:12px;box-shadow:0 10px 20px rgba(0,0,0,0.06);transition:transform 0.18s ease,box-shadow 0.18s ease,border-color 0.18s ease;overflow:hidden}.rate-card::before{content:"";position:absolute;inset:-2px;background:radial-gradient(circle at 20% 20%,rgba(26,115,232,0.22),transparent 55%);opacity:0;transition:opacity 0.2s ease;pointer-events:none}.rate-card:hover{transform:translateY(-2px);box-shadow:0 14px 28px rgba(0,0,0,0.10);border-color:rgba(26,115,232,0.25)}.rate-card:hover::before{opacity:1}.rate-card:active{transform:translateY(0px) scale(0.99)}.rate-amount{display:flex;align-items:baseline;gap:6px;font-weight:900;color:#111827}.rate-amount .peso{font-size:0.9rem;opacity:0.75}.rate-amount .value{font-size:1.6rem;letter-spacing:-0.5px}.rate-time{margin-top:6px;font-size:0.92rem;font-weight:800;color:#1a73e8;display:flex;align-items:center;gap:8px}.rate-meta{margin-top:6px;font-size:0.75rem;color:#6b7280;display:flex;align-items:center;gap:8px}.rate-badge{position:absolute;top:10px;right:10px;font-size:0.70rem;font-weight:900;color:#065f46;background:rgba(16,185,129,0.18);border:1px solid rgba(16,185,129,0.28);padding:6px 8px;border-radius:999px}.rates-loading{grid-column:1/-1;text-align:center;color:#6b7280;padding:14px 10px;background:rgba(0,0,0,0.03);border:1px dashed rgba(0,0,0,0.15);border-radius:16px}
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            backdrop-filter: blur(5px);
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 2rem;
+            border-radius: 20px;
+            text-align: center;
+            width: 85%;
+            max-width: 320px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            animation: modal-pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        @keyframes modal-pop {
+            0% { transform: scale(0.5); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        .countdown-circle {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            border: 8px solid #f3f3f3;
+            border-top: 8px solid #34a853;
+            margin: 1.5rem auto;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #34a853;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .countdown-circle:active {
+            transform: scale(0.95);
+            background-color: #f0f0f0;
+        }
+
+        .modal-title {
+            font-size: 1.5rem;
+            color: #1a73e8;
+            margin-bottom: 0.5rem;
+        }
+
+        .modal-text {
+            color: #5f6368;
+            margin-bottom: 1.5rem;
+        }
+
+        .modal-footer {
+            display: flex;
+            gap: 10px;
+        }
+
+        .done-btn {
+            background: #34a853;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: bold;
+            flex: 2;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .done-btn:hover:not(:disabled) {
+            background: #2d8e47;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(52, 168, 83, 0.3);
+        }
+
+        .done-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .cancel-btn {
+            background: #f1f3f4;
+            color: #3c4043;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: bold;
+            flex: 1;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .cancel-btn:hover {
+            background: #e8eaed;
+        }
+
+        .cancel-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+            opacity: 0.6;
+        }
+
+        @keyframes check-bounce {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+        }
+        .fa-check-circle { animation: check-bounce 2s infinite; }
+
+        @keyframes shake-icon {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-2px); }
+            75% { transform: translateX(2px); }
+        }
+        .cancel-btn:hover i {
+            animation: shake-icon 0.2s infinite;
+        }
+
+        @keyframes blink-red-button {
+            0%, 100% { background: linear-gradient(135deg, #e74a3b 0%, #c23b2f 100%); } /* Red */
+            50% { background: linear-gradient(135deg, #ff6b5e 0%, #e74a3b 100%); } /* Lighter Red */
+        }
+
+        .insert-coin-btn.busy {
+            animation: blink-red-button 1s infinite alternate;
+            cursor: not-allowed;
+        }
+    </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+    <div id="announcementBar" style="display: none; position: fixed; top: 0; left: 0; width: 100%; background: rgba(231, 74, 59, 0.9); color: white; padding: 10px 0; text-align: center; font-weight: bold; z-index: 1000; backdrop-filter: blur(5px); box-shadow: 0 2px 10px rgba(0,0,0,0.2); overflow: hidden; white-space: nowrap;">
+        <div id="announcementScroll" style="display: inline-block; padding-left: 100%;">
+            <i class="fas fa-bullhorn"></i> <span id="announcementText"></span>
+        </div>
+    </div>
+
+    <style>
+        @keyframes marquee {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-100%); }
+        }
+    </style>
+
+    <div class="container">
+    <div id="logoContainer" style="display: none; margin-bottom: 1.5rem; height: 2in;" class="banner-border">
+        <img id="landingLogo" src="" alt="Banner" style="width: 100%; height: 100%; object-fit: fill; max-width: 100%; margin: auto;">
+    </div>
+    <h1 id="wifiName">PisoWiFi</h1>
+        <div class="status" id="userStatus">
+            <i class="fas fa-circle status-icon" style="color: #ea4335; font-size: 0.8rem;"></i>
+            Status: Disconnected
+        </div>
+        <div id="timeRemaining" style="display: none; margin-bottom: 1rem; font-size: 1.2rem; font-weight: bold; color: #1a73e8;">
+            Time Left: <span id="timeLeftValue">0</span> mins
+        </div>
+        <div id="debugInfo" style="font-size: 0.7rem; color: #999; margin-bottom: 1rem; display: none;">
+            IP: <span id="debugIp"></span> | MAC: <span id="debugMac"></span>
+        </div>
+        <button id="connectInternetBtn" class="connect-internet-btn" style="display: none;" onclick="connectToInternet()">
+            <i class="fas fa-wifi" style="margin-right: 10px;"></i> CONNECT TO INTERNET
+        </button>
+
+        <button class="insert-coin-btn" id="insertCoinButton" onclick="showInsertCoinModal()">
+            <i class="fas fa-coins" style="margin-right: 10px;"></i> INSERT COIN
+        </button>
+        
+        <button class="voucher-btn" onclick="showVoucherModal()">
+            <i class="fas fa-ticket-alt" style="margin-right: 10px;"></i> USE VOUCHER
+        </button>
+
+        <button id="ewalletBtn" class="voucher-btn" style="background: linear-gradient(135deg, #00c2ff 0%, #0046ff 100%); display: none;" onclick="showEWalletModal()">
+            <i class="fas fa-wallet" style="margin-right: 10px;"></i> PAY VIA E-WALLET
+        </button>
+
+        <div class="info">
+            <p>Connect to the internet by inserting coins.</p>
+        </div>
+        <button class="voucher-btn" onclick="window.location.href='rates.html'" style="background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);">
+            <i class="fas fa-list-alt" style="margin-right: 10px;"></i> VIEW RATES
+        </button>
+    </div>
+
+    <div id="insertCoinModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-title">
+                <i class="fas fa-circle-notch fa-spin" style="color: #1a73e8; margin-right: 10px;"></i>
+                Insert Coin
+            </div>
+            <p class="modal-text">Please drop your coins now.</p>
+            <div id="promoHint" style="display:none; margin: 0.75rem 0 0; padding: 10px 12px; border-radius: 12px; background: rgba(26,115,232,0.08); border: 1px solid rgba(26,115,232,0.18); color:#1a73e8; font-weight: 700; font-size: 0.9rem;"></div>
+            <div id="countdownDisplay" class="countdown-circle" onclick="simulateCoinTap()" title="Tap to simulate ₱5 coin">60</div>
+            <div style="margin-bottom: 1rem; font-weight: bold; color: #1a73e8;">
+                Inserted: ₱ <span id="insertedAmount">0.00</span>
+            </div>
+            <div class="modal-footer">
+                <button id="doneBtn" class="done-btn" onclick="handleDone()" disabled>
+                    <i class="fas fa-check-circle"></i> DONE
+                </button>
+                <button id="cancelBtn" class="cancel-btn" onclick="hideInsertCoinModal()">
+                    <i class="fas fa-times-circle"></i> CANCEL
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="voucherModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-title">
+                <i class="fas fa-ticket-alt" style="color: #4e73df; margin-right: 10px;"></i>
+                Voucher Code
+            </div>
+            <p class="modal-text">Enter your 6-character voucher code below.</p>
+            <input type="text" id="voucherCodeInput" class="voucher-input" placeholder="XXXXXX" maxlength="6">
+            <div class="modal-footer">
+                <button id="submitVoucherBtn" class="done-btn" style="background: #4e73df;" onclick="handleVoucherSubmit()">
+                    <i class="fas fa-check-circle"></i> SUBMIT
+                </button>
+                <button class="cancel-btn" onclick="hideVoucherModal()">
+                    <i class="fas fa-times-circle"></i> CANCEL
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="ewalletModal" class="modal">
+        <div class="modal-content" style="max-width: 350px;">
+            <div class="modal-title">
+                <i class="fas fa-wallet" style="color: #00c2ff; margin-right: 10px;"></i>
+                E-Wallet Payment
+            </div>
+            <p class="modal-text">Select a promo to pay via Maya.</p>
+            <div id="ewalletRatesList" style="margin-bottom: 1.5rem; text-align: left; max-height: 200px; overflow-y: auto; padding: 10px; background: #f8f9fa; border-radius: 10px;">
+                <!-- Rates will be loaded here -->
+            </div>
+            <div class="modal-footer">
+                <button class="cancel-btn" onclick="hideEWalletModal()">
+                    <i class="fas fa-times-circle"></i> CANCEL
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <audio id="insertCoinAudio" src=""></audio>
+    <audio id="coinDropAudio" src=""></audio>
+    <audio id="salamatAudio" src=""></audio>
+    <audio id="countdownTickAudio" src=""></audio>
+    <script>
+        let countdownInterval;
+        let coinCheckInterval;
+        let countdownValue = 60;
+        let currentCount = 60;
+        let totalInserted = 0;
+        let audioCtx;
+        let selectedRate = null;
+        let countdownTickAudioEl;
+        let clientMacAddress = null; // Store client's MAC address
+        let socket; // Socket.IO client instance
+
+        // Function to get client MAC address and initialize socket
+        async function initializeClient() {
+            try {
+                const response = await fetch('/api/client-info');
+                const data = await response.json();
+                clientMacAddress = data.mac;
+                console.log('Client MAC Address:', clientMacAddress);
+
+                // Initialize Socket.IO after getting MAC address
+                if (clientMacAddress) {
+                    socket = io({ query: { mac: clientMacAddress } });
+
+                    socket.on('coinInsertionStatus', (status) => {
+                        const insertCoinBtn = document.getElementById('insertCoinButton');
+                        const insertCoinIcon = insertCoinBtn.querySelector('.fa-coins');
+                        
+                        if (status.active && status.by !== clientMacAddress) {
+                            insertCoinBtn.disabled = true;
+                            insertCoinBtn.classList.add('busy');
+                            insertCoinBtn.innerHTML = '<i class="fas fa-hourglass-half" style="margin-right: 10px;"></i> WAIT LANG PO MAY NAGHUHULOG NA IBANG USER';
+                        } else {
+                            insertCoinBtn.disabled = false;
+                            insertCoinBtn.classList.remove('busy');
+                            insertCoinBtn.innerHTML = '<i class="fas fa-coins" style="margin-right: 10px;"></i> INSERT COIN';
+                        }
+                    });
+
+                    socket.on('coinInsertionBusy', (data) => {
+                        // This alert is now redundant as the button itself changes
+                        // alert(`Someone (${data.by}) is already inserting coins. Please wait.`);
+                    });
+
+                    // Removed socket.on('playBackgroundMusic') event listener
+                }
+            } catch (e) {
+                console.error("Failed to get client info or initialize socket:", e);
+            }
+        }
+
+        initializeClient(); // Call on page load
+
+        function selectRateAndOpen(rate) {
+            selectedRate = rate;
+            showInsertCoinModal();
+            const promoHint = document.getElementById('promoHint');
+            if (promoHint) {
+                const unitDisplay = rate.duration > 1 ? (rate.unit.endsWith('s') ? rate.unit : rate.unit + 's') : rate.unit;
+                promoHint.style.display = 'block';
+                promoHint.innerHTML = '<i class="fas fa-tag"></i> Target Promo: <b>₱' + rate.amount + '</b> = <b>' + rate.duration + ' ' + unitDisplay + '</b>';
+            }
+        }
+
+        function initAudio() {
+            try {
+                if (!audioCtx) {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    console.log("AudioContext initialized");
+                }
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume().then(() => console.log("AudioContext resumed"));
+                }
+            } catch (e) {
+                console.error("AudioContext initialization failed:", e);
+            }
+        }
+
+        // Initialize audio on any click to satisfy browser policies
+        window.addEventListener('click', initAudio, { once: true });
+        window.addEventListener('touchstart', initAudio, { once: true }); // For mobile devices
+        window.addEventListener('mousedown', initAudio, { once: true }); // For desktop/mouse interactions
+
+        async function showInsertCoinModal() {
+            // Check if coin insertion is already active by another user
+            if (document.getElementById('insertCoinButton').disabled) {
+                // The button itself now indicates busy status, no need for an alert here
+                return;
+            }
+
+            initAudio(); // Ensure AudioContext is resumed for other sounds
+
+            const modal = document.getElementById('insertCoinModal');
+            const display = document.getElementById('countdownDisplay');
+            const audio = document.getElementById('insertCoinAudio');
+            const doneBtn = document.getElementById('doneBtn');
+            const cancelBtn = document.getElementById('cancelBtn');
+            const insertedAmountEl = document.getElementById('insertedAmount');
+            
+            modal.style.display = 'flex';
+            const promoHint = document.getElementById('promoHint');
+            if (promoHint && !selectedRate) { promoHint.style.display = 'none'; promoHint.innerHTML = ''; }
+            
+            // Initialize with current server amount to avoid playing sound for old coins
+            try {
+                const response = await fetch('/api/current-coins');
+                const data = await response.json();
+                totalInserted = data.amount || 0;
+            } catch (e) {
+                totalInserted = 0;
+            }
+
+            insertedAmountEl.innerText = totalInserted.toFixed(2);
+            doneBtn.disabled = totalInserted <= 0;
+            cancelBtn.disabled = totalInserted > 0;
+            
+            // Reset and start countdown
+            currentCount = countdownValue;
+            display.innerText = currentCount;
+            display.style.borderColor = '#f3f3f3';
+            display.style.color = '#34a853';
+
+            if (audio.src) {
+                audio.play().catch(e => console.error("Audio play failed:", e));
+            }
+
+            clearInterval(countdownInterval);
+            countdownInterval = setInterval(() => {
+                currentCount--;
+                display.innerText = currentCount;
+
+                // Play countdown tick sound
+                if (countdownTickAudioEl && countdownTickAudioEl.src) {
+                    countdownTickAudioEl.currentTime = 0;
+                    countdownTickAudioEl.play().catch(e => console.warn("Countdown tick audio play failed:", e));
+                }
+
+                // Visual feedback for low time
+                if (currentCount <= 10) {
+                    display.style.color = '#ea4335';
+                    display.style.borderTopColor = '#ea4335';
+                }
+
+                if (currentCount <= 0) {
+                    hideInsertCoinModal();
+                }
+            }, 1000);
+
+            // Emit startCoinInsertion event
+            if (socket && clientMacAddress) {
+                socket.emit('startCoinInsertion', { mac: clientMacAddress });
+            }
+
+            // Start polling for coins
+            startCoinPolling();
+        }
+
+        function startCoinPolling() {
+            clearInterval(coinCheckInterval);
+            coinCheckInterval = setInterval(async () => {
+                try {
+                    const response = await fetch('/api/current-coins');
+                    const data = await response.json();
+                    
+                    if (data.amount > totalInserted) {
+                        totalInserted = data.amount;
+                        document.getElementById('insertedAmount').innerText = totalInserted.toFixed(2);
+                        document.getElementById('doneBtn').disabled = false;
+                        document.getElementById('cancelBtn').disabled = true;
+                        
+                        // Reset countdown on coin insertion
+                        currentCount = countdownValue;
+                        const display = document.getElementById('countdownDisplay');
+                        display.innerText = currentCount;
+                        display.style.color = '#34a853';
+                        display.style.borderTopColor = '#34a853';
+                        
+                        playCoinClink();
+                    } else if (data.amount < totalInserted) {
+                        // Handle case where coins were reset elsewhere
+                        totalInserted = data.amount;
+                        document.getElementById('insertedAmount').innerText = totalInserted.toFixed(2);
+                    }
+                } catch (e) {
+                    console.error("Coin polling error:", e);
+                }
+            }, 500); // Increased polling frequency for better responsiveness
+        }
+
+        async function handleDone() {
+            const salamatAudio = document.getElementById('salamatAudio');
+            salamatAudio.play().catch(e => console.error("Salamat audio play failed:", e));
+            
+            const doneBtn = document.getElementById('doneBtn');
+            doneBtn.disabled = true;
+            doneBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> ACTIVATING...';
+
+            try {
+                const response = await fetch('/api/use-time', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    setTimeout(() => {
+                        hideInsertCoinModal();
+                        alert(`Success! ${data.minutesAdded} minutes added.`);
+                        window.location.reload(); // Force refresh the browser
+                    }, 2000);
+                } else {
+                    alert(data.error || 'Failed to activate time.');
+                    doneBtn.disabled = false;
+                    doneBtn.innerHTML = '<i class="fas fa-check-circle"></i> DONE';
+                }
+            } catch (e) {
+                console.error("Use time error:", e);
+                alert('Connection error.');
+                doneBtn.disabled = false;
+                doneBtn.innerHTML = '<i class="fas fa-check-circle"></i> DONE';
+            } finally {
+                // Emit endCoinInsertion event
+                if (socket && clientMacAddress) {
+                    socket.emit('endCoinInsertion', { mac: clientMacAddress });
+                }
+            }
+        }
+
+        function hideInsertCoinModal() {
+            const modal = document.getElementById('insertCoinModal');
+            modal.style.display = 'none';
+            clearInterval(countdownInterval);
+            clearInterval(coinCheckInterval);
+            
+            const audio = document.getElementById('insertCoinAudio');
+            audio.pause();
+            audio.currentTime = 0;
+            selectedRate = null;
+            const promoHint = document.getElementById('promoHint');
+            if (promoHint) { promoHint.style.display = 'none'; promoHint.innerHTML = ''; }
+
+            // Emit endCoinInsertion event if it was active
+            if (socket && clientMacAddress) {
+                socket.emit('endCoinInsertion', { mac: clientMacAddress });
+            }
+        }
+
+        function showVoucherModal() {
+            document.getElementById('voucherModal').style.display = 'flex';
+            document.getElementById('voucherCodeInput').value = '';
+            document.getElementById('voucherCodeInput').focus();
+        }
+
+        function hideVoucherModal() {
+            document.getElementById('voucherModal').style.display = 'none';
+        }
+
+        function showEWalletModal() {
+            const modal = document.getElementById('ewalletModal');
+            const ratesList = document.getElementById('ewalletRatesList');
+            modal.style.display = 'flex';
+            const promoHint = document.getElementById('promoHint');
+            if (promoHint && !selectedRate) { promoHint.style.display = 'none'; promoHint.innerHTML = ''; }
+            
+            // Load rates into the modal
+            fetch('/api/config')
+                .then(res => res.json())
+                .then(config => {
+                    ratesList.innerHTML = '';
+                    if (!config.rates || config.rates.length === 0) {
+                        ratesList.innerHTML = '<div style="text-align: center; color: #888;">No rates available</div>';
+                        return;
+                    }
+
+                    config.rates.forEach(rate => {
+                        const btn = document.createElement('button');
+                        btn.className = 'insert-coin-btn';
+                        btn.style.fontSize = '1rem';
+                        btn.style.padding = '10px';
+                        btn.style.marginBottom = '8px';
+                        btn.style.background = 'linear-gradient(135deg, #4e73df 0%, #224abe 100%)';
+                        
+                        const unitDisplay = rate.duration > 1 ? (rate.unit.endsWith('s') ? rate.unit : rate.unit + 's') : rate.unit;
+                        btn.innerHTML = `<i class="fas fa-shopping-cart"></i> ₱${rate.amount} - ${rate.duration} ${unitDisplay}`;
+                        
+                        btn.onclick = () => initiateMayaCheckout(rate);
+                        ratesList.appendChild(btn);
+                    });
+                });
+        }
+
+        function hideEWalletModal() {
+            document.getElementById('ewalletModal').style.display = 'none';
+        }
+
+        async function initiateMayaCheckout(rate) {
+            const ewalletModal = document.getElementById('ewalletModal');
+            const ratesList = document.getElementById('ewalletRatesList');
+            const originalContent = ratesList.innerHTML;
+            
+            ratesList.innerHTML = '<div style="text-align: center; padding: 20px;"><i class="fas fa-spinner fa-spin fa-2x" style="color: #4e73df;"></i><p>Redirecting to Maya...</p></div>';
+
+            try {
+                // Get client info first to ensure we have the MAC
+                const infoRes = await fetch('/api/client-info');
+                const info = await infoRes.json();
+                
+                if (!info.mac || info.mac === "00:00:00:00:00:00") {
+                    alert("Could not detect your device MAC address. Please ensure you are connected to the WiFi.");
+                    ratesList.innerHTML = originalContent;
+                    return;
+                }
+
+                const response = await fetch('/api/maya/checkout', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        amount: rate.amount,
+                        duration: rate.duration,
+                        unit: rate.unit,
+                        mac: info.mac
+                    })
+                });
+
+                const data = await response.json();
+                if (data.checkoutUrl) {
+                    window.location.href = data.checkoutUrl;
+                } else {
+                    alert(data.error || "Failed to initiate checkout.");
+                    ratesList.innerHTML = originalContent;
+                }
+            } catch (e) {
+                console.error("Checkout error:", e);
+                alert('Connection error.');
+            }
+        }
+
+        async function handleVoucherSubmit() {
+            const codeInput = document.getElementById('voucherCodeInput');
+            const code = codeInput.value.trim().toUpperCase();
+            const submitBtn = document.getElementById('submitVoucherBtn');
+
+            if (!code) {
+                alert('Please enter a voucher code.');
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> VERIFYING...';
+
+            try {
+                const response = await fetch('/api/use-voucher', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code })
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    const salamatAudio = document.getElementById('salamatAudio');
+                    salamatAudio.play().catch(e => console.error("Salamat audio play failed:", e));
+                    
+                    setTimeout(() => {
+                        hideVoucherModal();
+                        alert(`Success! ${data.minutesAdded} minutes added.`);
+                        window.location.reload(); // Force refresh the browser
+                    }, 1000);
+                } else {
+                    alert(data.error || 'Invalid voucher code.');
+                }
+            } catch (e) {
+                console.error("Voucher error:", e);
+                alert('Connection error.');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-check-circle"></i> SUBMIT';
+            }
+        }
+
+        // Function to play the coin clink sound
+        function playCoinClink() {
+            const coinAudio = document.getElementById('coinDropAudio');
+            if (coinAudio) {
+                coinAudio.currentTime = 0;
+                coinAudio.play().catch(e => {
+                    console.warn("Audio file playback failed, falling back to synthesis:", e);
+                    playSynthesizedCoinClink();
+                });
+            } else {
+                playSynthesizedCoinClink();
+            }
+        }
+
+        function playSynthesizedCoinClink() {
+            initAudio();
+            if (!audioCtx) return;
+
+            try {
+                const t = audioCtx.currentTime;
+                const osc1 = audioCtx.createOscillator();
+                const gain1 = audioCtx.createGain();
+                osc1.type = 'sine';
+                osc1.frequency.setValueAtTime(3500, t);
+                osc1.frequency.exponentialRampToValueAtTime(2500, t + 0.05);
+                gain1.gain.setValueAtTime(0.4, t);
+                gain1.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
+                osc1.connect(gain1);
+                gain1.connect(audioCtx.destination);
+                osc1.start(t);
+                osc1.stop(t + 0.2);
+            } catch (e) {
+                console.error("Synthesis failed:", e);
+            }
+        }
+
+        // Function to simulate coin insertion (for testing/mobile)
+        async function simulateCoinTap() {
+            const amount = 5;
+            try {
+                await fetch('/api/insert-coin', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ amount })
+                });
+                console.log(`Simulated tap insertion: ₱${amount}`);
+                
+                // Play synthesized coin sound
+                playCoinClink();
+            } catch (err) {
+                console.error('Simulation error:', err);
+            }
+        }
+
+        // Coin Simulation using Arrow Keys
+        window.addEventListener('keydown', async (e) => {
+            const modal = document.getElementById('insertCoinModal');
+            if (modal.style.display !== 'flex') return;
+
+            let amount = 0;
+            switch(e.key) {
+                case 'ArrowUp': amount = 1; break;
+                case 'ArrowDown': amount = 5; break;
+                case 'ArrowLeft': amount = 10; break;
+                case 'ArrowRight': amount = 20; break;
+                default: return;
+            }
+
+            if (amount > 0) {
+                try {
+                await fetch('/api/insert-coin', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ amount })
+                });
+                console.log(`Simulated insertion: ₱${amount}`);
+                
+                // Play synthesized coin sound
+                playCoinClink();
+            } catch (err) {
+                console.error('Simulation error:', err);
+            }
+        }
+        });
+
+        async function checkUserStatus() {
+            try {
+                const response = await fetch('/api/my-status');
+                const data = await response.json();
+                
+                const statusEl = document.getElementById('userStatus');
+                const timeRemainingEl = document.getElementById('timeRemaining');
+                const timeLeftValueEl = document.getElementById('timeLeftValue');
+                const debugInfo = document.getElementById('debugInfo');
+
+                // Update debug info
+                if (data.ip) {
+                    document.getElementById('debugIp').innerText = data.ip;
+                    document.getElementById('debugMac').innerText = data.mac || 'Not Detected';
+                    debugInfo.style.display = 'block';
+                }
+
+                if (data.online) {
+                    statusEl.innerHTML = '<i class="fas fa-circle status-icon" style="color: #34a853; font-size: 0.8rem;"></i> Status: Connected';
+                    statusEl.style.color = '#1e7e34';
+                    statusEl.style.backgroundColor = '#d4edda';
+                    statusEl.style.borderColor = '#c3e6cb';
+                    
+                    timeRemainingEl.style.display = 'block';
+                    timeLeftValueEl.innerText = data.timeLeft;
+                    document.getElementById('connectInternetBtn').style.display = 'block'; // Show button when connected
+                } else {
+                    statusEl.innerHTML = '<i class="fas fa-circle status-icon" style="color: #ea4335; font-size: 0.8rem;"></i> Status: Disconnected';
+                    statusEl.style.color = '#721c24';
+                    statusEl.style.backgroundColor = '#f8d7da';
+                    statusEl.style.borderColor = '#f5c6cb';
+                    timeRemainingEl.style.display = 'none';
+                    document.getElementById('connectInternetBtn').style.display = 'none'; // Hide button when disconnected
+                }
+            } catch (e) {
+                console.error("Status check error:", e);
+            }
+        }
+
+        async function connectToInternet() {
+            try {
+                const response = await fetch('/api/connect-internet', { method: 'POST' });
+                const data = await response.json();
+                if (data.success) {
+                    window.location.href = 'https://www.google.com'; // Redirect to Google
+                } else {
+                    alert(data.error || 'Failed to connect to the internet.');
+                }
+            } catch (e) {
+                console.error("Connect internet error:", e);
+                alert('Connection error.');
+            }
+        }
+
+        // Check status every 10 seconds
+        setInterval(checkUserStatus, 10000);
+        checkUserStatus();
+
+        async function fetchConfig() {
+            try {
+                const response = await fetch('/api/config');
+                const config = await response.json();
+                
+                const wifiNameEl = document.getElementById('wifiName');
+                wifiNameEl.innerText = config.wifi_name;
+                
+                // Apply Animation
+                const animation = config.shop_animation || 'none';
+                wifiNameEl.className = '';
+                if (animation !== 'none') {
+                    wifiNameEl.classList.add('anim-' + animation);
+                }
+
+                // Apply WiFi Name Color (only if animation is not rainbow)
+                if (animation !== 'rainbow') {
+                    wifiNameEl.style.color = config.wifi_name_color || '#1a73e8';
+                } else {
+                    wifiNameEl.style.color = '';
+                }
+
+                // Apply Wallpaper
+
+                // Apply Logo and Animation
+                // const logoContainer = document.getElementById('logoContainer');
+                // const landingLogo = document.getElementById('landingLogo');
+                // if (config.landing_logo) {
+                //     landingLogo.src = config.landing_logo;
+                //     logoContainer.style.display = 'block';
+                    
+                //     // Apply Border Animation
+                //     logoContainer.className = 'banner-border';
+                //     if (config.banner_animation && config.banner_animation !== 'none') {
+                //         logoContainer.classList.add('anim-' + config.banner_animation);
+                //     }
+                // } else {
+                //     logoContainer.style.display = 'none';
+                // }
+
+                // Apply Logo and Animation
+                const logoContainer = document.getElementById('logoContainer');
+                const landingLogo = document.getElementById('landingLogo');
+                if (config.landing_logo) {
+                    landingLogo.src = config.landing_logo;
+                    logoContainer.style.display = 'block';
+                    
+                    // Apply Border Animation
+                    // The previous error was due to a missing closing brace for the @keyframes marquee rule.
+                    // This has been fixed in the content below.
+                    logoContainer.className = 'banner-border';
+                    if (config.banner_animation && config.banner_animation !== 'none') {
+                        logoContainer.classList.add('anim-' + config.banner_animation);
+                    }
+                } else {
+                    logoContainer.style.display = 'none';
+                }
+
+                // Apply E-Wallet Button Visibility
+                const ewalletBtn = document.getElementById('ewalletBtn');
+                if (config.ewallet_enabled === 'true') {
+                    ewalletBtn.style.display = 'block';
+                } else {
+                    ewalletBtn.style.display = 'none';
+                }
+
+                // Apply Audio
+                const audioEl = document.getElementById('insertCoinAudio');
+                if (config.insert_coin_audio) {
+                    audioEl.src = config.insert_coin_audio;
+                }
+
+                const coinAudioEl = document.getElementById('coinDropAudio');
+                if (config.coin_drop_audio) {
+                    coinAudioEl.src = config.coin_drop_audio;
+                } else {
+                    coinAudioEl.src = '/media/coins.wav';
+                }
+
+                const salamatAudioEl = document.getElementById('salamatAudio');
+                if (config.salamat_audio) {
+                    salamatAudioEl.src = config.salamat_audio;
+                } else {
+                    salamatAudioEl.src = '/media/Salamat .mp3';
+                }
+
+                // Apply Countdown Tick Audio
+                countdownTickAudioEl = document.getElementById('countdownTickAudio');
+                if (config.countdown_tick_audio) {
+                    countdownTickAudioEl.src = config.countdown_tick_audio;
+                } else {
+                    countdownTickAudioEl.src = ''; // No default, so it remains empty if not set
+                }
+
+                // Removed Background Music Audio logic
+
+                // Apply Countdown Setting
+                if (config.insert_coin_countdown) {
+                    countdownValue = parseInt(config.insert_coin_countdown);
+                    document.getElementById('countdownDisplay').innerText = countdownValue;
+                }
+
+                // Apply Announcement
+                const announcementBar = document.getElementById('announcementBar');
+                const announcementText = document.getElementById('announcementText');
+                const announcementScroll = document.getElementById('announcementScroll');
+                
+                if (config.announcement && config.announcement.trim() !== '') {
+                    announcementText.innerText = config.announcement;
+                    announcementBar.style.display = 'block';
+                    document.body.style.paddingTop = '50px'; // Make room for the bar
+                    
+                    // Apply marquee animation
+                    const duration = Math.max(10, config.announcement.length * 0.2); // Dynamic speed based on length
+                    announcementScroll.style.animation = `marquee ${duration}s linear infinite`;
+                } else {
+                    announcementBar.style.display = 'none';
+                    document.body.style.paddingTop = '0';
+                    announcementScroll.style.animation = 'none';
+                }
+
+            } catch (error) {
+                console.error('Error fetching config:', error);
+                document.getElementById('ratesList').innerHTML = '<div style="text-align: center; color: red;">Error loading rates</div>';
+            }
+        }
+
+        fetchConfig();
+    </script>
+</body>
+</html>
