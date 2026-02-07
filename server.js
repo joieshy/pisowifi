@@ -186,26 +186,34 @@ function applyGroupSettings(type, vlanId) {
     }
 }
 
-function applyBandwidthLimits(ip, downloadLimitMbps, uploadLimitMbps, tcClassId, tcMark) {
+async function applyBandwidthLimits(ip, downloadLimitMbps, uploadLimitMbps, tcClassId, tcMark) {
     if (os.platform() !== 'linux') {
         console.log(`[Simulated] Applying bandwidth limits for IP: ${ip}, DL: ${downloadLimitMbps}Mbps, UL: ${uploadLimitMbps}Mbps`);
         return;
     }
 
     try {
+        const settings = await new Promise((resolve, reject) => {
+            db.get(`SELECT value FROM settings WHERE key = 'lan_interface_name'`, [], (err, row) => {
+                if (err) return reject(err);
+                resolve(row ? row.value : 'eth1');
+            });
+        });
+        const lanInterface = settings || 'eth1';
+
         // Convert Mbps to Mbits for tc
         const dlRate = downloadLimitMbps > 0 ? `${downloadLimitMbps}mbit` : '1000mbit';
         const ulRate = uploadLimitMbps > 0 ? `${uploadLimitMbps}mbit` : '1000mbit';
 
         // Ensure the parent class exists (it should from initTrafficControl)
-        execSync(`sudo tc class add dev eth1 parent 1: classid 1:${tcClassId} htb rate ${ulRate} ceil ${ulRate} || true`);
+        execSync(`sudo tc class add dev ${lanInterface} parent 1: classid 1:${tcClassId} htb rate ${ulRate} ceil ${ulRate} || true`);
         
         // Add a filter to mark packets from this IP
         execSync(`sudo iptables -t mangle -A POSTROUTING -s ${ip} -j MARK --set-mark ${tcMark}`);
         execSync(`sudo iptables -t mangle -A PREROUTING -d ${ip} -j MARK --set-mark ${tcMark}`);
 
         // Add filter to direct marked packets to the specific class for outbound (upload)
-        execSync(`sudo tc filter add dev eth1 protocol ip parent 1: prio 1 handle ${tcMark} fw classid 1:${tcClassId}`);
+        execSync(`sudo tc filter add dev ${lanInterface} protocol ip parent 1: prio 1 handle ${tcMark} fw classid 1:${tcClassId}`);
 
         // For download limits, we need an ingress qdisc
         // Create an IFB device for ingress shaping if it doesn't exist
@@ -215,8 +223,8 @@ function applyBandwidthLimits(ip, downloadLimitMbps, uploadLimitMbps, tcClassId,
             execSync('sudo tc qdisc add dev ifb0 root handle 1: htb default 10 || true');
             execSync('sudo tc class add dev ifb0 parent 1: classid 1:10 htb rate 1000mbit || true');
             execSync('sudo tc filter add dev ifb0 protocol ip parent 1: prio 1 handle 1: fw classid 1:1 || true');
-            // Redirect ingress traffic from eth1 to ifb0
-            execSync('sudo tc filter add dev eth1 ingress protocol ip u32 match u32 0 0 flowid 1:1 action mirred egress redirect dev ifb0');
+            // Redirect ingress traffic from LAN interface to ifb0
+            execSync(`sudo tc filter add dev ${lanInterface} ingress protocol ip u32 match u32 0 0 flowid 1:1 action mirred egress redirect dev ifb0`);
         } catch (e) {
             console.warn('IFB device setup failed, ingress shaping may not work:', e.message);
         }
@@ -238,6 +246,14 @@ async function blockMac(mac) {
         return;
     }
     try {
+        const settings = await new Promise((resolve, reject) => {
+            db.get(`SELECT value FROM settings WHERE key = 'lan_interface_name'`, [], (err, row) => {
+                if (err) return reject(err);
+                resolve(row ? row.value : 'eth1');
+            });
+        });
+        const lanInterface = settings || 'eth1';
+
         // Remove from NAT PREROUTING
         execSync(`sudo iptables -t nat -D PREROUTING -m mac --mac-source ${mac} -j ACCEPT`);
         // Remove from FORWARD chain
@@ -250,8 +266,8 @@ async function blockMac(mac) {
                 console.error('Error fetching user for TC removal:', err.message);
                 return;
             }
-            if (user && user.tc_class_id > 0 && user.tc_mark > 0) {
-                removeBandwidthLimits(user.ip_address, user.tc_class_id, user.tc_mark);
+            if (user && user.ip_address && user.tc_class_id > 0 && user.tc_mark > 0) {
+                removeBandwidthLimits(user.ip_address, user.tc_class_id, user.tc_mark, lanInterface);
                 db.run(`UPDATE users SET tc_class_id = 0, tc_mark = 0 WHERE mac_address = ?`, [mac]);
             }
         });
@@ -260,10 +276,43 @@ async function blockMac(mac) {
     }
 }
 
-function initNetwork() {
+async function removeBandwidthLimits(ip, tcClassId, tcMark, lanInterface) {
+    if (os.platform() !== 'linux') {
+        console.log(`[Simulated] Removing bandwidth limits for IP: ${ip}, Class: ${tcClassId}, Mark: ${tcMark}`);
+        return;
+    }
+    try {
+        // Delete the class for this user
+        execSync(`sudo tc class del dev ${lanInterface} parent 1: classid 1:${tcClassId} || true`);
+        // Delete the filter for this user
+        execSync(`sudo tc filter del dev ${lanInterface} protocol ip parent 1: prio 1 handle ${tcMark} fw || true`);
+        // Remove iptables rule that marks traffic from this IP
+        execSync(`sudo iptables -t mangle -D POSTROUTING -s ${ip} -j MARK --set-mark ${tcMark} || true`);
+        execSync(`sudo iptables -t mangle -D PREROUTING -d ${ip} -j MARK --set-mark ${tcMark} || true`);
+        console.log(`Bandwidth limits removed for IP ${ip} (Class: 1:${tcClassId}, Mark: ${tcMark})`);
+    } catch (e) {
+        console.error(`Failed to remove bandwidth limits for IP ${ip}:`, e.message);
+    }
+}
+
+async function initNetwork() {
     if (os.platform() !== 'linux') return;
     try {
         console.log('Initializing Network for Orange Pi...');
+
+        const settings = await new Promise((resolve, reject) => {
+            db.all(`SELECT key, value FROM settings WHERE key IN ('wan_interface_name', 'lan_interface_name', 'lan_ip_address')`, [], (err, rows) => {
+                if (err) return reject(err);
+                const s = {};
+                rows.forEach(row => s[row.key] = row.value);
+                resolve(s);
+            });
+        });
+
+        const wanInterface = settings.wan_interface_name || 'eth0';
+        const lanInterface = settings.lan_interface_name || 'eth1';
+        const lanIpAddress = settings.lan_ip_address ? settings.lan_ip_address.split('/')[0] : '10.0.0.1';
+
         // Enable IP Forwarding
         execSync('sudo sysctl -w net.ipv4.ip_forward=1');
         
@@ -271,12 +320,11 @@ function initNetwork() {
         execSync('sudo iptables -F');
         execSync('sudo iptables -t nat -F');
         
-        // Setup NAT (MASQUERADE) - assuming eth0 is WAN
-        execSync('sudo iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE');
+        // Setup NAT (MASQUERADE)
+        execSync(`sudo iptables -t nat -A POSTROUTING -o ${wanInterface} -j MASQUERADE`);
         
-        // Redirect all traffic from LAN (assuming eth1) to local portal if not authenticated
-        // Note: This is a simplified version. A full captive portal needs more specific rules.
-        execSync('sudo iptables -t nat -A PREROUTING -i eth1 -p tcp --dport 80 -j DNAT --to-destination 10.0.0.1:3000');
+        // Redirect all traffic from LAN to local portal if not authenticated
+        execSync(`sudo iptables -t nat -A PREROUTING -i ${lanInterface} -p tcp --dport 80 -j DNAT --to-destination ${lanIpAddress}:${PORT}`);
         
         // Allow DNS traffic (UDP 53) so users can resolve the portal domain
         execSync('sudo iptables -I FORWARD -p udp --dport 53 -j ACCEPT');
@@ -290,30 +338,37 @@ function initNetwork() {
 
 let nextTcClassId = 1; // To assign unique class IDs for traffic control
 
-function initTrafficControl() {
+async function initTrafficControl() {
     if (os.platform() !== 'linux') {
         console.log('[Simulated] Traffic Control: Skipping init on non-Linux platform.');
         return;
     }
     try {
         console.log('Initializing Traffic Control (TC)...');
-        // Clear existing qdisc, classes, and filters on eth1 (LAN interface)
-        execSync('sudo tc qdisc del dev eth1 root || true');
-        execSync('sudo tc qdisc del dev eth1 ingress || true');
 
-        // Add a Hierarchical Token Bucket (HTB) qdisc to the root of eth1
-        // This is the main queueing discipline for outbound traffic
-        execSync('sudo tc qdisc add dev eth1 root handle 1: htb default 10');
+        const settings = await new Promise((resolve, reject) => {
+            db.get(`SELECT value FROM settings WHERE key = 'lan_interface_name'`, [], (err, row) => {
+                if (err) return reject(err);
+                resolve(row ? row.value : 'eth1');
+            });
+        });
+        const lanInterface = settings || 'eth1';
+
+        // Clear existing qdisc, classes, and filters on LAN interface
+        execSync(`sudo tc qdisc del dev ${lanInterface} root || true`);
+        execSync(`sudo tc qdisc del dev ${lanInterface} ingress || true`);
+
+        // Add a Hierarchical Token Bucket (HTB) qdisc to the root of LAN interface
+        execSync(`sudo tc qdisc add dev ${lanInterface} root handle 1: htb default 10`);
         
         // Add an ingress qdisc for inbound traffic shaping
-        execSync('sudo tc qdisc add dev eth1 ingress');
+        execSync(`sudo tc qdisc add dev ${lanInterface} ingress`);
 
         // Create a default class (1:10) for unclassified traffic
-        execSync('sudo tc class add dev eth1 parent 1: classid 1:10 htb rate 1000mbit'); // Default unlimited
+        execSync(`sudo tc class add dev ${lanInterface} parent 1: classid 1:10 htb rate 1000mbit`); // Default unlimited
 
         // Add a filter to classify packets based on iptables mark
-        // This filter will direct packets with a specific mark to a specific TC class
-        execSync('sudo tc filter add dev eth1 protocol ip parent 1: prio 1 handle 1: fw classid 1:1'); // Default class for marked traffic
+        execSync(`sudo tc filter add dev ${lanInterface} protocol ip parent 1: prio 1 handle 1: fw classid 1:1`); // Default class for marked traffic
 
         console.log('Traffic Control (TC) initialization complete.');
     } catch (e) {
@@ -530,10 +585,33 @@ db.serialize(() => {
         ['salamat_audio', '/media/Salamat .mp3'],
         ['countdown_tick_audio', ''],
         ['group_type', 'direct'],
-        ['vlan_id', '']
+        ['vlan_id', ''],
+        ['wan_interface_name', 'enp1s0'],
+        ['wan_config_type', 'dhcp'],
+        ['wan_ip_address', ''],
+        ['wan_gateway', ''],
+        ['wan_dns_servers', '8.8.8.8,8.8.4.4'],
+        ['lan_interface_name', 'enp2s0'],
+        ['lan_ip_address', '10.0.0.1/24'],
+        ['lan_dns_servers', '8.8.8.8,8.8.4.4']
     ];
 
     defaultSettings.forEach(setting => {
+        db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)`, setting);
+    });
+
+    // Add network interface settings to the database if they don't exist
+    const networkInterfaceSettings = [
+        ['wan_interface_name', 'enp1s0'],
+        ['wan_config_type', 'dhcp'],
+        ['wan_ip_address', ''],
+        ['wan_gateway', ''],
+        ['wan_dns_servers', '8.8.8.8,8.8.4.4'],
+        ['lan_interface_name', 'enp2s0'],
+        ['lan_ip_address', '10.0.0.1/24'],
+        ['lan_dns_servers', '8.8.8.8,8.8.4.4']
+    ];
+    networkInterfaceSettings.forEach(setting => {
         db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)`, setting);
     });
 
@@ -1434,6 +1512,110 @@ app.delete('/api/network/port-triggers/:id', isAuthenticated, (req, res) => {
     });
 });
 
+// Helper function to generate Netplan YAML content
+function generateNetplanConfig(wanInterface, wanConfigType, wanIp, wanGateway, wanDns, lanInterface, lanIp, lanDns) {
+    let config = `network:\n  version: 2\n  renderer: networkd\n  ethernets:\n`;
+
+    // WAN Interface
+    config += `    ${wanInterface}:\n`;
+    if (wanConfigType === 'dhcp') {
+        config += `      dhcp4: true\n`;
+    } else { // Static WAN (currently commented out in frontend, but good to have logic)
+        config += `      dhcp4: false\n`;
+        config += `      addresses: [${wanIp}]\n`;
+        if (wanGateway) {
+            config += `      gateway4: ${wanGateway}\n`;
+        }
+        if (wanDns && wanDns.length > 0) {
+            config += `      nameservers:\n        addresses: [${wanDns.join(', ')}]\n`;
+        }
+    }
+    config += `      optional: true\n`; // To prevent boot failure if interface is not ready
+
+    // LAN Interface
+    config += `    ${lanInterface}:\n`;
+    config += `      dhcp4: false\n`;
+    config += `      addresses: [${lanIp}]\n`;
+    if (lanDns && lanDns.length > 0) {
+        config += `      nameservers:\n        addresses: [${lanDns.join(', ')}]\n`;
+    }
+
+    return config;
+}
+
+// API to get network interface settings
+app.get('/api/network/interfaces', isAuthenticated, (req, res) => {
+    db.all(`SELECT key, value FROM settings WHERE key LIKE 'wan_%' OR key LIKE 'lan_%'`, [], (err, rows) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        const settings = {};
+        rows.forEach(row => {
+            if (row.key.includes('dns_servers') && row.value) {
+                settings[row.key] = row.value.split(',').map(s => s.trim()).filter(s => s);
+            } else {
+                settings[row.key] = row.value;
+            }
+        });
+        res.json(settings);
+    });
+});
+
+// API to apply network interface settings (Netplan)
+app.post('/api/network/interfaces', isAuthenticated, async (req, res) => {
+    const {
+        wan_interface_name, wan_config_type, wan_ip_address, wan_gateway, wan_dns_servers,
+        lan_interface_name, lan_ip_address, lan_dns_servers
+    } = req.body;
+
+    if (!wan_interface_name || !lan_interface_name || !lan_ip_address) {
+        return res.status(400).json({ error: 'Missing required network interface parameters.' });
+    }
+
+    // Save settings to database
+    db.serialize(() => {
+        const stmt = db.prepare(`UPDATE settings SET value = ? WHERE key = ?`);
+        stmt.run(wan_interface_name, 'wan_interface_name');
+        stmt.run(wan_config_type, 'wan_config_type');
+        stmt.run(wan_ip_address, 'wan_ip_address');
+        stmt.run(wan_gateway, 'wan_gateway');
+        stmt.run(wan_dns_servers ? wan_dns_servers.join(',') : '', 'wan_dns_servers');
+        stmt.run(lan_interface_name, 'lan_interface_name');
+        stmt.run(lan_ip_address, 'lan_ip_address');
+        stmt.run(lan_dns_servers ? lan_dns_servers.join(',') : '', 'lan_dns_servers');
+        stmt.finalize();
+    });
+
+    if (os.platform() !== 'linux') {
+        console.log('[Simulated] Netplan configuration skipped on non-Linux platform.');
+        return res.json({ success: true, message: 'Network configuration saved (simulated).' });
+    }
+
+    try {
+        const netplanConfig = generateNetplanConfig(
+            wan_interface_name, wan_config_type, wan_ip_address, wan_gateway, wan_dns_servers,
+            lan_interface_name, lan_ip_address, lan_dns_servers
+        );
+        
+        const netplanFilePath = `/etc/netplan/01-pisowifi-config.yaml`; // Use a custom file name
+
+        // Write Netplan config to a temporary file first, then move it
+        // This avoids issues if the write fails midway
+        const tempNetplanPath = `/tmp/01-pisowifi-config.yaml.tmp`;
+        fs.writeFileSync(tempNetplanPath, netplanConfig);
+        execSync(`sudo mv ${tempNetplanPath} ${netplanFilePath}`);
+        execSync(`sudo chmod 600 ${netplanFilePath}`); // Set appropriate permissions
+
+        console.log(`Netplan configuration written to ${netplanFilePath}`);
+        console.log('Applying Netplan configuration...');
+        execSync('sudo netplan apply');
+        console.log('Netplan configuration applied successfully.');
+
+        res.json({ success: true, message: 'Network configuration applied successfully!' });
+    } catch (e) {
+        console.error('Failed to apply Netplan configuration:', e.message);
+        res.status(500).json({ error: `Failed to apply network configuration: ${e.message}` });
+    }
+});
+
 // License: Generate (Super Admin)
 app.post('/api/license/generate', isAuthenticated, (req, res) => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -1741,6 +1923,8 @@ io.on('connection', (socket) => {
     });
 });
 
-server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+const HOST = process.env.HOST || '0.0.0.0'; // Default to 0.0.0.0 for local development, use 10.0.0.1 for Linux server
+
+server.listen(PORT, HOST, () => {
+    console.log(`Server running on http://${HOST}:${PORT}`);
 });

@@ -1011,7 +1011,63 @@ n        <th>Date/Time</th>
                     </form>
                 </div>
 
-                <!-- WiFi Channel Selection -->
+                <!-- Network Interfaces Configuration -->
+                <div class="card">
+                    <h3 style="margin-top: 0; color: var(--warning-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-ethernet"></i> Network Interfaces
+                    </h3>
+                    <form id="networkInterfacesForm">
+                        <p style="font-size: 0.8rem; color: #858796; margin-bottom: 15px;">Configure WAN and LAN interfaces for captive portal.</p>
+                        
+                        <h4>WAN Interface (Internet)</h4>
+                        <div class="form-group">
+                            <label>WAN Interface Name (e.g., enp1s0)</label>
+                            <input type="text" id="wan_interface_name" name="wan_interface_name" placeholder="e.g., enp1s0" required>
+                        </div>
+                        <div class="form-group">
+                            <label>WAN Configuration</label>
+                            <select id="wan_config_type" name="wan_config_type">
+                                <option value="dhcp">DHCP</option>
+                                <!-- <option value="static">Static IP (Advanced)</option> -->
+                            </select>
+                        </div>
+                        <!-- Static WAN fields (hidden by default) -->
+                        <div id="staticWanFields" style="display: none;">
+                            <div class="form-group">
+                                <label>WAN IP Address</label>
+                                <input type="text" id="wan_ip_address" name="wan_ip_address" placeholder="e.g., 192.168.1.10/24">
+                            </div>
+                            <div class="form-group">
+                                <label>WAN Gateway</label>
+                                <input type="text" id="wan_gateway" name="wan_gateway" placeholder="e.g., 192.168.1.1">
+                            </div>
+                            <div class="form-group">
+                                <label>WAN DNS Servers (comma-separated)</label>
+                                <input type="text" id="wan_dns_servers" name="wan_dns_servers" placeholder="e.g., 8.8.8.8,8.8.4.4">
+                            </div>
+                        </div>
+
+                        <h4 style="margin-top: 25px;">LAN Interface (Clients)</h4>
+                        <div class="form-group">
+                            <label>LAN Interface Name (e.g., enp2s0)</label>
+                            <input type="text" id="lan_interface_name" name="lan_interface_name" placeholder="e.g., enp2s0" required>
+                        </div>
+                        <div class="form-group">
+                            <label>LAN IP Address (e.g., 10.0.0.1/24)</label>
+                            <input type="text" id="lan_ip_address" name="lan_ip_address" placeholder="e.g., 10.0.0.1/24" required>
+                        </div>
+                        <div class="form-group">
+                            <label>LAN DNS Servers (comma-separated)</label>
+                            <input type="text" id="lan_dns_servers" name="lan_dns_servers" placeholder="e.g., 8.8.8.8,8.8.4.4">
+                        </div>
+                        <button type="submit" class="btn btn-warning" style="width: 100%; color: white;">
+                            <i class="fas fa-save"></i> Apply Network Configuration
+                        </button>
+                        <div id="networkConfigMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">Network configuration applied!</div>
+                    </form>
+                </div>
+
+                <!-- WiFi Channel Selection (Moved for better grouping) -->
                 <div class="card">
                     <h3 style="margin-top: 0; color: var(--info-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
                         <i class="fas fa-wifi"></i> WiFi Channel Selection
@@ -1037,9 +1093,6 @@ n        <th>Date/Time</th>
                         <button type="submit" class="btn btn-info" style="width: 100%;">Set WiFi Channel</button>
                     </form>
                 </div>
-
-
-
 
                 <!-- Game Anti-Lag (QoS) -->
                 <div class="card">
@@ -2445,7 +2498,93 @@ n        <th>Date/Time</th>
             toggleVlanInput();
 
             fetchPortTriggers();
+            fetchNetworkInterfaces(); // Fetch and display network interface settings
         }
+
+        // Function to toggle static WAN fields visibility
+        function toggleStaticWanFields() {
+            const wanConfigType = document.getElementById('wan_config_type').value;
+            const staticWanFields = document.getElementById('staticWanFields');
+            if (wanConfigType === 'static') {
+                staticWanFields.style.display = 'block';
+                document.getElementById('wan_ip_address').required = true;
+                document.getElementById('wan_gateway').required = true;
+            } else {
+                staticWanFields.style.display = 'none';
+                document.getElementById('wan_ip_address').required = false;
+                document.getElementById('wan_gateway').required = false;
+            }
+        }
+
+        // Event listener for WAN config type change
+        document.getElementById('wan_config_type').addEventListener('change', toggleStaticWanFields);
+
+        // Function to fetch and display network interface settings
+        async function fetchNetworkInterfaces() {
+            try {
+                const response = await fetch('/api/network/interfaces');
+                const settings = await response.json();
+
+                document.getElementById('wan_interface_name').value = settings.wan_interface_name || '';
+                document.getElementById('wan_config_type').value = settings.wan_config_type || 'dhcp';
+                document.getElementById('wan_ip_address').value = settings.wan_ip_address || '';
+                document.getElementById('wan_gateway').value = settings.wan_gateway || '';
+                document.getElementById('wan_dns_servers').value = settings.wan_dns_servers ? settings.wan_dns_servers.join(',') : '';
+
+                document.getElementById('lan_interface_name').value = settings.lan_interface_name || '';
+                document.getElementById('lan_ip_address').value = settings.lan_ip_address || '';
+                document.getElementById('lan_dns_servers').value = settings.lan_dns_servers ? settings.lan_dns_servers.join(',') : '';
+
+                toggleStaticWanFields(); // Update visibility based on fetched settings
+            } catch (e) {
+                console.error('Error fetching network interfaces:', e);
+            }
+        }
+
+        // Event listener for network interfaces form submission
+        document.getElementById('networkInterfacesForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target).entries());
+
+            // Process DNS servers from comma-separated string to array
+            if (data.wan_dns_servers) {
+                data.wan_dns_servers = data.wan_dns_servers.split(',').map(s => s.trim()).filter(s => s);
+            } else {
+                data.wan_dns_servers = [];
+            }
+            if (data.lan_dns_servers) {
+                data.lan_dns_servers = data.lan_dns_servers.split(',').map(s => s.trim()).filter(s => s);
+            } else {
+                data.lan_dns_servers = [];
+            }
+
+            try {
+                const response = await fetch('/api/network/interfaces', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const result = await response.json();
+                const msg = document.getElementById('networkConfigMsg');
+                if (response.ok) {
+                    msg.style.color = 'var(--success-color)';
+                    msg.innerText = result.message || 'Network configuration applied!';
+                    fetchNetworkInterfaces(); // Refresh settings after successful application
+                } else {
+                    msg.style.color = 'var(--danger-color)';
+                    msg.innerText = result.error || 'Failed to apply network configuration.';
+                }
+                msg.style.display = 'block';
+                setTimeout(() => msg.style.display = 'none', 5000);
+            } catch (error) {
+                const msg = document.getElementById('networkConfigMsg');
+                msg.style.color = 'var(--danger-color)';
+                msg.innerText = 'An error occurred while applying network configuration.';
+                msg.style.display = 'block';
+                setTimeout(() => msg.style.display = 'none', 5000);
+                console.error('Error applying network configuration:', error);
+            }
+        });
 
         function toggleVlanInput() {
             const type = document.getElementById('group_type').value;
