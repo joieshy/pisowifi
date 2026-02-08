@@ -1332,7 +1332,12 @@ app.post('/api/sales/clear', isAuthenticated, (req, res) => {
                 // Also delete all users
                 db.run(`DELETE FROM users`, (err) => {
                     if (err) return res.status(500).json({ error: 'Database error' });
-                    res.json({ success: true, message: 'All sales data and user data cleared successfully' });
+                    
+                    // Also delete all vouchers
+                    db.run(`DELETE FROM vouchers`, (err) => {
+                        if (err) return res.status(500).json({ error: 'Database error' });
+                        res.json({ success: true, message: 'All sales data, user data, and voucher data cleared successfully' });
+                    });
                 });
             });
         });
