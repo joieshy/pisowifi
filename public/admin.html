@@ -1870,7 +1870,7 @@ n        <th>Date/Time</th>
                         badgeClass = 'badge-warning';
                     }
 
-                    const dateDisplay = dateObj.toLocaleString();
+                    const dateDisplay = new Date(sale.created_at_local).toLocaleString();
                     tableBody.innerHTML += `
                         <tr>
                             <td>${dateDisplay}</td>
@@ -2975,7 +2975,7 @@ n        <th>Date/Time</th>
                 }
 
                 recentSales.forEach(sale => {
-                    const date = new Date(sale.created_at).toLocaleTimeString();
+                    const date = new Date(sale.created_at_local).toLocaleTimeString();
                     const saleType = (sale.type || 'unknown').toLowerCase();
                     const amount = sale.amount || 0;
                     

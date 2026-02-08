@@ -1281,7 +1281,17 @@ app.get('/api/devices', isAuthenticated, (req, res) => {
 app.get('/api/sales', isAuthenticated, (req, res) => {
     db.all(`SELECT * FROM sales ORDER BY created_at DESC`, [], (err, rows) => {
         if (err) return res.status(500).json({ error: 'Database error' });
-        res.json(rows);
+        
+        const salesWithLocalTime = rows.map(sale => {
+            const date = new Date(sale.created_at); // This will parse as UTC
+            // Add 8 hours for Asia/Manila (UTC+8)
+            date.setHours(date.getHours() + 8); 
+            return {
+                ...sale,
+                created_at_local: date.toISOString() // Send as ISO string, client will parse as local
+            };
+        });
+        res.json(salesWithLocalTime);
     });
 });
 
