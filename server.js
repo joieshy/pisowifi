@@ -1329,9 +1329,10 @@ app.post('/api/sales/clear', isAuthenticated, (req, res) => {
             db.run(`DELETE FROM sales`, (err) => {
                 if (err) return res.status(500).json({ error: 'Database error' });
                 
-                db.run(`UPDATE users SET time_left = 0, status = 'Expired'`, (err) => {
+                // Also delete all users
+                db.run(`DELETE FROM users`, (err) => {
                     if (err) return res.status(500).json({ error: 'Database error' });
-                    res.json({ success: true, message: 'All sales data and user time cleared successfully' });
+                    res.json({ success: true, message: 'All sales data and user data cleared successfully' });
                 });
             });
         });
