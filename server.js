@@ -380,10 +380,6 @@ async function initTrafficControl() {
     }
 }
 
-// Run network init and traffic control init on startup
-initNetwork();
-initTrafficControl();
-
 // CPU Usage Tracking for Windows/Linux
 let lastCpuUsage = 0;
 function getCpuStats() {
@@ -655,6 +651,10 @@ db.serialize(() => {
             console.log('Default admin account created: admin/admin');
         }
     });
+
+    // Run network init and traffic control init after database is ready
+    initNetwork();
+    initTrafficControl();
 });
 
 // Middleware
@@ -1414,10 +1414,15 @@ app.post('/api/system/reboot', isAuthenticated, (req, res) => {
     res.json({ success: true, message: 'Rebooting system...' });
     // Execute reboot command after a short delay to allow response to be sent
     setTimeout(() => {
-        if (os.platform() === 'win32') {
-            exec('shutdown /r /t 1');
-        } else {
-            exec('sudo reboot');
+        const command = os.platform() === 'win32' ? 'shutdown /r /t 1' : 'sudo reboot';
+        console.log(`Attempting to execute reboot command: ${command}`);
+        try {
+            const stdout = execSync(command, { encoding: 'utf8', timeout: 5000 });
+            console.log(`Reboot command executed successfully. Stdout: ${stdout}`);
+        } catch (error) {
+            console.error(`Reboot command failed: ${error.message}`);
+            console.error(`Stderr: ${error.stderr}`);
+            console.error(`Stdout: ${error.stdout}`);
         }
     }, 1000);
 });
@@ -1427,10 +1432,15 @@ app.post('/api/system/shutdown', isAuthenticated, (req, res) => {
     res.json({ success: true, message: 'Shutting down system...' });
     // Execute shutdown command after a short delay to allow response to be sent
     setTimeout(() => {
-        if (os.platform() === 'win32') {
-            exec('shutdown /s /t 1');
-        } else {
-            exec('sudo shutdown -h now');
+        const command = os.platform() === 'win32' ? 'shutdown /s /t 1' : 'sudo shutdown -h now';
+        console.log(`Attempting to execute shutdown command: ${command}`);
+        try {
+            const stdout = execSync(command, { encoding: 'utf8', timeout: 5000 });
+            console.log(`Shutdown command executed successfully. Stdout: ${stdout}`);
+        } catch (error) {
+            console.error(`Shutdown command failed: ${error.message}`);
+            console.error(`Stderr: ${error.stderr}`);
+            console.error(`Stdout: ${error.stdout}`);
         }
     }, 1000);
 });
