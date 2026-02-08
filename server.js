@@ -504,6 +504,7 @@ db.serialize(() => {
         amount INTEGER,
         type TEXT,
         description TEXT,
+        user_mac TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
 
@@ -515,6 +516,10 @@ db.serialize(() => {
     });
 
     db.run(`ALTER TABLE sales ADD COLUMN description TEXT`, (err) => {
+        // Ignore error if column already exists
+    });
+
+    db.run(`ALTER TABLE sales ADD COLUMN user_mac TEXT`, (err) => {
         // Ignore error if column already exists
     });
 
@@ -840,8 +845,8 @@ app.post('/api/use-time', (req, res) => {
                         if (err) return res.status(500).json({ error: 'Failed to update user' });
                         
                         allowMac(mac, ip);
-                        db.run(`INSERT INTO sales (amount, type, description) VALUES (?, 'coin', ?)`, 
-                            [currentSessionCoins - remainingCoins, `Coin Insertion (${mac})`]);
+                        db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'coin', ?, ?)`, 
+                            [currentSessionCoins - remainingCoins, `Coin Insertion (${mac})`, mac]);
                         currentSessionCoins = remainingCoins;
                         res.json({ success: true, minutesAdded: totalMinutes, totalTime: newTime });
                     });
@@ -855,15 +860,15 @@ app.post('/api/use-time', (req, res) => {
                                 [totalMinutes, ip, mac], (err2) => {
                                     if (err2) return res.status(500).json({ error: 'Failed to create user' });
                             allowMac(mac, ip);
-                            db.run(`INSERT INTO sales (amount, type, description) VALUES (?, 'coin', ?)`, 
-                                [currentSessionCoins - remainingCoins, `Coin Insertion (${mac})`]);
+                            db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'coin', ?, ?)`, 
+                                [currentSessionCoins - remainingCoins, `Coin Insertion (${mac})`, mac]);
                             currentSessionCoins = remainingCoins;
                             res.json({ success: true, minutesAdded: totalMinutes, totalTime: totalMinutes });
                         });
                 } else {
                     allowMac(mac, ip);
-                    db.run(`INSERT INTO sales (amount, type, description) VALUES (?, 'coin', ?)`, 
-                        [currentSessionCoins - remainingCoins, `Coin Insertion (${mac})`]);
+                    db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'coin', ?, ?)`, 
+                        [currentSessionCoins - remainingCoins, `Coin Insertion (${mac})`, mac]);
                     currentSessionCoins = remainingCoins;
                     res.json({ success: true, minutesAdded: totalMinutes, totalTime: totalMinutes });
                 }
@@ -904,8 +909,8 @@ app.post('/api/use-voucher', (req, res) => {
             db.run(`UPDATE vouchers SET status = 'used' WHERE id = ?`, [voucher.id]);
             
             // Record sale using the amount stored in the voucher
-            db.run(`INSERT INTO sales (amount, type, description) VALUES (?, 'voucher', ?)`, 
-                [voucher.amount || 0, `Voucher Used: ${voucher.code}`]);
+            db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'voucher', ?, ?)`, 
+                [voucher.amount || 0, `Voucher Used: ${voucher.code}`, mac]);
 
             db.get(`SELECT * FROM users WHERE mac_address = ?`, [mac], (err, user) => {
                 if (err) return res.status(500).json({ error: 'Database error' });
@@ -1268,6 +1273,30 @@ app.get('/api/users', isAuthenticated, async (req, res) => {
         console.error('Error fetching users with bandwidth:', error);
         res.status(500).json({ error: 'Database error' });
     }
+});
+
+// API to get a specific user's transaction history
+app.get('/api/users/:mac/history', isAuthenticated, (req, res) => {
+    const userMac = req.params.mac;
+    // Search for sales records where the description contains the user's MAC address
+    // This assumes MAC address is consistently included in the description for relevant sales
+    db.all(`SELECT * FROM sales WHERE user_mac = ? ORDER BY created_at DESC`, [userMac], (err, rows) => {
+        if (err) {
+            console.error('Error fetching user transaction history:', err.message);
+            return res.status(500).json({ error: 'Database error' });
+        }
+
+        const salesWithLocalTime = rows.map(sale => {
+            const date = new Date(sale.created_at); // This will parse as UTC
+            // Add 8 hours for Asia/Manila (UTC+8)
+            date.setHours(date.getHours() + 8); 
+            return {
+                ...sale,
+                created_at_local: date.toISOString() // Send as ISO string, client will parse as local
+            };
+        });
+        res.json(salesWithLocalTime);
+    });
 });
 
 // API to manually allow/block MAC (Admin)
@@ -1889,8 +1918,8 @@ app.post('/api/maya/webhook', async (req, res) => {
                                         return;
                                     }
                                     allowMac(mac, ipRow.ip_address);
-                                    db.run(`INSERT INTO sales (amount, type, description) VALUES (?, 'maya', ?)`, 
-                                        [amount, `Maya Payment (${mac})`]);
+                                    db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'maya', ?, ?)`, 
+                                        [amount, `Maya Payment (${mac})`, mac]);
                                     console.log(`Successfully added ${totalMinutes} mins to existing user ${mac} via Maya`);
                                 });
                             });
@@ -1904,15 +1933,15 @@ app.post('/api/maya/webhook', async (req, res) => {
                                             if (err2) return console.error('Webhook User Create Fallback Error:', err2);
                                             // For new users from webhook, we don't have an IP yet, so use a placeholder
                                             allowMac(mac, '0.0.0.0'); 
-                                            db.run(`INSERT INTO sales (amount, type, description) VALUES (?, 'maya', ?)`, 
-                                                [amount, `Maya Payment (${mac})`]);
+                                            db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'maya', ?, ?)`, 
+                                                [amount, `Maya Payment (${mac})`, mac]);
                                             console.log(`Successfully added ${totalMinutes} mins to new user ${mac} via Maya (fallback)`);
                                         });
                                 } else {
                                     // For new users from webhook, we don't have an IP yet, so use a placeholder
                                     allowMac(mac, '0.0.0.0'); 
-                                    db.run(`INSERT INTO sales (amount, type, description) VALUES (?, 'maya', ?)`, 
-                                        [amount, `Maya Payment (${mac})`]);
+                                    db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'maya', ?, ?)`, 
+                                        [amount, `Maya Payment (${mac})`, mac]);
                                     console.log(`Successfully added ${totalMinutes} mins to new user ${mac} via Maya`);
                                 }
                             });

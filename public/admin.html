@@ -837,6 +837,27 @@ n        <th>Date/Time</th>
                     <div id="bandwidthMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">Limits updated!</div>
                 </form>
             </div>
+
+            <div class="data-table" style="margin-top: 1.5rem;">
+                <h3 style="margin-top: 0; color: var(--primary-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                    <i class="fas fa-users"></i> Active Users with Bandwidth Limits
+                </h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>User</th>
+                            <th>IP Address</th>
+                            <th>Download</th>
+                            <th>Upload</th>
+                        </tr>
+                    </thead>
+                    <tbody id="activeBandwidthUsersTableBody">
+                        <tr>
+                            <td colspan="4" style="text-align: center;">Loading active users...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
 
         <!-- System/Maintenance Section -->
@@ -1732,6 +1753,19 @@ n        <th>Date/Time</th>
         </div>
     </div>
 
+    <!-- User History Modal -->
+    <div id="userHistoryModal" class="modal">
+        <div class="modal-content" style="max-width: 700px;">
+            <h3 id="userHistoryModalTitle" style="color: var(--primary-color); margin-bottom: 1rem;">User Transaction History</h3>
+            <div id="userHistoryModalBody" style="max-height: 400px; overflow-y: auto;">
+                <!-- History will be loaded here -->
+            </div>
+            <div style="text-align: right; margin-top: 1.5rem;">
+                <button type="button" onclick="closeUserHistoryModal()" class="btn btn-secondary">Close</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         function showSection(section) {
             const sections = ['dashboard', 'users', 'rates', 'vouchers', 'settings', 'announcements', 'sales', 'bandwidth', 'system', 'ewallet', 'diagnostics', 'security', 'network', 'license', 'superadmin'];
@@ -1956,6 +1990,9 @@ n        <th>Date/Time</th>
                                 <button onclick="toggleUserAccess('${user.mac_address}', ${isOnline})" class="btn ${isOnline ? 'btn-danger' : 'btn-success'} btn-sm">
                                     <i class="fas ${isOnline ? 'fa-ban' : 'fa-check'}"></i> ${isOnline ? 'Block' : 'Allow'}
                                 </button>
+                                <button onclick="viewUserHistory('${user.mac_address}', '${user.username}')" class="btn btn-info btn-sm" style="margin-left: 5px;">
+                                    <i class="fas fa-history"></i> History
+                                </button>
                             </td>
                         </tr>
                     `;
@@ -1981,6 +2018,114 @@ n        <th>Date/Time</th>
                 }
             } catch (e) { alert('Action failed'); }
         }
+
+        let userHistoryChart = null; // For potential future chart in history modal
+
+        async function viewUserHistory(mac, username) {
+            try {
+                const response = await fetch(`/api/users/${mac}/history`);
+                const history = await response.json();
+                const modalBody = document.getElementById('userHistoryModalBody');
+                const modalTitle = document.getElementById('userHistoryModalTitle');
+                modalTitle.innerText = `Transaction History for ${username}`;
+                modalBody.innerHTML = '';
+
+                if (history.length === 0) {
+                    modalBody.innerHTML = '<p style="text-align: center; padding: 20px;">No transaction history found for this user.</p>';
+                } else {
+                    let historyHtml = `
+                        <table style="width:100%; border-collapse:collapse; margin-top:15px;">
+                            <thead>
+                                <tr style="background-color:#f2f2f2;">
+                                    <th style="padding:8px; border:1px solid #ddd; text-align:left;">Date/Time</th>
+                                    <th style="padding:8px; border:1px solid #ddd; text-align:left;">Type</th>
+                                    <th style="padding:8px; border:1px solid #ddd; text-align:left;">Description</th>
+                                    <th style="padding:8px; border:1px solid #ddd; text-align:right;">Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                    `;
+                    history.forEach(record => {
+                        const dateDisplay = new Date(record.created_at_local).toLocaleString();
+                        const amount = record.amount || 0;
+                        const saleType = (record.type || 'unknown').toLowerCase();
+                        let typeDisplay = saleType.toUpperCase();
+                        let badgeClass = 'badge-info';
+                        
+                        if (saleType === 'coin' || saleType === 'voucher') {
+                            badgeClass = 'badge-online';
+                            typeDisplay = saleType.toUpperCase();
+                        } else {
+                            badgeClass = 'badge-warning';
+                        }
+
+                        historyHtml += `
+                            <tr>
+                                <td style="padding:8px; border:1px solid #ddd;">${dateDisplay}</td>
+                                <td style="padding:8px; border:1px solid #ddd;"><span class="badge ${badgeClass}">${typeDisplay}</span></td>
+                                <td style="padding:8px; border:1px solid #ddd;"><small>${record.description || '-'}</small></td>
+                                <td style="padding:8px; border:1px solid #ddd; text-align:right;">₱ ${amount.toFixed(2)}</td>
+                            </tr>
+                        `;
+                    });
+                    historyHtml += `</tbody></table>`;
+                    modalBody.innerHTML = historyHtml;
+                }
+                document.getElementById('userHistoryModal').style.display = 'block';
+            } catch (e) {
+                console.error('Error fetching user history:', e);
+                alert('Failed to fetch user transaction history.');
+            }
+        }
+
+        function closeUserHistoryModal() {
+            document.getElementById('userHistoryModal').style.display = 'none';
+        }
+
+        // Add event listener for the change password form
+        document.getElementById('changePasswordForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const currentPassword = document.getElementById('current_password').value;
+            const newPassword = document.getElementById('new_password').value;
+            const confirmNewPassword = document.getElementById('confirm_new_password').value;
+            const passwordChangeMsg = document.getElementById('passwordChangeMsg');
+
+            if (newPassword !== confirmNewPassword) {
+                passwordChangeMsg.style.color = 'var(--danger-color)';
+                passwordChangeMsg.innerText = 'New passwords do not match!';
+                passwordChangeMsg.style.display = 'block';
+                setTimeout(() => passwordChangeMsg.style.display = 'none', 3000);
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/admin/change-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    passwordChangeMsg.style.color = 'var(--success-color)';
+                    passwordChangeMsg.innerText = result.message;
+                    document.getElementById('changePasswordForm').reset();
+                } else {
+                    passwordChangeMsg.style.color = 'var(--danger-color)';
+                    passwordChangeMsg.innerText = result.error || 'Failed to change password.';
+                }
+                passwordChangeMsg.style.display = 'block';
+                setTimeout(() => passwordChangeMsg.style.display = 'none', 3000);
+
+            } catch (error) {
+                passwordChangeMsg.style.color = 'var(--danger-color)';
+                passwordChangeMsg.innerText = 'An error occurred while changing password.';
+                passwordChangeMsg.style.display = 'block';
+                setTimeout(() => passwordChangeMsg.style.display = 'none', 3000);
+                console.error('Error changing password:', error);
+            }
+        });
 
         async function fetchRates() {
             try {
@@ -2251,10 +2396,40 @@ n        <th>Date/Time</th>
         });
 
         async function fetchBandwidth() {
-            const response = await fetch('/api/settings');
-            const settings = await response.json();
-            document.getElementById('download_limit').value = settings.download_limit !== undefined ? parseFloat(settings.download_limit) : 0;
-            document.getElementById('upload_limit').value = settings.upload_limit !== undefined ? parseFloat(settings.upload_limit) : 0;
+            try {
+                const settingsResponse = await fetch('/api/settings');
+                const settings = await settingsResponse.json();
+                document.getElementById('download_limit').value = settings.download_limit !== undefined ? parseFloat(settings.download_limit) : 0;
+                document.getElementById('upload_limit').value = settings.upload_limit !== undefined ? parseFloat(settings.upload_limit) : 0;
+
+                const usersResponse = await fetch('/api/users');
+                const users = await usersResponse.json();
+                const tableBody = document.getElementById('activeBandwidthUsersTableBody');
+                tableBody.innerHTML = '';
+
+                const activeUsersWithLimits = users.filter(user => user.status === 'Online' && (user.download_limit > 0 || user.upload_limit > 0));
+
+                if (activeUsersWithLimits.length === 0) {
+                    tableBody.innerHTML = '<tr><td colspan="4" style="text-align: center;">No active users with bandwidth limits</td></tr>';
+                    return;
+                }
+
+                activeUsersWithLimits.forEach(user => {
+                    tableBody.innerHTML += `
+                        <tr>
+                            <td><strong>${user.username}</strong></td>
+                            <td>${user.ip_address}</td>
+                            <td>${user.download_limit > 0 ? user.download_limit + ' Mbps' : 'Unlimited'}</td>
+                            <td>${user.upload_limit > 0 ? user.upload_limit + ' Mbps' : 'Unlimited'}</td>
+                        </tr>
+                    `;
+                });
+
+            } catch (e) {
+                console.error('Error fetching bandwidth settings or users:', e);
+                const tableBody = document.getElementById('activeBandwidthUsersTableBody');
+                tableBody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--danger-color);">Error loading bandwidth data</td></tr>';
+            }
         }
 
         document.getElementById('bandwidthForm').addEventListener('submit', async (e) => {
