@@ -1240,11 +1240,34 @@ app.get('/api/config', (req, res) => {
 });
 
 // API to get users
-app.get('/api/users', isAuthenticated, (req, res) => {
-    db.all(`SELECT * FROM users`, [], (err, rows) => {
-        if (err) return res.status(500).json({ error: 'Database error' });
-        res.json(rows);
-    });
+app.get('/api/users', isAuthenticated, async (req, res) => {
+    try {
+        const settings = await new Promise((resolve, reject) => {
+            db.all(`SELECT key, value FROM settings WHERE key IN ('download_limit', 'upload_limit')`, [], (err, rows) => {
+                if (err) return reject(err);
+                const s = {};
+                rows.forEach(row => s[row.key] = row.value);
+                resolve(s);
+            });
+        });
+
+        const globalDownloadLimit = parseFloat(settings.download_limit || '0');
+        const globalUploadLimit = parseFloat(settings.upload_limit || '0');
+
+        db.all(`SELECT * FROM users`, [], (err, rows) => {
+            if (err) return res.status(500).json({ error: 'Database error' });
+            
+            const usersWithBandwidth = rows.map(user => ({
+                ...user,
+                download_limit: user.status === 'Online' ? globalDownloadLimit : 0,
+                upload_limit: user.status === 'Online' ? globalUploadLimit : 0
+            }));
+            res.json(usersWithBandwidth);
+        });
+    } catch (error) {
+        console.error('Error fetching users with bandwidth:', error);
+        res.status(500).json({ error: 'Database error' });
+    }
 });
 
 // API to manually allow/block MAC (Admin)
@@ -1354,11 +1377,27 @@ app.get('/api/stats', isAuthenticated, (req, res) => {
 app.post('/api/system/reboot', isAuthenticated, (req, res) => {
     console.log('System reboot requested');
     res.json({ success: true, message: 'Rebooting system...' });
+    // Execute reboot command after a short delay to allow response to be sent
+    setTimeout(() => {
+        if (os.platform() === 'win32') {
+            exec('shutdown /r /t 1');
+        } else {
+            exec('sudo reboot');
+        }
+    }, 1000);
 });
 
 app.post('/api/system/shutdown', isAuthenticated, (req, res) => {
     console.log('System shutdown requested');
     res.json({ success: true, message: 'Shutting down system...' });
+    // Execute shutdown command after a short delay to allow response to be sent
+    setTimeout(() => {
+        if (os.platform() === 'win32') {
+            exec('shutdown /s /t 1');
+        } else {
+            exec('sudo shutdown -h now');
+        }
+    }, 1000);
 });
 
 
