@@ -1423,7 +1423,7 @@ app.post('/api/system/reboot', isAuthenticated, (req, res) => {
     res.json({ success: true, message: 'Rebooting system...' });
     // Execute reboot command after a short delay to allow response to be sent
     setTimeout(() => {
-        const scriptPath = path.join(__dirname, 'scripts', 'reboot.sh');
+        const scriptPath = path.resolve(__dirname, 'scripts', 'reboot.sh');
         const command = os.platform() === 'win32' ? 'shutdown /r /t 1' : `sudo ${scriptPath}`;
         console.log(`Attempting to execute reboot command: ${command}`);
         exec(command, { timeout: 5000 }, (error, stdout, stderr) => {
@@ -1444,7 +1444,7 @@ app.post('/api/system/shutdown', isAuthenticated, (req, res) => {
     res.json({ success: true, message: 'Shutting down system...' });
     // Execute shutdown command after a short delay to allow response to be sent
     setTimeout(() => {
-        const scriptPath = path.join(__dirname, 'scripts', 'shutdown.sh');
+        const scriptPath = path.resolve(__dirname, 'scripts', 'shutdown.sh');
         const command = os.platform() === 'win32' ? 'shutdown /s /t 1' : `sudo ${scriptPath}`;
         console.log(`Attempting to execute shutdown command: ${command}`);
         exec(command, { timeout: 5000 }, (error, stdout, stderr) => {
