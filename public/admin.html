@@ -993,12 +993,13 @@ n        <th>Date/Time</th>
                 <h2>Network Settings</h2>
             </div>
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
-                <!-- DNS Settings -->
+                <!-- DNS, VLAN & DHCP Settings -->
                 <div class="card">
                     <h3 style="margin-top: 0; color: var(--primary-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
-                        <i class="fas fa-globe"></i> DNS Settings
+                        <i class="fas fa-globe"></i> DNS, VLAN & DHCP Settings
                     </h3>
                     <form id="dnsForm">
+                        <h4 style="margin-top: 15px; color: var(--primary-color);">DNS Settings</h4>
                         <div class="form-group">
                             <label>Primary DNS</label>
                             <input type="text" id="dns_primary" name="dns_primary" placeholder="8.8.8.8">
@@ -1009,14 +1010,30 @@ n        <th>Date/Time</th>
                         </div>
                         <button type="submit" class="btn btn-primary" style="width: 100%;">Save DNS Settings</button>
                     </form>
-                </div>
 
-                <!-- IP Range / DHCP -->
-                <div class="card">
-                    <h3 style="margin-top: 0; color: var(--success-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
-                        <i class="fas fa-project-diagram"></i> IP Range (DHCP)
-                    </h3>
+                    <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+
+                    <form id="groupSettingsForm">
+                        <h4 style="margin-top: 15px; color: #6f42c1;">VLAN Settings</h4>
+                        <div class="form-group">
+                            <label>VLAN</label>
+                            <select id="group_type" name="group_type" onchange="toggleVlanInput()">
+                                <option value="direct">Direct</option>
+                                <option value="vlan">VLAN</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="vlanIdGroup" style="display: none;">
+                            <label>VLAN ID</label>
+                            <input type="number" id="vlan_id" name="vlan_id" placeholder="Enter VLAN ID (e.g. 10)" min="1" max="4094">
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="width: 100%; background-color: #6f42c1; border-color: #6f42c1;">Save Group Settings</button>
+                    </form>
+                    <div id="groupMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">Group settings updated!</div>
+
+                    <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+
                     <form id="ipRangeForm">
+                        <h4 style="margin-top: 15px; color: var(--warning-color);">IP Range (DHCP)</h4>
                         <div class="form-group">
                             <label>Start IP Address</label>
                             <input type="text" id="ip_range_start" name="ip_range_start" placeholder="192.168.1.100">
@@ -1025,8 +1042,9 @@ n        <th>Date/Time</th>
                             <label>End IP Address</label>
                             <input type="text" id="ip_range_end" name="ip_range_end" placeholder="192.168.1.200">
                         </div>
-                        <button type="submit" class="btn btn-success" style="width: 100%;">Save IP Range</button>
+                        <button type="submit" class="btn btn-warning" style="width: 100%; color: white;">Save IP Range</button>
                     </form>
+                    <div id="ipRangeMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">IP range updated!</div>
                 </div>
 
                 <!-- Network Interfaces Configuration -->
@@ -1085,33 +1103,6 @@ n        <th>Date/Time</th>
                     </form>
                 </div>
 
-                <!-- WiFi Channel Selection (Moved for better grouping) -->
-                <div class="card">
-                    <h3 style="margin-top: 0; color: var(--info-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
-                        <i class="fas fa-wifi"></i> WiFi Channel Selection
-                    </h3>
-                    <form id="wifiChannelForm">
-                        <div class="form-group">
-                            <label>WiFi Channel</label>
-                            <select id="wifi_channel" name="channel">
-                                <option value="auto">Auto</option>
-                                <option value="1">Channel 1</option>
-                                <option value="2">Channel 2</option>
-                                <option value="3">Channel 3</option>
-                                <option value="4">Channel 4</option>
-                                <option value="5">Channel 5</option>
-                                <option value="6">Channel 6</option>
-                                <option value="7">Channel 7</option>
-                                <option value="8">Channel 8</option>
-                                <option value="9">Channel 9</option>
-                                <option value="10">Channel 10</option>
-                                <option value="11">Channel 11</option>
-                            </select>
-                        </div>
-                        <button type="submit" class="btn btn-info" style="width: 100%;">Set WiFi Channel</button>
-                    </form>
-                </div>
-
                 <!-- Game Anti-Lag (QoS) -->
                 <div class="card">
                     <h3 style="margin-top: 0; color: #e74a3b; border-bottom: 1px solid #eee; padding-bottom: 10px;">
@@ -1134,28 +1125,6 @@ n        <th>Date/Time</th>
                         </div>
                         <button type="submit" class="btn btn-danger" style="width: 100%;">Apply Anti-Lag</button>
                     </form>
-                </div>
-
-                <!-- Group Settings (VLAN) -->
-                <div class="card">
-                    <h3 style="margin-top: 0; color: #6f42c1; border-bottom: 1px solid #eee; padding-bottom: 10px;">
-                        <i class="fas fa-network-wired"></i> VLAN Settings
-                    </h3>
-                    <form id="groupSettingsForm">
-                        <div class="form-group">
-                            <label>VLAN</label>
-                            <select id="group_type" name="group_type" onchange="toggleVlanInput()">
-                                <option value="direct">Direct</option>
-                                <option value="vlan">VLAN</option>
-                            </select>
-                        </div>
-                        <div class="form-group" id="vlanIdGroup" style="display: none;">
-                            <label>VLAN ID</label>
-                            <input type="number" id="vlan_id" name="vlan_id" placeholder="Enter VLAN ID (e.g. 10)" min="1" max="4094">
-                        </div>
-                        <button type="submit" class="btn btn-primary" style="width: 100%; background-color: #6f42c1; border-color: #6f42c1;">Save Group Settings</button>
-                    </form>
-                    <div id="groupMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">Group settings updated!</div>
                 </div>
 
                 <!-- Port Triggering -->
@@ -2695,9 +2664,13 @@ n        <th>Date/Time</th>
             const settings = await response.json();
             document.getElementById('dns_primary').value = settings.dns_primary || '8.8.8.8';
             document.getElementById('dns_secondary').value = settings.dns_secondary || '8.8.4.4';
-            document.getElementById('ip_range_start').value = settings.ip_range_start || '192.168.1.100';
-            document.getElementById('ip_range_end').value = settings.ip_range_end || '192.168.1.200';
-            document.getElementById('wifi_channel').value = settings.wifi_channel || 'auto';
+            // Add these lines for IP Range (DHCP)
+            if (document.getElementById('ip_range_start')) {
+                document.getElementById('ip_range_start').value = settings.ip_range_start || '192.168.1.100';
+            }
+            if (document.getElementById('ip_range_end')) {
+                document.getElementById('ip_range_end').value = settings.ip_range_end || '192.168.1.200';
+            }
             document.getElementById('qos_enabled').value = settings.qos_enabled || 'false';
             document.getElementById('qos_gaming_priority').value = settings.qos_gaming_priority || 'high';
             
@@ -2873,6 +2846,7 @@ n        <th>Date/Time</th>
         }
 
         document.getElementById('dnsForm').addEventListener('submit', saveNetworkSettings);
+        document.getElementById('groupSettingsForm').addEventListener('submit', saveNetworkSettings);
         document.getElementById('ipRangeForm').addEventListener('submit', saveNetworkSettings);
         
         async function generateLicense() {
@@ -2891,22 +2865,22 @@ n        <th>Date/Time</th>
             try {
                 const response = await fetch('/api/sales/clear', { method: 'POST' });
                 const result = await response.json();
-                if (response.ok) {
-                    alert(result.message);
-                    // Refresh data if sections are visible
-                    if (document.getElementById('salesSection').style.display !== 'none') {
-                        fetchSales();
-                    }
-                    if (document.getElementById('dashboardSection').style.display !== 'none') {
-                        fetchStats();
-                    }
-                } else {
-                    alert(result.error || "Failed to clear sales data");
+            if (response.ok) {
+                alert(result.message);
+                // Refresh data if sections are visible
+                if (document.getElementById('salesSection').style.display !== 'none') {
+                    fetchSales();
                 }
-            } catch (e) {
-                alert("Error: " + e.message);
+                if (document.getElementById('dashboardSection').style.display !== 'none') {
+                    fetchStats();
+                }
+            } else {
+                alert(result.error || "Failed to clear sales data");
             }
+        } catch (e) {
+            alert("Error: " + e.message);
         }
+    }
 
         async function fetchLicense() {
             const response = await fetch('/api/settings');
