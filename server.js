@@ -11,10 +11,38 @@ const os = require('os');
 const { exec, execSync } = require('child_process');
 const https = require('https');
 const axios = require('axios');
+const { SerialPort, ReadlineParser } = require('serialport'); // Import serialport
 const app = express();
 app.set('trust proxy', true);
+
+// Middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(session({
+    secret: process.env.SESSION_SECRET || 'pisowifi-secret-key',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { 
+        maxAge: 3600000, // 1 hour
+        secure: false, // Set to true if using HTTPS
+        sameSite: 'Lax' // Can be 'Strict', 'Lax', or 'None'
+    }
+}));
+
+// Auth Middleware
+const isAuthenticated = (req, res, next) => {
+    if (req.session && req.session.adminId) {
+        next();
+    } else {
+        res.redirect('/login');
+    }
+};
+
 const PORT = process.env.PORT || 3000;
 const DATABASE_PATH = process.env.DATABASE_PATH || './pisowifi.db';
+
+let serialPort = null;
+const NODE_MCU_MANUFACTURER_IDENTIFIER = 'USB-SERIAL CH340'; // Common identifier for NodeMCU (CH340G chip)
 
 const http = require('http');
 const server = http.createServer(app);
@@ -22,6 +50,9 @@ const io = require('socket.io')(server);
 
 let coinInsertionActive = false; // Global state to track if someone is inserting coins
 let activeCoinInserterMac = null; // MAC address of the user currently inserting coins
+let coinslotEnableTimeout = null; // Timeout to disable coinslot if no activity
+const COINSLOT_INACTIVITY_TIMEOUT = 60000; // 60 seconds of inactivity before disabling coinslot
+let lastTotalCoinsFromMCU = 0; // To track the total coins reported by NodeMCU
 
 // --- NETWORK CONTROL LOGIC (LINUX/ORANGE PI) ---
 
@@ -210,7 +241,7 @@ async function applyBandwidthLimits(ip, downloadLimitMbps, uploadLimitMbps, tcCl
         
         // Add a filter to mark packets from this IP
         execSync(`sudo iptables -t mangle -A POSTROUTING -s ${ip} -j MARK --set-mark ${tcMark}`);
-        execSync(`sudo iptables -t mangle -A PREROUTING -d ${ip} -j MARK --set-mark ${tcMark}`);
+        execSync(`sudo iptables -t mangle -D PREROUTING -d ${ip} -j MARK --set-mark ${tcMark}`);
 
         // Add filter to direct marked packets to the specific class for outbound (upload)
         execSync(`sudo tc filter add dev ${lanInterface} protocol ip parent 1: prio 1 handle ${tcMark} fw classid 1:${tcClassId}`);
@@ -246,14 +277,6 @@ async function blockMac(mac) {
         return;
     }
     try {
-        const settings = await new Promise((resolve, reject) => {
-            db.get(`SELECT value FROM settings WHERE key = 'lan_interface_name'`, [], (err, row) => {
-                if (err) return reject(err);
-                resolve(row ? row.value : 'eth1');
-            });
-        });
-        const lanInterface = settings || 'eth1';
-
         // Remove from NAT PREROUTING
         execSync(`sudo iptables -t nat -D PREROUTING -m mac --mac-source ${mac} -j ACCEPT`);
         // Remove from FORWARD chain
@@ -267,7 +290,7 @@ async function blockMac(mac) {
                 return;
             }
             if (user && user.ip_address && user.tc_class_id > 0 && user.tc_mark > 0) {
-                removeBandwidthLimits(user.ip_address, user.tc_class_id, user.tc_mark, lanInterface);
+                removeBandwidthLimits(user.ip_address, user.tc_class_id, user.tc_mark);
                 db.run(`UPDATE users SET tc_class_id = 0, tc_mark = 0 WHERE mac_address = ?`, [mac]);
             }
         });
@@ -276,16 +299,16 @@ async function blockMac(mac) {
     }
 }
 
-async function removeBandwidthLimits(ip, tcClassId, tcMark, lanInterface) {
+async function removeBandwidthLimits(ip, tcClassId, tcMark) {
     if (os.platform() !== 'linux') {
         console.log(`[Simulated] Removing bandwidth limits for IP: ${ip}, Class: ${tcClassId}, Mark: ${tcMark}`);
         return;
     }
     try {
         // Delete the class for this user
-        execSync(`sudo tc class del dev ${lanInterface} parent 1: classid 1:${tcClassId} || true`);
+        execSync(`sudo tc class del dev eth1 parent 1: classid 1:${tcClassId} || true`);
         // Delete the filter for this user
-        execSync(`sudo tc filter del dev ${lanInterface} protocol ip parent 1: prio 1 handle ${tcMark} fw || true`);
+        execSync(`sudo tc filter del dev eth1 protocol ip parent 1: prio 1 handle ${tcMark} fw || true`);
         // Remove iptables rule that marks traffic from this IP
         execSync(`sudo iptables -t mangle -D POSTROUTING -s ${ip} -j MARK --set-mark ${tcMark} || true`);
         execSync(`sudo iptables -t mangle -D PREROUTING -d ${ip} -j MARK --set-mark ${tcMark} || true`);
@@ -655,17 +678,219 @@ db.serialize(() => {
     // Run network init and traffic control init after database is ready
     initNetwork();
     initTrafficControl();
+    initSerialPort(); // Re-enabled automatic serial port initialization
 });
 
-// Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(session({
-    secret: process.env.SESSION_SECRET || 'pisowifi-secret-key',
-    resave: false,
-    saveUninitialized: false,
-    cookie: { maxAge: 3600000 } // 1 hour
-}));
+// Function to send commands to NodeMCU
+function sendSerialCommand(command) {
+    if (serialPort && serialPort.isOpen) {
+        serialPort.write(command + '\n', (err) => {
+            if (err) {
+                console.error('Error writing to serial port:', err.message);
+            } else {
+                console.log(`Sent command to NodeMCU: ${command}`);
+            }
+        });
+    } else {
+        console.warn(`Serial port not open. Cannot send command: ${command}`);
+    }
+}
+
+// Function to initialize serial port
+function initSerialPort() {
+    SerialPort.list().then(ports => {
+        const nodeMcuPort = ports.find(port => port.manufacturer && port.manufacturer.includes(NODE_MCU_MANUFACTURER_IDENTIFIER));
+        if (nodeMcuPort) {
+            console.log(`NodeMCU found on port: ${nodeMcuPort.path}`);
+            if (serialPort && serialPort.isOpen) {
+                serialPort.close();
+                serialPort = null;
+            }
+
+            serialPort = new SerialPort({ path: nodeMcuPort.path, baudRate: 115200 });
+            const parser = serialPort.pipe(new ReadlineParser({ delimiter: '\n' }));
+
+            serialPort.on('open', () => {
+                console.log(`Serial port ${nodeMcuPort.path} to NodeMCU opened automatically.`);
+                // Do not enable coinslot automatically here. It will be controlled by WebSocket events.
+                lastTotalCoinsFromMCU = 0; // Initialize lastTotalCoinsFromMCU on open
+            });
+
+            parser.on('data', data => {
+                console.log('Data from NodeMCU:', data); // Keep this log for debugging
+                if (data.startsWith('Total Coins:')) {
+                    const currentTotalFromMCU = parseInt(data.split(':')[1].trim());
+                    if (!isNaN(currentTotalFromMCU)) {
+                        if (currentTotalFromMCU > lastTotalCoinsFromMCU) {
+                            const amountInserted = currentTotalFromMCU - lastTotalCoinsFromMCU;
+                            currentSessionCoins += amountInserted;
+                            io.emit('coinInserted', { amount: amountInserted, totalCoins: currentSessionCoins, mac: activeCoinInserterMac });
+                            console.log(`Coin of ${amountInserted} detected. Total: ${currentSessionCoins}`);
+                            
+                            // Reset coinslot disable timeout on coin activity
+                            if (coinslotEnableTimeout) {
+                                clearTimeout(coinslotEnableTimeout);
+                                coinslotEnableTimeout = setTimeout(() => {
+                                    if (!coinInsertionActive) { // Only disable if no user is actively inserting
+                                        sendSerialCommand('D');
+                                        console.log('Coinslot disabled due to inactivity timeout after coin drop.');
+                                    }
+                                }, COINSLOT_INACTIVITY_TIMEOUT);
+                            }
+                        }
+                        lastTotalCoinsFromMCU = currentTotalFromMCU; // Update last known total
+                    }
+                } else if (data.startsWith('COIN:')) { // Also handle the COIN:X format if NodeMCU sends it
+                    const amount = parseInt(data.split(':')[1]);
+                    if (!isNaN(amount) && amount > 0) {
+                        currentSessionCoins += amount;
+                        io.emit('coinInserted', { amount: amount, totalCoins: currentSessionCoins, mac: activeCoinInserterMac });
+                        console.log(`Coin of ${amount} detected. Total: ${currentSessionCoins}`);
+                        
+                        // Reset coinslot disable timeout on coin activity
+                        if (coinslotEnableTimeout) {
+                            clearTimeout(coinslotEnableTimeout);
+                            coinslotEnableTimeout = setTimeout(() => {
+                                if (!coinInsertionActive) { // Only disable if no user is actively inserting
+                                    sendSerialCommand('D');
+                                    console.log('Coinslot disabled due to inactivity timeout after coin drop.');
+                                }
+                            }, COINSLOT_INACTIVITY_TIMEOUT);
+                        }
+                    }
+                }
+            });
+
+            serialPort.on('close', () => {
+                console.log(`Serial port ${nodeMcuPort.path} to NodeMCU closed.`);
+                serialPort = null;
+                coinInsertionActive = false; // Reset state
+                activeCoinInserterMac = null;
+                if (coinslotEnableTimeout) clearTimeout(coinslotEnableTimeout);
+                sendSerialCommand('D'); // Ensure coinslot is disabled on close
+            });
+
+            serialPort.on('error', (err) => {
+                console.error('Serial port error (auto-init):', err.message);
+                if (serialPort && serialPort.isOpen) {
+                    serialPort.close();
+                }
+            });
+
+        } else {
+            console.warn('NodeMCU not found. Automatic serial port initialization skipped.');
+        }
+    }).catch(err => {
+        console.error('Error listing serial ports during auto-initialization:', err.message);
+    });
+}
+
+// API to list available serial ports
+app.get('/api/serial-ports', isAuthenticated, async (req, res) => {
+    try {
+        const ports = await SerialPort.list();
+        res.json(ports.map(port => ({
+            path: port.path,
+            manufacturer: port.manufacturer || 'N/A',
+            pnpId: port.pnpId || 'N/A'
+        })));
+    } catch (err) {
+        console.error('Error listing serial ports:', err.message);
+        res.status(500).json({ error: 'Failed to list serial ports' });
+    }
+});
+
+// API to connect to a specific serial port
+app.post('/api/serial-port/connect', isAuthenticated, async (req, res) => {
+    const { portPath } = req.body;
+    if (!portPath) {
+        return res.status(400).json({ error: 'Port path is required' });
+    }
+
+    // Close existing port if open
+    if (serialPort && serialPort.isOpen) {
+        serialPort.close();
+        serialPort = null;
+    }
+
+    try {
+        serialPort = new SerialPort({ path: portPath, baudRate: 115200 });
+        const parser = serialPort.pipe(new ReadlineParser({ delimiter: '\n' }));
+
+            serialPort.on('open', () => {
+                console.log(`Serial port ${portPath} to NodeMCU opened.`);
+                // Do not enable coinslot automatically here. It will be controlled by WebSocket events.
+                lastTotalCoinsFromMCU = 0; // Initialize on connect
+                res.json({ success: true, message: `Connected to ${portPath}` });
+            });
+
+            parser.on('data', data => {
+                console.log('Data from NodeMCU:', data); // Keep this log for debugging
+                if (data.startsWith('Total Coins:')) {
+                    const currentTotalFromMCU = parseInt(data.split(':')[1].trim());
+                    if (!isNaN(currentTotalFromMCU)) {
+                        if (currentTotalFromMCU > lastTotalCoinsFromMCU) {
+                            const amountInserted = currentTotalFromMCU - lastTotalCoinsFromMCU;
+                            currentSessionCoins += amountInserted;
+                            io.emit('coinInserted', { amount: amountInserted, totalCoins: currentSessionCoins, mac: activeCoinInserterMac });
+                            console.log(`Coin of ${amountInserted} detected. Total: ${currentSessionCoins}`);
+
+                            // Reset coinslot disable timeout on coin activity
+                            if (coinslotEnableTimeout) {
+                                clearTimeout(coinslotEnableTimeout);
+                                coinslotEnableTimeout = setTimeout(() => {
+                                    if (!coinInsertionActive) { // Only disable if no user is actively inserting
+                                        sendSerialCommand('D');
+                                        console.log('Coinslot disabled due to inactivity timeout after coin drop.');
+                                    }
+                                }, COINSLOT_INACTIVITY_TIMEOUT);
+                            }
+                        }
+                        lastTotalCoinsFromMCU = currentTotalFromMCU; // Update last known total
+                    }
+                } else if (data.startsWith('COIN:')) { // Also handle the COIN:X format if NodeMCU sends it
+                    const amount = parseInt(data.split(':')[1]);
+                    if (!isNaN(amount) && amount > 0) {
+                        currentSessionCoins += amount;
+                        io.emit('coinInserted', { amount: amount, totalCoins: currentSessionCoins, mac: activeCoinInserterMac });
+                        console.log(`Coin of ${amount} detected. Total: ${currentSessionCoins}`);
+                        
+                        // Reset coinslot disable timeout on coin activity
+                        if (coinslotEnableTimeout) {
+                            clearTimeout(coinslotEnableTimeout);
+                            coinslotEnableTimeout = setTimeout(() => {
+                                if (!coinInsertionActive) { // Only disable if no user is actively inserting
+                                    sendSerialCommand('D');
+                                    console.log('Coinslot disabled due to inactivity timeout after coin drop.');
+                                }
+                            }, COINSLOT_INACTIVITY_TIMEOUT);
+                        }
+                    }
+                }
+            });
+
+        serialPort.on('close', () => {
+            console.log(`Serial port ${portPath} to NodeMCU closed.`);
+            serialPort = null;
+            coinInsertionActive = false; // Reset state
+            activeCoinInserterMac = null;
+            if (coinslotEnableTimeout) clearTimeout(coinslotEnableTimeout);
+            sendSerialCommand('D'); // Ensure coinslot is disabled on close
+        });
+
+        serialPort.on('error', (err) => {
+            console.error('Serial port error:', err.message);
+            if (serialPort && serialPort.isOpen) {
+                serialPort.close();
+            }
+            res.status(500).json({ error: `Serial port error: ${err.message}` });
+        });
+
+    } catch (err) {
+        console.error('Error connecting to serial port:', err.message);
+        res.status(500).json({ error: `Failed to connect to serial port: ${err.message}` });
+    }
+});
 
 // Serve static files from the 'public' directory
 app.use(express.static(path.join(__dirname, 'public')));
@@ -717,15 +942,6 @@ const upload = multer({
         }
     }
 });
-
-// Auth Middleware
-const isAuthenticated = (req, res, next) => {
-    if (req.session.adminId) {
-        next();
-    } else {
-        res.redirect('/login');
-    }
-};
 
 // Global variable to track current session coins (simulated)
 let currentSessionCoins = 0;
@@ -928,7 +1144,7 @@ app.post('/api/use-voucher', (req, res) => {
                     db.run(`INSERT INTO users (username, ip_address, mac_address, time_left, status) VALUES (?, ?, ?, ?, 'Online')`,
                         [username, ip, mac, totalMinutes], (err) => {
                             if (err) {
-                                db.run(`UPDATE users SET time_left = time_left + ?, status = 'Online', ip_address = ? WHERE mac_address = ?`,
+                                db.run(`UPDATE users SET time_left = time_left + ?, status = 'Online' WHERE mac_address = ?`,
                                     [totalMinutes, ip, mac], (err2) => {
                                         if (err2) return res.status(500).json({ error: 'Failed to create user' });
                                         allowMac(mac, ip);
@@ -1400,8 +1616,8 @@ app.get('/api/stats', isAuthenticated, (req, res) => {
     // Application Uptime
     const now = new Date();
     const appUptimeSeconds = Math.floor((now.getTime() - serverStartTime.getTime()) / 1000);
-    const appDays = Math.floor(appUptimeSeconds / (3600 * 24));
-    const appHours = Math.floor((appUptimeSeconds % (3600 * 24)) / 3600);
+    const appDays = Math.floor((appUptimeSeconds % (3600 * 24)) / 3600);
+    const appHours = Math.floor((appUptimeSeconds % 3600) / 60);
     const appMinutes = Math.floor((appUptimeSeconds % 3600) / 60);
     stats.systemUptime = `${appDays} days, ${appHours} hours, ${appMinutes} minutes`;
 
@@ -2010,38 +2226,60 @@ io.on('connection', (socket) => {
 
     socket.on('startCoinInsertion', (data) => {
         const { mac } = data;
-        if (!coinInsertionActive) {
-            coinInsertionActive = true;
-            activeCoinInserterMac = mac;
-            io.emit('coinInsertionStatus', { active: true, by: mac });
-            console.log(`Coin insertion started by ${mac}`);
-        } else if (activeCoinInserterMac !== mac) {
-            // If another user tries to start, notify them it's busy
-            socket.emit('coinInsertionBusy', { by: activeCoinInserterMac });
+        if (!serialPort || !serialPort.isOpen) {
+            socket.emit('coinInsertionError', { message: 'Coinslot hardware not connected.' });
+            return;
         }
-    });
 
-    socket.on('endCoinInsertion', (data) => {
-        const { mac } = data;
-        if (coinInsertionActive && activeCoinInserterMac === mac) {
-            coinInsertionActive = false;
-            activeCoinInserterMac = null;
-            io.emit('coinInsertionStatus', { active: false, by: null });
-            console.log(`Coin insertion ended by ${mac}`);
-        }
-    });
+            if (!coinInsertionActive) {
+                coinInsertionActive = true;
+                activeCoinInserterMac = mac;
+                sendSerialCommand('D'); // Set D8 LOW to INHIBIT coin acceptance
+                io.emit('coinInsertionStatus', { active: true, by: mac });
+                console.log(`Coin insertion started by ${mac}. D8 set to LOW (inhibit).`);
 
-    socket.on('disconnect', () => {
-        console.log('User disconnected from WebSocket');
-        // If the user who was inserting coins disconnects, reset the status
-        // This might need more robust handling in a real-world scenario (e.g., timeout)
-        if (activeCoinInserterMac === socket.handshake.query.mac) { // Assuming MAC is passed as query param
-            coinInsertionActive = false;
-            activeCoinInserterMac = null;
-            io.emit('coinInsertionStatus', { active: false, by: null });
-            console.log(`Coin insertion reset due to disconnect of ${socket.handshake.query.mac}`);
-        }
-    });
+                // Set a timeout to allow D8 HIGH if no coins are inserted for COINSLOT_INACTIVITY_TIMEOUT
+                if (coinslotEnableTimeout) clearTimeout(coinslotEnableTimeout);
+                coinslotEnableTimeout = setTimeout(() => {
+                    if (coinInsertionActive && activeCoinInserterMac === mac) {
+                        sendSerialCommand('E'); // Set D8 HIGH to ALLOW coin acceptance
+                        coinInsertionActive = false;
+                        activeCoinInserterMac = null;
+                        io.emit('coinInsertionStatus', { active: false, by: null });
+                        console.log('Coinslot allowed due to inactivity timeout.');
+                    }
+                }, COINSLOT_INACTIVITY_TIMEOUT);
+
+            } else if (activeCoinInserterMac !== mac) {
+                // If another user tries to start, notify them it's busy
+                socket.emit('coinInsertionBusy', { by: activeCoinInserterMac });
+            }
+        });
+
+        socket.on('endCoinInsertion', (data) => {
+            const { mac } = data;
+            if (coinInsertionActive && activeCoinInserterMac === mac) {
+                if (coinslotEnableTimeout) clearTimeout(coinslotEnableTimeout);
+                sendSerialCommand('E'); // Set D8 HIGH to ALLOW coin acceptance
+                coinInsertionActive = false;
+                activeCoinInserterMac = null;
+                io.emit('coinInsertionStatus', { active: false, by: null });
+                console.log(`Coin insertion ended by ${mac}. D8 set to HIGH (allow).`);
+            }
+        });
+
+        socket.on('disconnect', () => {
+            console.log('User disconnected from WebSocket');
+            // If the user who was inserting coins disconnects, reset the status
+            if (activeCoinInserterMac === socket.handshake.query.mac) { // Assuming MAC is passed as query param
+                if (coinslotEnableTimeout) clearTimeout(coinslotEnableTimeout);
+                sendSerialCommand('E'); // Set D8 HIGH to ALLOW coin acceptance
+                coinInsertionActive = false;
+                activeCoinInserterMac = null;
+                io.emit('coinInsertionStatus', { active: false, by: null });
+                console.log(`Coin insertion reset due to disconnect of ${socket.handshake.query.mac}. D8 set to HIGH (allow).`);
+            }
+        });
 });
 
 const HOST = '0.0.0.0'; // Temporarily hardcoded to 0.0.0.0 to resolve EADDRNOTAVAIL on server startup.

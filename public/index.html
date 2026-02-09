@@ -706,6 +706,23 @@
                     });
 
                     // Removed socket.on('playBackgroundMusic') event listener
+
+                    socket.on('coinInserted', (data) => {
+                        console.log('WebSocket: Coin inserted!', data);
+                        totalInserted = data.totalCoins;
+                        document.getElementById('insertedAmount').innerText = totalInserted.toFixed(2);
+                        document.getElementById('doneBtn').disabled = false;
+                        document.getElementById('cancelBtn').disabled = true;
+                        
+                        // Reset countdown on coin insertion
+                        currentCount = countdownValue;
+                        const display = document.getElementById('countdownDisplay');
+                        display.innerText = currentCount;
+                        display.style.color = '#34a853';
+                        display.style.borderTopColor = '#34a853';
+                        
+                        playCoinClink();
+                    });
                 }
             } catch (e) {
                 console.error("Failed to get client info or initialize socket:", e);
@@ -813,42 +830,8 @@
             if (socket && clientMacAddress) {
                 socket.emit('startCoinInsertion', { mac: clientMacAddress });
             }
-
-            // Start polling for coins
-            startCoinPolling();
         }
 
-        function startCoinPolling() {
-            clearInterval(coinCheckInterval);
-            coinCheckInterval = setInterval(async () => {
-                try {
-                    const response = await fetch('/api/current-coins');
-                    const data = await response.json();
-                    
-                    if (data.amount > totalInserted) {
-                        totalInserted = data.amount;
-                        document.getElementById('insertedAmount').innerText = totalInserted.toFixed(2);
-                        document.getElementById('doneBtn').disabled = false;
-                        document.getElementById('cancelBtn').disabled = true;
-                        
-                        // Reset countdown on coin insertion
-                        currentCount = countdownValue;
-                        const display = document.getElementById('countdownDisplay');
-                        display.innerText = currentCount;
-                        display.style.color = '#34a853';
-                        display.style.borderTopColor = '#34a853';
-                        
-                        playCoinClink();
-                    } else if (data.amount < totalInserted) {
-                        // Handle case where coins were reset elsewhere
-                        totalInserted = data.amount;
-                        document.getElementById('insertedAmount').innerText = totalInserted.toFixed(2);
-                    }
-                } catch (e) {
-                    console.error("Coin polling error:", e);
-                }
-            }, 500); // Increased polling frequency for better responsiveness
-        }
 
         async function handleDone() {
             const salamatAudio = document.getElementById('salamatAudio');
@@ -890,7 +873,7 @@
             const modal = document.getElementById('insertCoinModal');
             modal.style.display = 'none';
             clearInterval(countdownInterval);
-            clearInterval(coinCheckInterval);
+            // Removed clearInterval(coinCheckInterval); as polling is removed
             
             const audio = document.getElementById('insertCoinAudio');
             audio.pause();

@@ -923,6 +923,30 @@ n        <th>Date/Time</th>
                         <p><strong>Version:</strong> 2.1.0-Stable</p>
                     </div>
                 </div>
+                <!-- Serial Port Control Card -->
+                <div class="card">
+                    <h3 style="margin-top: 0; color: var(--info-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-microchip"></i> NodeMCU Serial Port
+                    </h3>
+                    <div class="form-group">
+                        <label>Select COM Port</label>
+                        <select id="comPortSelect" class="form-control">
+                            <option value="">-- No ports detected --</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; gap: 10px; margin-top: 10px;">
+                        <button class="btn btn-primary" onclick="connectSerialPort()" style="flex: 2;">
+                            <i class="fas fa-plug"></i> Connect
+                        </button>
+                        <button class="btn btn-secondary" onclick="fetchSerialPorts()" style="flex: 1;">
+                            <i class="fas fa-sync"></i> Refresh
+                        </button>
+                    </div>
+                    <p style="margin-top: 15px; font-size: 0.9rem;">
+                        <strong>Status:</strong> <span id="serialPortStatus" class="badge badge-offline">Disconnected</span>
+                    </p>
+                    <div id="serialPortMsg" style="margin-top: 10px; font-weight: bold; display: none;"></div>
+                </div>
             </div>
         </div>
 
@@ -3247,54 +3271,142 @@ n        <th>Date/Time</th>
         
         // Restore last active section or default to dashboard
         const savedSection = localStorage.getItem('adminActiveSection') || 'dashboard';
-        console.log('Attempting to show section on load:', savedSection);
-        showSection(savedSection);
+            console.log('Attempting to show section on load:', savedSection);
+            showSection(savedSection);
 
-        setInterval(fetchStats, 5000); // Update stats every 5 seconds for responsive CPU bar
+            setInterval(fetchStats, 5000); // Update stats every 5 seconds for responsive CPU bar
 
-        document.getElementById('changePasswordForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const currentPassword = document.getElementById('current_password').value;
-            const newPassword = document.getElementById('new_password').value;
-            const confirmNewPassword = document.getElementById('confirm_new_password').value;
-            const passwordChangeMsg = document.getElementById('passwordChangeMsg');
+            document.getElementById('changePasswordForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const currentPassword = document.getElementById('current_password').value;
+                const newPassword = document.getElementById('new_password').value;
+                const confirmNewPassword = document.getElementById('confirm_new_password').value;
+                const passwordChangeMsg = document.getElementById('passwordChangeMsg');
 
-            if (newPassword !== confirmNewPassword) {
-                passwordChangeMsg.style.color = 'var(--danger-color)';
-                passwordChangeMsg.innerText = 'New passwords do not match!';
-                passwordChangeMsg.style.display = 'block';
-                setTimeout(() => passwordChangeMsg.style.display = 'none', 3000);
-                return;
-            }
-
-            try {
-                const response = await fetch('/api/admin/change-password', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
-                });
-
-                const result = await response.json();
-
-                if (response.ok) {
-                    passwordChangeMsg.style.color = 'var(--success-color)';
-                    passwordChangeMsg.innerText = result.message;
-                    document.getElementById('changePasswordForm').reset();
-                } else {
+                if (newPassword !== confirmNewPassword) {
                     passwordChangeMsg.style.color = 'var(--danger-color)';
-                    passwordChangeMsg.innerText = result.error || 'Failed to change password.';
+                    passwordChangeMsg.innerText = 'New passwords do not match!';
+                    passwordChangeMsg.style.display = 'block';
+                    setTimeout(() => passwordChangeMsg.style.display = 'none', 3000);
+                    return;
                 }
-                passwordChangeMsg.style.display = 'block';
-                setTimeout(() => passwordChangeMsg.style.display = 'none', 3000);
 
-            } catch (error) {
-                passwordChangeMsg.style.color = 'var(--danger-color)';
-                passwordChangeMsg.innerText = 'An error occurred while changing password.';
-                passwordChangeMsg.style.display = 'block';
-                setTimeout(() => passwordChangeMsg.style.display = 'none', 3000);
-                console.error('Error changing password:', error);
+                try {
+                    const response = await fetch('/api/admin/change-password', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
+                    });
+
+                    const result = await response.json();
+
+                    if (response.ok) {
+                        passwordChangeMsg.style.color = 'var(--success-color)';
+                        passwordChangeMsg.innerText = result.message;
+                        document.getElementById('changePasswordForm').reset();
+                    } else {
+                        passwordChangeMsg.style.color = 'var(--danger-color)';
+                        passwordChangeMsg.innerText = result.error || 'Failed to change password.';
+                    }
+                    passwordChangeMsg.style.display = 'block';
+                    setTimeout(() => passwordChangeMsg.style.display = 'none', 3000);
+
+                } catch (error) {
+                    passwordChangeMsg.style.color = 'var(--danger-color)';
+                    passwordChangeMsg.innerText = 'An error occurred while changing password.';
+                    passwordChangeMsg.style.display = 'block';
+                    setTimeout(() => passwordChangeMsg.style.display = 'none', 3000);
+                    console.error('Error changing password:', error);
+                }
+            });
+
+            // Serial Port Functions
+            async function fetchSerialPorts() {
+                const comPortSelect = document.getElementById('comPortSelect');
+                comPortSelect.innerHTML = '<option value="">-- Select a port --</option>'; // Reset options
+                const serialPortStatus = document.getElementById('serialPortStatus');
+                const serialPortMsg = document.getElementById('serialPortMsg');
+                serialPortMsg.style.display = 'none';
+
+                try {
+                    const response = await fetch('/api/serial-ports');
+                    const ports = await response.json();
+
+                    if (ports.length > 0) {
+                        ports.forEach(port => {
+                            const option = document.createElement('option');
+                            option.value = port.path;
+                            option.innerText = `${port.path} (${port.manufacturer})`;
+                            comPortSelect.appendChild(option);
+                        });
+                        comPortSelect.value = localStorage.getItem('selectedSerialPort') || ''; // Restore last selected
+                    } else {
+                        comPortSelect.innerHTML = '<option value="">-- No ports detected --</option>';
+                    }
+                } catch (e) {
+                    console.error('Error fetching serial ports:', e);
+                    serialPortMsg.style.color = 'var(--danger-color)';
+                    serialPortMsg.innerText = 'Failed to fetch serial ports.';
+                    serialPortMsg.style.display = 'block';
+                }
             }
-        });
-    </script>
-</body>
+
+            async function connectSerialPort() {
+                const comPortSelect = document.getElementById('comPortSelect');
+                const portPath = comPortSelect.value;
+                const serialPortStatus = document.getElementById('serialPortStatus');
+                const serialPortMsg = document.getElementById('serialPortMsg');
+                serialPortMsg.style.display = 'none';
+
+                if (!portPath) {
+                    serialPortMsg.style.color = 'var(--danger-color)';
+                    serialPortMsg.innerText = 'Please select a COM port.';
+                    serialPortMsg.style.display = 'block';
+                    return;
+                }
+
+                serialPortStatus.innerText = 'Connecting...';
+                serialPortStatus.className = 'badge badge-warning';
+
+                try {
+                    const response = await fetch('/api/serial-port/connect', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ portPath })
+                    });
+                    const result = await response.json();
+
+                    if (response.ok) {
+                        serialPortStatus.innerText = 'Connected';
+                        serialPortStatus.className = 'badge badge-online';
+                        serialPortMsg.style.color = 'var(--success-color)';
+                        serialPortMsg.innerText = result.message;
+                        localStorage.setItem('selectedSerialPort', portPath); // Save selected port
+                    } else {
+                        serialPortStatus.innerText = 'Disconnected';
+                        serialPortStatus.className = 'badge badge-offline';
+                        serialPortMsg.style.color = 'var(--danger-color)';
+                        serialPortMsg.innerText = result.error || 'Failed to connect.';
+                    }
+                    serialPortMsg.style.display = 'block';
+                    setTimeout(() => serialPortMsg.style.display = 'none', 5000);
+                } catch (e) {
+                    console.error('Error connecting to serial port:', e);
+                    serialPortStatus.innerText = 'Disconnected';
+                    serialPortStatus.className = 'badge badge-offline';
+                    serialPortMsg.style.color = 'var(--danger-color)';
+                    serialPortMsg.innerText = 'Network error or server issue.';
+                    serialPortMsg.style.display = 'block';
+                    setTimeout(() => serialPortMsg.style.display = 'none', 5000);
+                }
+            }
+
+            // Extend fetchSystemInfo to also fetch serial ports
+            const originalFetchSystemInfo = fetchSystemInfo;
+            fetchSystemInfo = async () => {
+                await originalFetchSystemInfo();
+                fetchSerialPorts(); // Fetch serial ports when system info is loaded
+            };
+        </script>
+    </body>
 </html>
