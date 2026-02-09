@@ -1426,14 +1426,16 @@ app.post('/api/system/reboot', isAuthenticated, (req, res) => {
         const scriptPath = path.join(__dirname, 'scripts', 'reboot.sh');
         const command = os.platform() === 'win32' ? 'shutdown /r /t 1' : scriptPath;
         console.log(`Attempting to execute reboot command: ${command}`);
-        try {
-            const stdout = execSync(command, { encoding: 'utf8', timeout: 5000 });
-            console.log(`Reboot command executed successfully. Stdout: ${stdout}`);
-        } catch (error) {
-            console.error(`Reboot command failed: ${error.message}`);
-            console.error(`Stderr: ${error.stderr}`);
-            console.error(`Stdout: ${error.stdout}`);
-        }
+        exec(command, { timeout: 5000 }, (error, stdout, stderr) => {
+            if (error) {
+                console.error(`Reboot command failed: ${error.message}`);
+                console.error(`Stderr: ${stderr}`);
+                console.error(`Stdout: ${stdout}`);
+                console.error(`Full error object:`, error);
+            } else {
+                console.log(`Reboot command executed successfully. Stdout: ${stdout}`);
+            }
+        });
     }, 1000);
 });
 
@@ -1445,14 +1447,16 @@ app.post('/api/system/shutdown', isAuthenticated, (req, res) => {
         const scriptPath = path.join(__dirname, 'scripts', 'shutdown.sh');
         const command = os.platform() === 'win32' ? 'shutdown /s /t 1' : scriptPath;
         console.log(`Attempting to execute shutdown command: ${command}`);
-        try {
-            const stdout = execSync(command, { encoding: 'utf8', timeout: 5000 });
-            console.log(`Shutdown command executed successfully. Stdout: ${stdout}`);
-        } catch (error) {
-            console.error(`Shutdown command failed: ${error.message}`);
-            console.error(`Stderr: ${error.stderr}`);
-            console.error(`Stdout: ${error.stdout}`);
-        }
+        exec(command, { timeout: 5000 }, (error, stdout, stderr) => {
+            if (error) {
+                console.error(`Shutdown command failed: ${error.message}`);
+                console.error(`Stderr: ${stderr}`);
+                console.error(`Stdout: ${stdout}`);
+                console.error(`Full error object:`, error);
+            } else {
+                console.log(`Shutdown command executed successfully. Stdout: ${stdout}`);
+            }
+        });
     }, 1000);
 });
 
