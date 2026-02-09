@@ -1159,6 +1159,15 @@ app.delete('/api/rates/:id', isAuthenticated, (req, res) => {
     });
 });
 
+app.put('/api/rates/:id', isAuthenticated, (req, res) => {
+    const { amount, duration, unit } = req.body;
+    const { id } = req.params;
+    db.run(`UPDATE rates SET amount = ?, duration = ?, unit = ? WHERE id = ?`, [amount, duration, unit, id], (err) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        res.json({ success: true });
+    });
+});
+
 // API Vouchers
 app.get('/api/vouchers', isAuthenticated, (req, res) => {
     db.all(`SELECT * FROM vouchers ORDER BY created_at DESC`, [], (err, rows) => {
@@ -1414,7 +1423,8 @@ app.post('/api/system/reboot', isAuthenticated, (req, res) => {
     res.json({ success: true, message: 'Rebooting system...' });
     // Execute reboot command after a short delay to allow response to be sent
     setTimeout(() => {
-        const command = os.platform() === 'win32' ? 'shutdown /r /t 1' : 'sudo reboot';
+        const scriptPath = path.join(__dirname, 'scripts', 'reboot.sh');
+        const command = os.platform() === 'win32' ? 'shutdown /r /t 1' : scriptPath;
         console.log(`Attempting to execute reboot command: ${command}`);
         try {
             const stdout = execSync(command, { encoding: 'utf8', timeout: 5000 });
@@ -1432,7 +1442,8 @@ app.post('/api/system/shutdown', isAuthenticated, (req, res) => {
     res.json({ success: true, message: 'Shutting down system...' });
     // Execute shutdown command after a short delay to allow response to be sent
     setTimeout(() => {
-        const command = os.platform() === 'win32' ? 'shutdown /s /t 1' : 'sudo shutdown -h now';
+        const scriptPath = path.join(__dirname, 'scripts', 'shutdown.sh');
+        const command = os.platform() === 'win32' ? 'shutdown /s /t 1' : scriptPath;
         console.log(`Attempting to execute shutdown command: ${command}`);
         try {
             const stdout = execSync(command, { encoding: 'utf8', timeout: 5000 });

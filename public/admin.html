@@ -671,7 +671,7 @@
         <div id="ratesSection" style="display: none;">
             <div class="header">
                 <h2>Manage Rates</h2>
-                <button onclick="document.getElementById('addRateModal').style.display='block'" class="btn btn-success" style="padding: 10px 20px; border-radius: 8px; font-size: 1rem;">
+                <button onclick="openRateModal()" class="btn btn-success" style="padding: 10px 20px; border-radius: 8px; font-size: 1rem;">
                     <i class="fas fa-plus" style="margin-right: 8px;"></i> Add New Rate
                 </button>
             </div>
@@ -1505,7 +1505,6 @@ n        <th>Date/Time</th>
                             <option value="fire">Fire Glow</option>
                             <option value="neon">Neon Pulse</option>
                             <option value="gold">Gold Shine</option>
-                            <option value="ghost">Ghostly Fade</option>
                             <option value="matrix">Matrix Code</option>
                             <option value="water">Water Ripple</option>
                             <option value="portal">Portal Spin</option>
@@ -1653,21 +1652,22 @@ n        <th>Date/Time</th>
     </div>
 
     <!-- Modals -->
-    <div id="addRateModal" class="modal">
+    <div id="rateModal" class="modal">
         <div class="modal-content">
-            <h3>Add New Rate</h3>
-            <form id="addRateForm">
+            <h3 id="rateModalTitle">Add New Rate</h3>
+            <form id="rateForm">
+                <input type="hidden" id="rateId" name="id">
                 <div class="form-group">
                     <label>Amount (PHP)</label>
-                    <input type="number" name="amount" required>
+                    <input type="number" id="rateAmount" name="amount" required>
                 </div>
                 <div class="form-group">
                     <label>Duration</label>
-                    <input type="number" name="duration" required>
+                    <input type="number" id="rateDuration" name="duration" required>
                 </div>
                 <div class="form-group">
                     <label>Unit</label>
-                    <select name="unit">
+                    <select id="rateUnit" name="unit">
                         <option value="minutes">Minutes</option>
                         <option value="hour">Hour</option>
                         <option value="hours">Hours</option>
@@ -1677,7 +1677,7 @@ n        <th>Date/Time</th>
                 </div>
                 <div style="display:flex; gap:10px;">
                     <button type="submit" class="btn btn-success" style="flex:1;">Save</button>
-                    <button type="button" onclick="document.getElementById('addRateModal').style.display='none'" class="btn btn-secondary" style="flex:1;">Cancel</button>
+                    <button type="button" onclick="document.getElementById('rateModal').style.display='none'" class="btn btn-secondary" style="flex:1;">Cancel</button>
                 </div>
             </form>
         </div>
@@ -2139,7 +2139,10 @@ n        <th>Date/Time</th>
                             <td>₱ ${rate.amount}</td>
                             <td>${rate.duration} ${rate.unit}</td>
                             <td>
-                                <button onclick="deleteRate(${rate.id})" style="color:var(--danger-color); border:none; background:none; cursor:pointer;">
+                                <button onclick="openRateModal(${rate.id}, ${rate.amount}, ${rate.duration}, '${rate.unit}')" class="btn btn-info btn-sm" style="margin-right: 5px;">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button onclick="deleteRate(${rate.id})" class="btn btn-danger btn-sm">
                                     <i class="fas fa-trash"></i>
                                 </button>
                             </td>
@@ -2156,18 +2159,43 @@ n        <th>Date/Time</th>
             }
         }
 
-        document.getElementById('addRateForm').addEventListener('submit', async (e) => {
+        document.getElementById('rateForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const data = Object.fromEntries(new FormData(e.target).entries());
-            await fetch('/api/rates', {
-                method: 'POST',
+            const rateId = document.getElementById('rateId').value;
+            let url = '/api/rates';
+            let method = 'POST';
+
+            if (rateId) { // If rateId exists, it's an edit operation
+                url = `/api/rates/${rateId}`;
+                method = 'PUT';
+            }
+
+            await fetch(url, {
+                method: method,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data)
             });
-            document.getElementById('addRateModal').style.display = 'none';
+            document.getElementById('rateModal').style.display = 'none';
             e.target.reset();
             fetchRates();
+            fetchRatesForVouchers(); // Also refresh rates for voucher generation
         });
+
+        function openRateModal(id = '', amount = '', duration = '', unit = 'minutes') {
+            document.getElementById('rateModalTitle').innerText = id ? 'Edit Rate' : 'Add New Rate';
+            document.getElementById('rateId').value = id;
+            document.getElementById('rateAmount').value = amount;
+            document.getElementById('rateDuration').value = duration;
+            document.getElementById('rateUnit').value = unit;
+            document.getElementById('rateModal').style.display = 'block';
+        }
+
+        function resetRateForm() {
+            document.getElementById('rateForm').reset();
+            document.getElementById('rateId').value = '';
+            document.getElementById('rateModalTitle').innerText = 'Add New Rate';
+        }
 
         async function fetchVouchers() {
             try {
