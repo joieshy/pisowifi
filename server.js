@@ -364,6 +364,9 @@ async function initNetwork() {
         // REDIRECT: All HTTP traffic (port 80) from clients on LAN to Node.js portal (port 3000)
         execSync(`sudo iptables -t nat -A PREROUTING -i ${lanInterface} -p tcp --dport 80 -j REDIRECT --to-port ${PORT}`);
 
+        // REDIRECT: All DNS traffic (UDP 53) from clients on LAN to the PisoWiFi server's DNS (dnsmasq)
+        execSync(`sudo iptables -t nat -A PREROUTING -i ${lanInterface} -p udp --dport 53 -j DNAT --to-destination ${lanIpAddress}:53`);
+
         console.log('Network initialization complete.');
     } catch (e) {
         console.error('Network init failed:', e.message);
