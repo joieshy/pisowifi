@@ -676,7 +676,7 @@ db.serialize(() => {
         }
     });
 
-    // Run network init and traffic control init after database is ready
+    // Re-enabled network init and traffic control init after disabling UFW
     initNetwork();
     initTrafficControl();
     initSerialPort(); // Re-enabled automatic serial port initialization
