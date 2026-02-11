@@ -898,8 +898,19 @@ app.get('/api/network/available-interfaces', isAuthenticated, (req, res) => {
     if (os.platform() === 'linux') {
         exec('ip -o link show type ether | awk \'{print $2}\' | sed \'s/://\'', (error, stdout, stderr) => {
             if (error) {
-                console.error(`exec error: ${error}`);
-                return res.status(500).json({ error: 'Failed to list network interfaces', details: stderr });
+                console.error(`Error listing network interfaces on Linux: ${error.message}`);
+                console.error(`Stderr: ${stderr}`);
+                // Try a simpler command as a fallback
+                exec('ls /sys/class/net', (fallbackError, fallbackStdout, fallbackStderr) => {
+                    if (fallbackError) {
+                        console.error(`Fallback error listing network interfaces on Linux: ${fallbackError.message}`);
+                        console.error(`Fallback Stderr: ${fallbackStderr}`);
+                        return res.status(500).json({ error: 'Failed to list network interfaces', details: stderr || fallbackStderr });
+                    }
+                    const interfaces = fallbackStdout.split('\n').map(s => s.trim()).filter(s => s.length > 0 && s !== 'lo'); // Exclude loopback
+                    res.json(interfaces);
+                });
+                return;
             }
             const interfaces = stdout.split('\n').map(s => s.trim()).filter(s => s.length > 0);
             res.json(interfaces);
@@ -908,7 +919,8 @@ app.get('/api/network/available-interfaces', isAuthenticated, (req, res) => {
         // For Windows, use PowerShell to get network adapter names
         exec('powershell -Command "Get-NetAdapter | Select-Object -ExpandProperty Name"', (error, stdout, stderr) => {
             if (error) {
-                console.error(`exec error: ${error}`);
+                console.error(`Error listing network interfaces on Windows: ${error.message}`);
+                console.error(`Stderr: ${stderr}`);
                 return res.status(500).json({ error: 'Failed to list network interfaces on Windows', details: stderr });
             }
             const interfaces = stdout.split('\n').map(s => s.trim()).filter(s => s.length > 0);
