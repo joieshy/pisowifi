@@ -2764,38 +2764,34 @@ n        <th>Date/Time</th>
         // Event listener for network interfaces form submission
         document.getElementById('networkInterfacesForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const data = Object.fromEntries(new FormData(e.target).entries());
 
-            // Process DNS servers from comma-separated string to array
-            if (data.wan_dns_servers) {
-                data.wan_dns_servers = data.wan_dns_servers.split(',').map(s => s.trim()).filter(s => s);
-            } else {
-                data.wan_dns_servers = [];
-            }
-            if (data.lan_dns_servers) {
-                data.lan_dns_servers = data.lan_dns_servers.split(',').map(s => s.trim()).filter(s => s);
-            } else {
-                data.lan_dns_servers = [];
-            }
+            const payload = {
+                wanIface: document.getElementById('wan_interface_name').value,
+                lanIface: document.getElementById('lan_interface_name').value,
+                lanIP: document.getElementById('lan_ip_address').value,
+                dns: document.getElementById('lan_dns_servers').value.split(',').map(s => s.trim()).filter(s => s)
+            };
 
             try {
-                const response = await fetch('/api/network/interfaces', {
+                const res = await fetch('/api/save-network', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
+                    body: JSON.stringify(payload)
                 });
-                const result = await response.json();
+
+                const result = await res.json();
                 const msg = document.getElementById('networkConfigMsg');
-                if (response.ok) {
+                if (result.success) {
                     msg.style.color = 'var(--success-color)';
-                    msg.innerText = result.message || 'Network configuration applied!';
-                    fetchNetworkInterfaces(); // Refresh settings after successful application
+                    msg.innerText = result.message || "Network Updated!";
+                    // No need to call fetchNetworkInterfaces() here, as the server handles the actual application
                 } else {
                     msg.style.color = 'var(--danger-color)';
-                    msg.innerText = result.error || 'Failed to apply network configuration.';
+                    msg.innerText = result.error || "Failed to update network.";
                 }
                 msg.style.display = 'block';
                 setTimeout(() => msg.style.display = 'none', 5000);
+
             } catch (error) {
                 const msg = document.getElementById('networkConfigMsg');
                 msg.style.color = 'var(--danger-color)';

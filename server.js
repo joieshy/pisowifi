@@ -12,6 +12,7 @@ const { exec, execSync } = require('child_process');
 const https = require('https');
 const axios = require('axios');
 const { SerialPort, ReadlineParser } = require('serialport'); // Import serialport
+const { applyNetworkConfig } = require('./services/networkService'); // Import networkService
 const app = express();
 app.set('trust proxy', true);
 
@@ -1993,6 +1994,16 @@ app.post('/api/license/generate', isAuthenticated, (req, res) => {
         if (err) return res.status(500).json({ error: 'Failed to save license' });
         res.json({ key });
     });
+});
+
+// API to apply network configuration
+app.post('/api/save-network', async (req, res) => {
+    try {
+        await applyNetworkConfig(req.body);
+        res.json({ success: true, message: "Network Updated!" });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
 });
 
 // License: Activate
