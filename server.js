@@ -43,7 +43,13 @@ const PORT = process.env.PORT || 3000;
 const DATABASE_PATH = process.env.DATABASE_PATH || './pisowifi.db';
 
 let serialPort = null;
-const NODE_MCU_MANUFACTURER_IDENTIFIER = 'USB-SERIAL CH340'; // Common identifier for NodeMCU (CH340G chip)
+// Common identifiers for NodeMCU (CH340G chip) across different OS
+const NODE_MCU_IDENTIFIERS = [
+    'USB-SERIAL CH340', // Common for Windows
+    'wch.cn',           // Common for CH340 on Linux
+    'QinHeng Electronics', // Another common for CH340 on Linux
+    'CH340'             // More generic, might appear in pnpId or description
+];
 
 const http = require('http');
 const server = http.createServer(app);
@@ -343,15 +349,10 @@ async function initNetwork() {
         // Clear existing rules to avoid duplicates
         execSync('sudo iptables -F');
         execSync('sudo iptables -t nat -F');
+        execSync('sudo iptables -t mangle -F'); // Also clear mangle table
         
         // Setup NAT (MASQUERADE)
         execSync(`sudo iptables -t nat -A POSTROUTING -o ${wanInterface} -j MASQUERADE`);
-        
-        // Redirect all traffic from LAN to local portal if not authenticated
-        // This rule is for the captive portal and requires the LAN interface to be active.
-        // It will be applied via the admin panel once the LAN interface is set up.
-        // For now, we'll skip it during initial server startup if the LAN interface is not ready.
-        // execSync(`sudo iptables -t nat -A PREROUTING -i ${lanInterface} -p tcp --dport 80 -j DNAT --to-destination ${lanIpAddress}:${PORT}`);
         
         // Allow DNS traffic (UDP 53) so users can resolve the portal domain
         execSync('sudo iptables -I FORWARD -p udp --dport 53 -j ACCEPT');
@@ -360,6 +361,10 @@ async function initNetwork() {
         // Add general FORWARD rules for internet sharing
         execSync(`sudo iptables -A FORWARD -i ${wanInterface} -o ${lanInterface} -m state --state RELATED,ESTABLISHED -j ACCEPT`);
         execSync(`sudo iptables -A FORWARD -i ${lanInterface} -o ${wanInterface} -j ACCEPT`);
+
+        // --- Captive Portal Rules ---
+        // Log all traffic hitting PREROUTING from LAN for debugging
+        execSync(`sudo iptables -t nat -A PREROUTING -i ${lanInterface} -j LOG --log-prefix "PISOWIFI_PREROUTING: " --log-level 7`);
 
         // REDIRECT: All HTTP traffic (port 80) from clients on LAN to Node.js portal (port 3000)
         execSync(`sudo iptables -t nat -A PREROUTING -i ${lanInterface} -p tcp --dport 80 -j REDIRECT --to-port ${PORT}`);
@@ -710,7 +715,14 @@ function sendSerialCommand(command) {
 // Function to initialize serial port
 function initSerialPort() {
     SerialPort.list().then(ports => {
-        const nodeMcuPort = ports.find(port => port.manufacturer && port.manufacturer.includes(NODE_MCU_MANUFACTURER_IDENTIFIER));
+        const nodeMcuPort = ports.find(port => 
+            NODE_MCU_IDENTIFIERS.some(identifier => 
+                (port.manufacturer && port.manufacturer.includes(identifier)) || 
+                (port.pnpId && port.pnpId.includes(identifier)) ||
+                (port.friendlyName && port.friendlyName.includes(identifier)) ||
+                (port.path && port.path.includes('ttyUSB')) // Common Linux serial port pattern
+            )
+        );
         if (nodeMcuPort) {
             console.log(`NodeMCU found on port: ${nodeMcuPort.path}`);
             if (serialPort && serialPort.isOpen) {

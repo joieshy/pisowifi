@@ -3353,7 +3353,15 @@ n        <th>Date/Time</th>
                         ports.forEach(port => {
                             const option = document.createElement('option');
                             option.value = port.path;
-                            option.innerText = `${port.path} (${port.manufacturer})`;
+                            let displayInfo = port.path;
+                            if (port.manufacturer && port.manufacturer !== 'N/A') {
+                                displayInfo += ` (${port.manufacturer})`;
+                            } else if (port.pnpId && port.pnpId !== 'N/A') {
+                                displayInfo += ` (${port.pnpId})`;
+                            } else if (port.friendlyName && port.friendlyName !== 'N/A') {
+                                displayInfo += ` (${port.friendlyName})`;
+                            }
+                            option.innerText = displayInfo;
                             comPortSelect.appendChild(option);
                         });
                         comPortSelect.value = localStorage.getItem('selectedSerialPort') || ''; // Restore last selected
