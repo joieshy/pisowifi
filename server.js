@@ -899,9 +899,10 @@ app.get('/api/network/available-interfaces', isAuthenticated, (req, res) => {
         exec('ls /sys/class/net', (error, stdout, stderr) => {
             if (error) {
                 console.error(`Error listing network interfaces on Linux: ${error.message}`);
-                console.error(`Stderr: ${stderr}`);
+                console.error(`Stderr from ls /sys/class/net: ${stderr}`);
                 return res.status(500).json({ error: 'Failed to list network interfaces', details: stderr });
             }
+            console.log(`Stdout from ls /sys/class/net: ${stdout}`); // Idinagdag para sa debugging
             const interfaces = stdout.split('\n').map(s => s.trim()).filter(s => s.length > 0 && s !== 'lo'); // Exclude loopback
             res.json(interfaces);
         });
