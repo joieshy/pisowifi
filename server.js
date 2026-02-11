@@ -815,7 +815,10 @@ app.get('/api/serial-ports', isAuthenticated, async (req, res) => {
         res.json(ports.map(port => ({
             path: port.path,
             manufacturer: port.manufacturer || 'N/A',
-            pnpId: port.pnpId || 'N/A'
+            pnpId: port.pnpId || 'N/A',
+            friendlyName: port.friendlyName || 'N/A', // Add friendlyName
+            vendorId: port.vendorId || 'N/A',       // Add vendorId
+            productId: port.productId || 'N/A'      // Add productId
         })));
     } catch (err) {
         console.error('Error listing serial ports:', err.message);

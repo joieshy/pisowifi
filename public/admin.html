@@ -3354,12 +3354,15 @@ n        <th>Date/Time</th>
                             const option = document.createElement('option');
                             option.value = port.path;
                             let displayInfo = port.path;
-                            if (port.manufacturer && port.manufacturer !== 'N/A') {
+                            // Prioritize friendlyName, then manufacturer, then pnpId, then vendorId/productId
+                            if (port.friendlyName && port.friendlyName !== 'N/A') {
+                                displayInfo += ` (${port.friendlyName})`;
+                            } else if (port.manufacturer && port.manufacturer !== 'N/A') {
                                 displayInfo += ` (${port.manufacturer})`;
                             } else if (port.pnpId && port.pnpId !== 'N/A') {
                                 displayInfo += ` (${port.pnpId})`;
-                            } else if (port.friendlyName && port.friendlyName !== 'N/A') {
-                                displayInfo += ` (${port.friendlyName})`;
+                            } else if (port.vendorId !== 'N/A' && port.productId !== 'N/A') {
+                                displayInfo += ` (VID:${port.vendorId} PID:${port.productId})`;
                             }
                             option.innerText = displayInfo;
                             comPortSelect.appendChild(option);
