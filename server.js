@@ -357,6 +357,13 @@ async function initNetwork() {
         execSync('sudo iptables -I FORWARD -p udp --dport 53 -j ACCEPT');
         execSync('sudo iptables -I FORWARD -p udp --sport 53 -j ACCEPT');
 
+        // Add general FORWARD rules for internet sharing
+        execSync(`sudo iptables -A FORWARD -i ${wanInterface} -o ${lanInterface} -m state --state RELATED,ESTABLISHED -j ACCEPT`);
+        execSync(`sudo iptables -A FORWARD -i ${lanInterface} -o ${wanInterface} -j ACCEPT`);
+
+        // REDIRECT: All HTTP traffic (port 80) from clients on LAN to Node.js portal (port 3000)
+        execSync(`sudo iptables -t nat -A PREROUTING -i ${lanInterface} -p tcp --dport 80 -j REDIRECT --to-port ${PORT}`);
+
         console.log('Network initialization complete.');
     } catch (e) {
         console.error('Network init failed:', e.message);
