@@ -1803,7 +1803,10 @@ n        <th>Date/Time</th>
             if (section === 'system') fetchSystemInfo();
             if (section === 'ewallet') fetchEWallet();
             if (section === 'security') fetchSecurity();
-            if (section === 'network') fetchNetwork();
+            if (section === 'network') {
+                fetchNetwork();
+                fetchAvailableNetworkInterfaces(); // Call directly when network section is shown
+            }
             if (section === 'license') fetchLicense();
             if (section === 'diagnostics') fetchLogs();
             if (section === 'announcements') fetchAnnouncement();
