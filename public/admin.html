@@ -2769,10 +2769,14 @@ n        <th>Date/Time</th>
             e.preventDefault();
 
             const payload = {
-                wanIface: document.getElementById('wan_interface_name').value,
-                lanIface: document.getElementById('lan_interface_name').value,
-                lanIP: document.getElementById('lan_ip_address').value,
-                dns: document.getElementById('lan_dns_servers').value.split(',').map(s => s.trim()).filter(s => s)
+                wan_interface_name: document.getElementById('wan_interface_name').value,
+                wan_config_type: document.getElementById('wan_config_type').value,
+                wan_ip_address: document.getElementById('wan_ip_address').value,
+                wan_gateway: document.getElementById('wan_gateway').value,
+                wan_dns_servers: document.getElementById('wan_dns_servers').value.split(',').map(s => s.trim()).filter(s => s),
+                lan_interface_name: document.getElementById('lan_interface_name').value,
+                lan_ip_address: document.getElementById('lan_ip_address').value,
+                lan_dns_servers: document.getElementById('lan_dns_servers').value.split(',').map(s => s.trim()).filter(s => s)
             };
 
             try {
