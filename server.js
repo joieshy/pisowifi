@@ -12,7 +12,7 @@ const { exec, execSync } = require('child_process');
 const https = require('https');
 const axios = require('axios');
 const { SerialPort, ReadlineParser } = require('serialport'); // Import serialport
-const { applyNetworkConfig } = require('./services/networkService'); // Import networkService
+const { applyNetworkConfig } = require('./services/networkService'); // Idinagdag ito
 const app = express();
 app.set('trust proxy', true);
 
@@ -1996,15 +1996,6 @@ app.post('/api/license/generate', isAuthenticated, (req, res) => {
     });
 });
 
-// API to apply network configuration
-app.post('/api/save-network', async (req, res) => {
-    try {
-        await applyNetworkConfig(req.body);
-        res.json({ success: true, message: "Network Updated!" });
-    } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
-    }
-});
 
 // License: Activate
 app.post('/api/license/activate', isAuthenticated, (req, res) => {
@@ -2315,9 +2306,19 @@ io.on('connection', (socket) => {
                 coinInsertionActive = false;
                 activeCoinInserterMac = null;
                 io.emit('coinInsertionStatus', { active: false, by: null });
-                console.log(`Coin insertion reset due to disconnect of ${socket.handshake.query.mac}. D8 set to HIGH (allow).`);
+                        console.log(`Coin insertion reset due to disconnect of ${socket.handshake.query.mac}. D8 set to HIGH (allow).`);
             }
         });
+});
+
+// Idinagdag na API endpoint para sa pag-save ng network configuration
+app.post('/api/save-network', async (req, res) => {
+    try {
+        await applyNetworkConfig(req.body);
+        res.json({ success: true, message: "Network Updated!" });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
 });
 
 const HOST = '0.0.0.0'; // Temporarily hardcoded to 0.0.0.0 to resolve EADDRNOTAVAIL on server startup.
