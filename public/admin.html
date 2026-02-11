@@ -1081,12 +1081,14 @@ n        <th>Date/Time</th>
                         
                         <h4>WAN Interface (Internet)</h4>
                         <div class="form-group">
-                            <label>WAN Interface Name (e.g., enp1s0)</label>
-                            <input type="text" id="wan_interface_name" name="wan_interface_name" placeholder="e.g., enp1s0" required>
+                            <label>WAN Interface Name</label>
+                            <select id="wan_interface_name" name="wan_interface_name" class="form-control" required>
+                                <option value="">Loading interfaces...</option>
+                            </select>
                         </div>
                         <div class="form-group">
                             <label>WAN Configuration</label>
-                            <select id="wan_config_type" name="wan_config_type">
+                            <select id="wan_config_type" name="wan_config_type" class="form-control">
                                 <option value="dhcp">DHCP</option>
                                 <!-- <option value="static">Static IP (Advanced)</option> -->
                             </select>
@@ -1095,30 +1097,32 @@ n        <th>Date/Time</th>
                         <div id="staticWanFields" style="display: none;">
                             <div class="form-group">
                                 <label>WAN IP Address</label>
-                                <input type="text" id="wan_ip_address" name="wan_ip_address" placeholder="e.g., 192.168.1.10/24">
+                                <input type="text" id="wan_ip_address" name="wan_ip_address" placeholder="e.g., 192.168.1.10/24" class="form-control">
                             </div>
                             <div class="form-group">
                                 <label>WAN Gateway</label>
-                                <input type="text" id="wan_gateway" name="wan_gateway" placeholder="e.g., 192.168.1.1">
+                                <input type="text" id="wan_gateway" name="wan_gateway" placeholder="e.g., 192.168.1.1" class="form-control">
                             </div>
                             <div class="form-group">
                                 <label>WAN DNS Servers (comma-separated)</label>
-                                <input type="text" id="wan_dns_servers" name="wan_dns_servers" placeholder="e.g., 8.8.8.8,8.8.4.4">
+                                <input type="text" id="wan_dns_servers" name="wan_dns_servers" placeholder="e.g., 8.8.8.8,8.8.4.4" class="form-control">
                             </div>
                         </div>
 
                         <h4 style="margin-top: 25px;">LAN Interface (Clients)</h4>
                         <div class="form-group">
-                            <label>LAN Interface Name (e.g., enp2s0)</label>
-                            <input type="text" id="lan_interface_name" name="lan_interface_name" placeholder="e.g., enp2s0" required>
+                            <label>LAN Interface Name</label>
+                            <select id="lan_interface_name" name="lan_interface_name" class="form-control" required>
+                                <option value="">Loading interfaces...</option>
+                            </select>
                         </div>
                         <div class="form-group">
                             <label>LAN IP Address (e.g., 10.0.0.1/24)</label>
-                            <input type="text" id="lan_ip_address" name="lan_ip_address" placeholder="e.g., 10.0.0.1/24" required>
+                            <input type="text" id="lan_ip_address" name="lan_ip_address" placeholder="e.g., 10.0.0.1/24" class="form-control" required>
                         </div>
                         <div class="form-group">
                             <label>LAN DNS Servers (comma-separated)</label>
-                            <input type="text" id="lan_dns_servers" name="lan_dns_servers" placeholder="e.g., 8.8.8.8,8.8.4.4">
+                            <input type="text" id="lan_dns_servers" name="lan_dns_servers" placeholder="e.g., 8.8.8.8,8.8.4.4" class="form-control">
                         </div>
                         <button type="submit" class="btn btn-warning" style="width: 100%; color: white;">
                             <i class="fas fa-save"></i> Apply Network Configuration
@@ -1152,20 +1156,30 @@ n        <th>Date/Time</th>
                 </div>
 
                 <!-- Port Triggering -->
-                <div class="card" style="grid-column: 1 / -1;">
+                <div class="card">
                     <h3 style="margin-top: 0; color: #6f42c1; border-bottom: 1px solid #eee; padding-bottom: 10px;">
                         <i class="fas fa-door-open"></i> Port Triggering
                     </h3>
-                    <form id="addPortTriggerForm" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 15px;">
-                        <input type="text" name="name" placeholder="App Name (e.g. Steam)" required>
-                        <input type="number" name="trigger_port" placeholder="Trigger Port" required>
-                        <select name="trigger_proto">
-                            <option value="TCP">TCP</option>
-                            <option value="UDP">UDP</option>
-                            <option value="BOTH">BOTH</option>
-                        </select>
-                        <input type="text" name="open_port" placeholder="Open Ports (e.g. 27000-27015)" required>
-                        <button type="submit" class="btn btn-primary">Add Trigger</button>
+                    <form id="addPortTriggerForm" style="margin-bottom: 15px;">
+                        <div class="form-group">
+                            <input type="text" name="name" placeholder="App Name (e.g. Steam)" required>
+                        </div>
+                        <div class="form-group">
+                            <input type="number" name="trigger_port" placeholder="Trigger Port" required>
+                        </div>
+                        <div class="form-group">
+                            <select name="trigger_proto">
+                                <option value="TCP">TCP</option>
+                                <option value="UDP">UDP</option>
+                                <option value="BOTH">BOTH</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <input type="text" name="open_port" placeholder="Open Ports (e.g. 27000-27015)" required>
+                        </div>
+                        <div class="form-group">
+                            <button type="submit" class="btn btn-primary" style="width: 100%;">Add Trigger</button>
+                        </div>
                     </form>
                     <div style="max-height: 200px; overflow-y: auto;">
                         <table style="font-size: 0.8rem;">
@@ -3406,6 +3420,65 @@ n        <th>Date/Time</th>
             fetchSystemInfo = async () => {
                 await originalFetchSystemInfo();
                 fetchSerialPorts(); // Fetch serial ports when system info is loaded
+            };
+
+            // Function to fetch available network interfaces and populate dropdowns
+            async function fetchAvailableNetworkInterfaces() {
+                try {
+                    const response = await fetch('/api/network/available-interfaces');
+                    const interfaces = await response.json();
+
+                    const wanSelect = document.getElementById('wan_interface_name');
+                    const lanSelect = document.getElementById('lan_interface_name');
+
+                    // Clear existing options
+                    wanSelect.innerHTML = '';
+                    lanSelect.innerHTML = '';
+
+                    if (interfaces.length === 0) {
+                        wanSelect.innerHTML = '<option value="">No interfaces detected</option>';
+                        lanSelect.innerHTML = '<option value="">No interfaces detected</option>';
+                        return;
+                    }
+
+                    // Populate dropdowns
+                    interfaces.forEach(iface => {
+                        const wanOption = document.createElement('option');
+                        wanOption.value = iface;
+                        wanOption.innerText = iface;
+                        wanSelect.appendChild(wanOption);
+
+                        const lanOption = document.createElement('option');
+                        lanOption.value = iface;
+                        lanOption.innerText = iface;
+                        lanSelect.appendChild(lanOption);
+                    });
+
+                    // Fetch current network settings to pre-select values
+                    const settingsResponse = await fetch('/api/network/interfaces');
+                    const settings = await settingsResponse.json();
+
+                    if (settings.wan_interface_name) {
+                        wanSelect.value = settings.wan_interface_name;
+                    }
+                    if (settings.lan_interface_name) {
+                        lanSelect.value = settings.lan_interface_name;
+                    }
+
+                } catch (e) {
+                    console.error('Error fetching available network interfaces:', e);
+                    const wanSelect = document.getElementById('wan_interface_name');
+                    const lanSelect = document.getElementById('lan_interface_name');
+                    wanSelect.innerHTML = '<option value="">Error loading interfaces</option>';
+                    lanSelect.innerHTML = '<option value="">Error loading interfaces</option>';
+                }
+            }
+
+            // Modify fetchNetwork to also call fetchAvailableNetworkInterfaces
+            const originalFetchNetwork = fetchNetwork;
+            fetchNetwork = async () => {
+                await originalFetchNetwork();
+                await fetchAvailableNetworkInterfaces();
             };
         </script>
     </body>

@@ -892,6 +892,33 @@ app.post('/api/serial-port/connect', isAuthenticated, async (req, res) => {
     }
 });
 
+// API to get available network interfaces
+app.get('/api/network/available-interfaces', isAuthenticated, (req, res) => {
+    if (os.platform() === 'linux') {
+        exec('ip -o link show type ether | awk \'{print $2}\' | sed \'s/://\'', (error, stdout, stderr) => {
+            if (error) {
+                console.error(`exec error: ${error}`);
+                return res.status(500).json({ error: 'Failed to list network interfaces', details: stderr });
+            }
+            const interfaces = stdout.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+            res.json(interfaces);
+        });
+    } else if (os.platform() === 'win32') {
+        // For Windows, use PowerShell to get network adapter names
+        exec('powershell -Command "Get-NetAdapter | Select-Object -ExpandProperty Name"', (error, stdout, stderr) => {
+            if (error) {
+                console.error(`exec error: ${error}`);
+                return res.status(500).json({ error: 'Failed to list network interfaces on Windows', details: stderr });
+            }
+            const interfaces = stdout.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+            res.json(interfaces);
+        });
+    } else {
+        // For other platforms, return mock data
+        return res.json(['eth0', 'eth1', 'wlan0', 'lo']);
+    }
+});
+
 // Serve static files from the 'public' directory
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
