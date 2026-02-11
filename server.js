@@ -903,36 +903,6 @@ app.post('/api/serial-port/connect', isAuthenticated, async (req, res) => {
     }
 });
 
-// API to get available network interfaces
-app.get('/api/network/available-interfaces', isAuthenticated, (req, res) => {
-    if (os.platform() === 'linux') {
-        exec('ls /sys/class/net', (error, stdout, stderr) => {
-            if (error) {
-                console.error(`Error listing network interfaces on Linux: ${error.message}`);
-                console.error(`Stderr from ls /sys/class/net: ${stderr}`);
-                return res.status(500).json({ error: 'Failed to list network interfaces', details: stderr });
-            }
-            console.log(`Stdout from ls /sys/class/net: ${stdout}`); // Idinagdag para sa debugging
-            const interfaces = stdout.split('\n').map(s => s.trim()).filter(s => s.length > 0 && s !== 'lo'); // Exclude loopback
-            res.json(interfaces);
-        });
-    } else if (os.platform() === 'win32') {
-        // For Windows, use PowerShell to get network adapter names
-        exec('powershell -Command "Get-NetAdapter | Select-Object -ExpandProperty Name"', (error, stdout, stderr) => {
-            if (error) {
-                console.error(`Error listing network interfaces on Windows: ${error.message}`);
-                console.error(`Stderr: ${stderr}`);
-                return res.status(500).json({ error: 'Failed to list network interfaces on Windows', details: stderr });
-            }
-            const interfaces = stdout.split('\n').map(s => s.trim()).filter(s => s.length > 0);
-            res.json(interfaces);
-        });
-    } else {
-        // For other platforms, return mock data
-        return res.json(['eth0', 'eth1', 'wlan0', 'lo']);
-    }
-});
-
 // Serve static files from the 'public' directory
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -988,8 +958,50 @@ const upload = multer({
 let currentSessionCoins = 0;
 
 // Routes
+
+// Captive portal detection URLs - redirect to main portal
+app.get('/generate_204', (req, res) => {
+    res.redirect('/');
+});
+app.get('/hotspot-detect.html', (req, res) => {
+    res.redirect('/');
+});
+app.get('/connecttest.txt', (req, res) => {
+    res.redirect('/');
+});
+
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// API to get available network interfaces
+app.get('/api/network/available-interfaces', isAuthenticated, (req, res) => {
+    if (os.platform() === 'linux') {
+        exec('ls /sys/class/net', (error, stdout, stderr) => {
+            if (error) {
+                console.error(`Error listing network interfaces on Linux: ${error.message}`);
+                console.error(`Stderr from ls /sys/class/net: ${stderr}`);
+                return res.status(500).json({ error: 'Failed to list network interfaces', details: stderr });
+            }
+            console.log(`Stdout from ls /sys/class/net: ${stdout}`); // Idinagdag para sa debugging
+            const interfaces = stdout.split('\n').map(s => s.trim()).filter(s => s.length > 0 && s !== 'lo'); // Exclude loopback
+            res.json(interfaces);
+        });
+    } else if (os.platform() === 'win32') {
+        // For Windows, use PowerShell to get network adapter names
+        exec('powershell -Command "Get-NetAdapter | Select-Object -ExpandProperty Name"', (error, stdout, stderr) => {
+            if (error) {
+                console.error(`Error listing network interfaces on Windows: ${error.message}`);
+                console.error(`Stderr: ${stderr}`);
+                return res.status(500).json({ error: 'Failed to list network interfaces on Windows', details: stderr });
+            }
+            const interfaces = stdout.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+            res.json(interfaces);
+        });
+    } else {
+        // For other platforms, return mock data
+        return res.json(['eth0', 'eth1', 'wlan0', 'lo']);
+    }
 });
 
 // API to get client info (IP and MAC)
