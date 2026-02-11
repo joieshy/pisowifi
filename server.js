@@ -620,7 +620,7 @@ db.serialize(() => {
         ['wan_ip_address', ''],
         ['wan_gateway', ''],
         ['wan_dns_servers', '8.8.8.8,8.8.4.4'],
-        ['lan_interface_name', 'enp2s0'],
+        ['lan_interface_name', 'enx00e04c680013'],
         ['lan_ip_address', '10.0.0.1/24'],
         ['lan_dns_servers', '8.8.8.8,8.8.4.4']
     ];
@@ -636,7 +636,7 @@ db.serialize(() => {
         ['wan_ip_address', ''],
         ['wan_gateway', ''],
         ['wan_dns_servers', '8.8.8.8,8.8.4.4'],
-        ['lan_interface_name', 'enp2s0'],
+        ['lan_interface_name', 'enx00e04c680013'],
         ['lan_ip_address', '10.0.0.1/24'],
         ['lan_dns_servers', '8.8.8.8,8.8.4.4']
     ];
