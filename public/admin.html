@@ -1155,6 +1155,199 @@ n        <th>Date/Time</th>
                     </form>
                 </div>
 
+                <!-- WiFi Settings -->
+                <div class="card">
+                    <h3 style="margin-top: 0; color: #fd7e14; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-wifi"></i> WiFi Settings
+                    </h3>
+                    <form id="wifiSettingsForm">
+                        <div class="form-group">
+                            <label>WiFi Password</label>
+                            <input type="password" id="wifi_password" name="wifi_password" placeholder="Enter WiFi password">
+                        </div>
+                        <div class="form-group">
+                            <label>Security Mode</label>
+                            <select id="wifi_security" name="wifi_security">
+                                <option value="none">None (Open)</option>
+                                <option value="wpa2">WPA2 Personal</option>
+                                <option value="wpa3">WPA3 Personal</option>
+                                <option value="wpa2+wpa3">WPA2/WPA3 Mixed</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Max Users</label>
+                            <input type="number" id="wifi_max_users" name="wifi_max_users" min="1" max="100" placeholder="50">
+                        </div>
+                        <div class="form-group">
+                            <label>Transmit Power (%)</label>
+                            <input type="number" id="wifi_transmit_power" name="wifi_transmit_power" min="10" max="100" placeholder="100">
+                        </div>
+                        <div class="form-group">
+                            <label>Hide SSID</label>
+                            <select id="wifi_hidden" name="wifi_hidden">
+                                <option value="false">No (Visible)</option>
+                                <option value="true">Yes (Hidden)</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-warning" style="width: 100%; color: white;">
+                            <i class="fas fa-save"></i> Save WiFi Settings
+                        </button>
+                    </form>
+                    <div id="wifiSettingsMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">WiFi settings saved!</div>
+                </div>
+
+                <!-- DHCP Advanced -->
+                <div class="card">
+                    <h3 style="margin-top: 0; color: #20c997; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-server"></i> DHCP Advanced
+                    </h3>
+                    <form id="dhcpAdvancedForm">
+                        <div class="form-group">
+                            <label>DHCP Lease Time (minutes)</label>
+                            <input type="number" id="dhcp_lease_time" name="dhcp_lease_time" min="1" max="10080" placeholder="1440 (24 hours)">
+                            <p style="font-size: 0.8rem; color: #858796;">Default: 1440 minutes (24 hours)</p>
+                        </div>
+                        <button type="submit" class="btn btn-info" style="width: 100%;">
+                            <i class="fas fa-save"></i> Save DHCP Settings
+                        </button>
+                    </form>
+                    <div id="dhcpAdvancedMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">DHCP settings saved!</div>
+                </div>
+
+                <!-- Firewall Settings -->
+                <div class="card">
+                    <h3 style="margin-top: 0; color: #e74a3b; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-shield-alt"></i> Firewall Settings
+                    </h3>
+                    <form id="firewallForm">
+                        <h4 style="margin-top: 15px; color: var(--danger-color);">DMZ</h4>
+                        <div class="form-group">
+                            <label>DMZ Status</label>
+                            <select id="dmz_enabled" name="dmz_enabled">
+                                <option value="false">Disabled</option>
+                                <option value="true">Enabled</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>DMZ IP Address</label>
+                            <input type="text" id="dmz_ip" name="dmz_ip" placeholder="e.g., 10.0.0.50">
+                        </div>
+                        
+                        <h4 style="margin-top: 20px; color: var(--primary-color);">VPN & NAT</h4>
+                        <div class="form-group">
+                            <label>VPN Passthrough</label>
+                            <select id="vpn_passthrough" name="vpn_passthrough">
+                                <option value="true">Enabled</option>
+                                <option value="false">Disabled</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>NAT Loopback (Hairpin NAT)</label>
+                            <select id="nat_loopback" name="nat_loopback">
+                                <option value="true">Enabled</option>
+                                <option value="false">Disabled</option>
+                            </select>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-danger" style="width: 100%;">
+                            <i class="fas fa-save"></i> Save Firewall Settings
+                        </button>
+                    </form>
+                    <div id="firewallMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">Firewall settings saved!</div>
+                </div>
+
+                <!-- Access Control / WiFi Schedule -->
+                <div class="card">
+                    <h3 style="margin-top: 0; color: #6f42c1; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-clock"></i> WiFi Schedule
+                    </h3>
+                    <form id="wifiScheduleForm">
+                        <div class="form-group">
+                            <label>WiFi Schedule</label>
+                            <select id="wifi_schedule_enabled" name="wifi_schedule_enabled">
+                                <option value="false">Disabled (Always On)</option>
+                                <option value="true">Enabled (Scheduled)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>WiFi Off Time</label>
+                            <input type="time" id="wifi_schedule_start" name="wifi_schedule_start">
+                            <p style="font-size: 0.8rem; color: #858796;">Time when WiFi will be turned OFF</p>
+                        </div>
+                        <div class="form-group">
+                            <label>WiFi On Time</label>
+                            <input type="time" id="wifi_schedule_end" name="wifi_schedule_end">
+                            <p style="font-size: 0.8rem; color: #858796;">Time when WiFi will be turned ON</p>
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="width: 100%; background-color: #6f42c1; border-color: #6f42c1;">
+                            <i class="fas fa-save"></i> Save Schedule
+                        </button>
+                    </form>
+                    <div id="wifiScheduleMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">WiFi schedule saved!</div>
+                </div>
+
+                <!-- Wireless Advanced -->
+                <div class="card">
+                    <h3 style="margin-top: 0; color: #17a2b8; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-cogs"></i> Wireless Advanced
+                    </h3>
+                    <form id="wirelessAdvancedForm">
+                        <div class="form-group">
+                            <label>Client Isolation</label>
+                            <select id="wifi_isolation" name="wifi_isolation">
+                                <option value="false">Disabled</option>
+                                <option value="true">Enabled (Prevent client-to-client communication)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Beacon Interval (ms)</label>
+                            <input type="number" id="wifi_beacon_interval" name="wifi_beacon_interval" min="20" max="1000" placeholder="100">
+                        </div>
+                        <div class="form-group">
+                            <label>RTS/CTS Threshold</label>
+                            <input type="number" id="wifi_rts_cts" name="wifi_rts_cts" min="0" max="2347" placeholder="2347">
+                        </div>
+                        <div class="form-group">
+                            <label>DTIM Interval</label>
+                            <input type="number" id="wifi_dtIM" name="wifi_dtIM" min="1" max="255" placeholder="1">
+                        </div>
+                        <button type="submit" class="btn btn-info" style="width: 100%;">
+                            <i class="fas fa-save"></i> Save Wireless Settings
+                        </button>
+                    </form>
+                    <div id="wirelessAdvancedMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">Wireless advanced settings saved!</div>
+                </div>
+
+                <!-- Bandwidth Advanced -->
+                <div class="card">
+                    <h3 style="margin-top: 0; color: #f6c23e; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-tachometer-alt"></i> Bandwidth Advanced
+                    </h3>
+                    <form id="bandwidthAdvancedForm">
+                        <h4 style="margin-top: 15px; color: var(--success-color);">Burst Settings</h4>
+                        <div class="form-group">
+                            <label>Burst Download (Mbps)</label>
+                            <input type="number" id="burst_download" name="burst_download" min="0" step="0.1" placeholder="0 for no burst">
+                        </div>
+                        <div class="form-group">
+                            <label>Burst Upload (Mbps)</label>
+                            <input type="number" id="burst_upload" name="burst_upload" min="0" step="0.1" placeholder="0 for no burst">
+                        </div>
+                        <div class="form-group">
+                            <label>Burst Threshold (Mbps)</label>
+                            <input type="number" id="burst_threshold" name="burst_threshold" min="0" step="0.1" placeholder="Threshold before bursting">
+                        </div>
+                        <div class="form-group">
+                            <label>Burst Time (seconds)</label>
+                            <input type="number" id="burst_time" name="burst_time" min="1" max="60" placeholder="10">
+                        </div>
+                        <button type="submit" class="btn btn-warning" style="width: 100%; color: white;">
+                            <i class="fas fa-save"></i> Save Burst Settings
+                        </button>
+                    </form>
+                    <div id="bandwidthAdvancedMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">Bandwidth advanced settings saved!</div>
+                </div>
+
                 <!-- Port Triggering -->
                 <div class="card">
                     <h3 style="margin-top: 0; color: #6f42c1; border-bottom: 1px solid #eee; padding-bottom: 10px;">
@@ -2889,6 +3082,97 @@ n        <th>Date/Time</th>
         document.getElementById('dnsForm').addEventListener('submit', saveNetworkSettings);
         document.getElementById('groupSettingsForm').addEventListener('submit', saveNetworkSettings);
         document.getElementById('ipRangeForm').addEventListener('submit', saveNetworkSettings);
+
+        // New network settings form handlers
+        document.getElementById('wifiSettingsForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target).entries());
+            const response = await fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            const msg = document.getElementById('wifiSettingsMsg');
+            if (response.ok) {
+                msg.style.display = 'block';
+                setTimeout(() => msg.style.display = 'none', 3000);
+            }
+        });
+
+        document.getElementById('dhcpAdvancedForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target).entries());
+            const response = await fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            const msg = document.getElementById('dhcpAdvancedMsg');
+            if (response.ok) {
+                msg.style.display = 'block';
+                setTimeout(() => msg.style.display = 'none', 3000);
+            }
+        });
+
+        document.getElementById('firewallForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target).entries());
+            const response = await fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            const msg = document.getElementById('firewallMsg');
+            if (response.ok) {
+                msg.style.display = 'block';
+                setTimeout(() => msg.style.display = 'none', 3000);
+            }
+        });
+
+        document.getElementById('wifiScheduleForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target).entries());
+            const response = await fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            const msg = document.getElementById('wifiScheduleMsg');
+            if (response.ok) {
+                msg.style.display = 'block';
+                setTimeout(() => msg.style.display = 'none', 3000);
+            }
+        });
+
+        document.getElementById('wirelessAdvancedForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target).entries());
+            const response = await fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            const msg = document.getElementById('wirelessAdvancedMsg');
+            if (response.ok) {
+                msg.style.display = 'block';
+                setTimeout(() => msg.style.display = 'none', 3000);
+            }
+        });
+
+        document.getElementById('bandwidthAdvancedForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target).entries());
+            const response = await fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            const msg = document.getElementById('bandwidthAdvancedMsg');
+            if (response.ok) {
+                msg.style.display = 'block';
+                setTimeout(() => msg.style.display = 'none', 3000);
+            }
+        });
         
         async function generateLicense() {
             try {

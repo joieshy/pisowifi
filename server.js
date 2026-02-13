@@ -640,7 +640,34 @@ db.serialize(() => {
         ['wan_dns_servers', '8.8.8.8,8.8.4.4'],
         ['lan_interface_name', 'enx00e04c680013'],
         ['lan_ip_address', '10.0.0.1/24'],
-        ['lan_dns_servers', '8.8.8.8,8.8.4.4']
+        ['lan_dns_servers', '8.8.8.8,8.8.4.4'],
+        // NEW: WiFi Settings
+        ['wifi_password', ''],
+        ['wifi_security', 'wpa2'], // none, wpa2, wpa3
+        ['wifi_max_users', '50'],
+        ['wifi_transmit_power', '100'],
+        ['wifi_hidden', 'false'],
+        // NEW: DHCP Advanced
+        ['dhcp_lease_time', '1440'], // minutes (default 24 hours)
+        // NEW: Firewall
+        ['dmz_enabled', 'false'],
+        ['dmz_ip', ''],
+        ['vpn_passthrough', 'true'],
+        ['nat_loopback', 'true'],
+        // NEW: Access Control
+        ['wifi_schedule_enabled', 'false'],
+        ['wifi_schedule_start', '00:00'],
+        ['wifi_schedule_end', '23:59'],
+        // NEW: Wireless Advanced
+        ['wifi_isolation', 'false'],
+        ['wifi_beacon_interval', '100'],
+        ['wifi_rts_cts', '2347'],
+        ['wifi_dtIM', '1'],
+        // NEW: Bandwidth Advanced
+        ['burst_download', '0'],
+        ['burst_upload', '0'],
+        ['burst_threshold', '0'],
+        ['burst_time', '10']
     ];
 
     defaultSettings.forEach(setting => {
