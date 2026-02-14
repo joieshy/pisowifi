@@ -1282,51 +1282,34 @@ app.post('/api/use-time', (req, res) => {
 
         db.get(`SELECT * FROM users WHERE mac_address = ?`, [mac], (err, user) => {
             if (err) return res.status(500).json({ error: 'Database error' });
-            
+
             if (user) {
+                // User exists, update their time
                 const newTime = user.time_left + totalMinutes;
-                db.run(`UPDATE users SET time_left = ?, status = 'Online', ip_address = ? WHERE mac_address = ?`, 
+                db.run(`UPDATE users SET time_left = ?, status = 'Online', ip_address = ? WHERE mac_address = ?`,
                     [newTime, ip, mac], (err) => {
                         if (err) return res.status(500).json({ error: 'Failed to update user' });
-                        
+
                         allowMac(mac, ip);
-                        db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'coin', ?, ?)`, 
+                        db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'coin', ?, ?)`,
                             [currentSessionCoins - remainingCoins, `Coin Insertion (${mac})`, mac]);
-                        currentSessionCoins = remainingCoins;
+                        currentSessionCoins = remainingCoins; // Update session coins
                         res.json({ success: true, minutesAdded: totalMinutes, totalTime: newTime });
                     });
             } else {
-                const username = `User-${mac.replace(/:/g, '').slice(-4)}`;
+                // User does not exist, create a new one
+                const username = `User-${mac.replace(/:/g, '').slice(-4)}-${Math.floor(Math.random() * 1000)}`;
                 db.run(`INSERT INTO users (username, ip_address, mac_address, time_left, status) VALUES (?, ?, ?, ?, 'Online')`,
                     [username, ip, mac, totalMinutes], (err) => {
                         if (err) {
-                            // Fallback if username exists
-                            db.run(`UPDATE users SET time_left = time_left + ?, status = 'Online', ip_address = ? WHERE mac_address = ?`,
-                                [totalMinutes, ip, mac], (err2) => {
-                            // Fallback if username exists (collision), try with a random suffix
-                            const newUsername = `User-${mac.replace(/:/g, '').slice(-4)}-${Math.floor(Math.random() * 1000)}`;
-                            db.run(`INSERT INTO users (username, ip_address, mac_address, time_left, status) VALUES (?, ?, ?, ?, 'Online')`,
-                                [newUsername, ip, mac, totalMinutes], (err2) => {
-                                    if (err2) return res.status(500).json({ error: 'Failed to create user' });
-                            allowMac(mac, ip);
-                            db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'coin', ?, ?)`, 
-                                [currentSessionCoins - remainingCoins, `Coin Insertion (${mac})`, mac]);
-                            currentSessionCoins = remainingCoins;
-                            res.json({ success: true, minutesAdded: totalMinutes, totalTime: totalMinutes });
-                        });
-                                    allowMac(mac, ip);
-                                    db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'coin', ?, ?)`, 
-                                        [currentSessionCoins - remainingCoins, `Coin Insertion (${mac})`, mac]);
-                                    currentSessionCoins = remainingCoins;
-                                    res.json({ success: true, minutesAdded: totalMinutes, totalTime: totalMinutes });
-                                });
-                } else {
-                    allowMac(mac, ip);
-                    db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'coin', ?, ?)`, 
-                        [currentSessionCoins - remainingCoins, `Coin Insertion (${mac})`, mac]);
-                    currentSessionCoins = remainingCoins;
-                    res.json({ success: true, minutesAdded: totalMinutes, totalTime: totalMinutes });
-                }
+                            return res.status(500).json({ error: 'Failed to create new user.' });
+                        }
+                        
+                        allowMac(mac, ip);
+                        db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'coin', ?, ?)`,
+                            [currentSessionCoins - remainingCoins, `Coin Insertion (${mac})`, mac]);
+                        currentSessionCoins = remainingCoins; // Update session coins
+                        res.json({ success: true, minutesAdded: totalMinutes, totalTime: totalMinutes });
                     });
             }
         });
@@ -2535,17 +2518,7 @@ app.post('/api/save-network', async (req, res) => {
 // 1. Unahin ang Redirect Routes para masalo agad ang Windows/Apple checks
 app.get('/redirect', (req, res) => {
     res.redirect('http://10.0.0.1');
-    res.redirect('/');
 });
-
-// 2. Isama na rin ang iba pang captive portal checks
-app.get(['/generate_204', '/hotspot-detect.html'], (req, res) => {
-    res.redirect('http://10.0.0.1');
-});
-
-// 3. Dito na yung mga dating routes mo (e.g., app.use, app.get('/'), etc.)
-app.use(express.static('public')); 
-
 
 const HOST = '0.0.0.0'; // Temporarily hardcoded to 0.0.0.0 to resolve EADDRNOTAVAIL on server startup.
                         // This will be reverted to process.env.HOST || '0.0.0.0' once network setup is stable.
