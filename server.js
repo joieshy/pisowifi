@@ -145,19 +145,45 @@ async function allowMac(mac, ip) {
     }
     
     try {
-        console.log(`Allowing internet access for MAC: ${mac}, IP: ${ip}`);
+        console.log(`=== ALLOWMAC: Starting for MAC: ${mac}, IP: ${ip} ===`);
+        
+        // First, let's check current iptables rules for debugging
+        try {
+            const currentRules = execSync('sudo iptables -L FORWARD -n --line-numbers', { timeout: 5000 }).toString();
+            console.log(`Current FORWARD rules:\n${currentRules}`);
+        } catch (e) {
+            console.warn('Could not read FORWARD rules:', e.message);
+        }
         
         // Add to NAT PREROUTING to bypass redirection (insert at top)
         execSync(`sudo iptables -t nat -I PREROUTING 1 -m mac --mac-source ${mac} -j ACCEPT`);
+        console.log(`Added NAT PREROUTING rule for MAC ${mac}`);
         
         // Add to FORWARD chain to allow traffic through the router (insert at top)
+        // First, let's try without MAC and just use IP for simpler debugging
+        execSync(`sudo iptables -I FORWARD 1 -s ${ip} -d 0.0.0.0/0 -j ACCEPT`);
+        console.log(`Added FORWARD rule for source IP ${ip}`);
+        
+        execSync(`sudo iptables -I FORWARD 1 -d ${ip} -s 0.0.0.0/0 -j ACCEPT`);
+        console.log(`Added FORWARD rule for destination IP ${ip}`);
+        
+        // Also add MAC-based rule
         execSync(`sudo iptables -I FORWARD 1 -m mac --mac-source ${mac} -j ACCEPT`);
+        console.log(`Added FORWARD rule for MAC ${mac}`);
         
-        // Also allow by IP address for better reliability
-        execSync(`sudo iptables -I FORWARD 1 -s ${ip} -j ACCEPT`);
-        execSync(`sudo iptables -I FORWARD 1 -d ${ip} -j ACCEPT`);
+        // Also allow established/related connections for this IP
+        execSync(`sudo iptables -I FORWARD 1 -s ${ip} -m state --state ESTABLISHED,RELATED -j ACCEPT`);
+        console.log(`Added ESTABLISHED,RELATED rule for ${ip}`);
         
-        console.log(`MAC ${mac} (IP: ${ip}) allowed in iptables`);
+        console.log(`=== ALLOWMAC: Rules added for MAC ${mac} (IP: ${ip}) ===`);
+        
+        // Verify rules were added
+        try {
+            const newRules = execSync('sudo iptables -L FORWARD -n --line-numbers -v', { timeout: 5000 }).toString();
+            console.log(`New FORWARD rules:\n${newRules}`);
+        } catch (e) {
+            console.warn('Could not read new FORWARD rules:', e.message);
+        }
 
         // Apply bandwidth limits if configured
         const settings = await new Promise((resolve, reject) => {
@@ -191,6 +217,7 @@ async function allowMac(mac, ip) {
         }
     } catch (e) {
         console.error(`Failed to allow MAC ${mac}:`, e.message);
+        console.error(e.stack);
     }
 }
 
