@@ -335,12 +335,38 @@ async function initNetwork() {
 
         console.log(`[Network] Configuring: WAN=${wanInterface}, LAN=${lanInterface} (EAP110), Gateway IP=${lanIpAddress}`);
 
+        // --- OS CONFIGURATION: Set Static IP & Fix DNS Conflict ---
+        try {
+            console.log(`[Network] Setting static IP ${lanIpAddress} on ${lanInterface}...`);
+            
+            // 1. Ensure interface is UP
+            execSync(`sudo ip link set dev ${lanInterface} up`);
+            
+            // 2. Flush existing IPs and set Static IP (10.0.0.1)
+            try { execSync(`sudo ip addr flush dev ${lanInterface}`); } catch (e) {}
+            execSync(`sudo ip addr add ${lanIpAddress}/24 dev ${lanInterface}`);
+            
+            // 3. Stop systemd-resolved to free up Port 53 for dnsmasq (Fix for DNS conflict)
+            try {
+                execSync('sudo systemctl stop systemd-resolved');
+                execSync('sudo systemctl disable systemd-resolved');
+                // Fix /etc/resolv.conf so the server still has internet
+                execSync('sudo rm -f /etc/resolv.conf');
+                execSync('echo "nameserver 8.8.8.8" | sudo tee /etc/resolv.conf > /dev/null');
+            } catch (e) {
+                console.log('[Network] Note: systemd-resolved handling skipped or failed.');
+            }
+        } catch (e) {
+            console.error('[Network] Failed to configure OS network settings:', e.message);
+        }
+
         // --- Configure DHCP (dnsmasq) to ensure clients get IP addresses ---
         try {
             const dnsmasqConfig = `interface=${lanInterface}
+except-interface=lo
 dhcp-range=10.0.0.10,10.0.0.254,255.255.255.0,12h
 dhcp-option=3,${lanIpAddress}
-dhcp-option=6,${lanIpAddress},8.8.8.8
+dhcp-option=6,${lanIpAddress}
 server=8.8.8.8
 server=8.8.4.4
 bind-interfaces
@@ -366,6 +392,10 @@ bogus-priv
         execSync('sudo iptables -F');
         execSync('sudo iptables -t nat -F');
         execSync('sudo iptables -t mangle -F'); // Also clear mangle table
+
+        // Allow all traffic from LAN interface (Fix for "Connection Refused" or blocked portal)
+        execSync(`sudo iptables -A INPUT -i ${lanInterface} -j ACCEPT`);
+        execSync('sudo iptables -A INPUT -i lo -j ACCEPT');
         
         // Setup NAT (MASQUERADE)
         execSync(`sudo iptables -t nat -A POSTROUTING -o ${wanInterface} -j MASQUERADE`);
