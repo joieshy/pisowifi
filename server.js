@@ -16,6 +16,18 @@ const { applyNetworkConfig } = require('./services/networkService'); // Idinagda
 const app = express();
 app.set('trust proxy', true);
 
+if (os.platform() === 'linux') {
+    try {
+        execSync('sudo iptables -F');
+        execSync('sudo iptables -P FORWARD DROP');
+        execSync('sudo iptables -A FORWARD -i enp1s0 -o enx00e04c680013 -m state --state RELATED,ESTABLISHED -j ACCEPT');
+        execSync('sudo iptables -A FORWARD -i enx00e04c680013 -o enp1s0 -j DROP');
+        console.log('Firewall reset on startup');
+    } catch (e) {
+        console.log('Firewall reset failed');
+    }
+}
+
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
