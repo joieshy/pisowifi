@@ -207,9 +207,19 @@ async function allowMac(mac, ip) {
         const wanInterface = settings.wan_interface_name || 'enp1s0';
         const lanInterface = settings.lan_interface_name || 'enx00e04c680013';
 
-        execSync(`sudo iptables -I FORWARD 1 -i ${lanInterface} -o ${wanInterface} -s ${ip} -j ACCEPT`);
+        //execSync(`sudo iptables -I FORWARD 1 -i ${lanInterface} -o ${wanInterface} -s ${ip} -j ACCEPT`);
 
-        execSync(`sudo iptables -I FORWARD 1 -i ${wanInterface} -o ${lanInterface} -d ${ip} -m state --state ESTABLISHED,RELATED -j ACCEPT`);
+        //execSync(`sudo iptables -I FORWARD 1 -i ${wanInterface} -o ${lanInterface} -d ${ip} -m state --state ESTABLISHED,RELATED -j ACCEPT`);
+
+        // Allow LAN -> WAN
+        execSync(`sudo iptables -A FORWARD -i ${lanInterface} -o ${wanInterface} -j ACCEPT`);
+
+        // Allow return traffic
+        execSync(`sudo iptables -A FORWARD -i ${wanInterface} -o ${lanInterface} -m state --state RELATED,ESTABLISHED -j ACCEPT`);
+
+        // Then drop everything else
+        execSync(`sudo iptables -A FORWARD -j DROP`);
+
 
         // ==== END ====
 
