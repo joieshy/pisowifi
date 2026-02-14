@@ -39,7 +39,7 @@ const isAuthenticated = (req, res, next) => {
     }
 };
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 80;
 const DATABASE_PATH = process.env.DATABASE_PATH || './pisowifi.db';
 
 let serialPort = null;
