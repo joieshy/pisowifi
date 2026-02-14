@@ -2445,6 +2445,19 @@ app.post('/api/save-network', async (req, res) => {
     }
 });
 
+// 1. Unahin ang Redirect Routes para masalo agad ang Windows/Apple checks
+app.get('/redirect', (req, res) => {
+    res.redirect('http://10.0.0.1');
+});
+
+// 2. Isama na rin ang iba pang captive portal checks
+app.get(['/generate_204', '/hotspot-detect.html'], (req, res) => {
+    res.redirect('http://10.0.0.1');
+});
+
+// 3. Dito na yung mga dating routes mo (e.g., app.use, app.get('/'), etc.)
+app.use(express.static('public')); 
+
 
 const HOST = '0.0.0.0'; // Temporarily hardcoded to 0.0.0.0 to resolve EADDRNOTAVAIL on server startup.
                         // This will be reverted to process.env.HOST || '0.0.0.0' once network setup is stable.
