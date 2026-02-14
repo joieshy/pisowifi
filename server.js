@@ -1303,6 +1303,10 @@ app.post('/api/use-time', (req, res) => {
                             // Fallback if username exists
                             db.run(`UPDATE users SET time_left = time_left + ?, status = 'Online', ip_address = ? WHERE mac_address = ?`,
                                 [totalMinutes, ip, mac], (err2) => {
+                            // Fallback if username exists (collision), try with a random suffix
+                            const newUsername = `User-${mac.replace(/:/g, '').slice(-4)}-${Math.floor(Math.random() * 1000)}`;
+                            db.run(`INSERT INTO users (username, ip_address, mac_address, time_left, status) VALUES (?, ?, ?, ?, 'Online')`,
+                                [newUsername, ip, mac, totalMinutes], (err2) => {
                                     if (err2) return res.status(500).json({ error: 'Failed to create user' });
                             allowMac(mac, ip);
                             db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'coin', ?, ?)`, 
@@ -1310,6 +1314,12 @@ app.post('/api/use-time', (req, res) => {
                             currentSessionCoins = remainingCoins;
                             res.json({ success: true, minutesAdded: totalMinutes, totalTime: totalMinutes });
                         });
+                                    allowMac(mac, ip);
+                                    db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'coin', ?, ?)`, 
+                                        [currentSessionCoins - remainingCoins, `Coin Insertion (${mac})`, mac]);
+                                    currentSessionCoins = remainingCoins;
+                                    res.json({ success: true, minutesAdded: totalMinutes, totalTime: totalMinutes });
+                                });
                 } else {
                     allowMac(mac, ip);
                     db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'coin', ?, ?)`, 
@@ -2525,6 +2535,7 @@ app.post('/api/save-network', async (req, res) => {
 // 1. Unahin ang Redirect Routes para masalo agad ang Windows/Apple checks
 app.get('/redirect', (req, res) => {
     res.redirect('http://10.0.0.1');
+    res.redirect('/');
 });
 
 // 2. Isama na rin ang iba pang captive portal checks
