@@ -149,15 +149,11 @@ async function allowMac(mac, ip) {
         const wan = settings.wan_interface_name || 'enp1s0';
         const lan = settings.lan_interface_name || 'enx00e04c680013';
 
-        // Remove old rules (para walang duplicate)
+        // Remove old rule (safety)
         execSync(`sudo iptables -D FORWARD -i ${lan} -o ${wan} -s ${ip} -j ACCEPT || true`);
-        execSync(`sudo iptables -D FORWARD -i ${wan} -o ${lan} -d ${ip} -m state --state RELATED,ESTABLISHED -j ACCEPT || true`);
 
-        // Allow LAN → WAN for this IP
+        // INSERT at TOP (IMPORTANT)
         execSync(`sudo iptables -I FORWARD 1 -i ${lan} -o ${wan} -s ${ip} -j ACCEPT`);
-
-        // Allow return traffic
-        execSync(`sudo iptables -I FORWARD 1 -i ${wan} -o ${lan} -d ${ip} -m state --state RELATED,ESTABLISHED -j ACCEPT`);
 
         console.log(`Internet allowed for ${mac} (${ip})`);
 
@@ -253,7 +249,7 @@ async function applyBandwidthLimits(ip, downloadLimitMbps, uploadLimitMbps, tcCl
     }
 }
 
-async function blockMac(mac) {
+async function blockMac(mac, ip) {
 
     if (os.platform() !== 'linux') return;
 
@@ -276,22 +272,7 @@ async function blockMac(mac) {
         const wan = settings.wan_interface_name || 'enp1s0';
         const lan = settings.lan_interface_name || 'enx00e04c680013';
 
-        // Get IP of this MAC
-        const user = await new Promise((resolve, reject) => {
-            db.get(`SELECT ip_address FROM users WHERE mac_address = ?`, [mac],
-                (err, row) => {
-                    if (err) return reject(err);
-                    resolve(row);
-                });
-        });
-
-        if (!user || !user.ip_address) return;
-
-        const ip = user.ip_address;
-
-        // Remove allow rules
         execSync(`sudo iptables -D FORWARD -i ${lan} -o ${wan} -s ${ip} -j ACCEPT || true`);
-        execSync(`sudo iptables -D FORWARD -i ${wan} -o ${lan} -d ${ip} -m state --state RELATED,ESTABLISHED -j ACCEPT || true`);
 
         console.log(`Internet blocked for ${mac} (${ip})`);
 
@@ -299,7 +280,6 @@ async function blockMac(mac) {
         console.error('blockMac error:', err.message);
     }
 }
-
 
 
 async function removeBandwidthLimits(ip, tcClassId, tcMark) {
