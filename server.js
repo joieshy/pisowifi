@@ -161,10 +161,10 @@ async function allowMac(mac, ip) {
         const wan = settings.wan_interface_name || 'enp1s0';
         const lan = settings.lan_interface_name || 'enx00e04c680013';
 
-        // 🧹 DELETE old rule first (para hindi dumami)
+        // REMOVE existing rule first (important)
         execSync(`sudo iptables -D FORWARD -i ${lan} -o ${wan} -s ${ip} -j ACCEPT || true`);
 
-        // 🚀 INSERT at TOP (para mauna sa DROP rule)
+        // INSERT at very top
         execSync(`sudo iptables -I FORWARD 1 -i ${lan} -o ${wan} -s ${ip} -j ACCEPT`);
 
         console.log(`Internet allowed for ${mac} (${ip})`);
@@ -300,7 +300,7 @@ async function blockMac(mac) {
 
         const ip = user.ip_address;
 
-        // 🧹 Remove allow rule for this IP
+        // DELETE the exact rule we inserted
         execSync(`sudo iptables -D FORWARD -i ${lan} -o ${wan} -s ${ip} -j ACCEPT || true`);
 
         console.log(`Internet blocked for ${mac} (${ip})`);
