@@ -161,10 +161,10 @@ async function allowMac(mac, ip) {
         const wan = settings.wan_interface_name || 'enp1s0';
         const lan = settings.lan_interface_name || 'enx00e04c680013';
 
-        // Remove old rule (safety)
+        // 🧹 DELETE old rule first (para hindi dumami)
         execSync(`sudo iptables -D FORWARD -i ${lan} -o ${wan} -s ${ip} -j ACCEPT || true`);
 
-        // INSERT at TOP (IMPORTANT)
+        // 🚀 INSERT at TOP (para mauna sa DROP rule)
         execSync(`sudo iptables -I FORWARD 1 -i ${lan} -o ${wan} -s ${ip} -j ACCEPT`);
 
         console.log(`Internet allowed for ${mac} (${ip})`);
@@ -173,6 +173,7 @@ async function allowMac(mac, ip) {
         console.error('allowMac error:', err.message);
     }
 }
+
 
 
 function applyGroupSettings(type, vlanId) {
@@ -267,6 +268,23 @@ async function blockMac(mac) {
 
     try {
 
+        const settings = await new Promise((resolve, reject) => {
+            db.all(
+                `SELECT key, value FROM settings 
+                 WHERE key IN ('wan_interface_name','lan_interface_name')`,
+                [],
+                (err, rows) => {
+                    if (err) return reject(err);
+                    const s = {};
+                    rows.forEach(r => s[r.key] = r.value);
+                    resolve(s);
+                }
+            );
+        });
+
+        const wan = settings.wan_interface_name || 'enp1s0';
+        const lan = settings.lan_interface_name || 'enx00e04c680013';
+
         const user = await new Promise((resolve, reject) => {
             db.get(
                 `SELECT ip_address FROM users WHERE mac_address = ?`,
@@ -282,8 +300,8 @@ async function blockMac(mac) {
 
         const ip = user.ip_address;
 
-        // Remove allow rule for this IP
-        execSync(`sudo iptables -D FORWARD -s ${ip} -j ACCEPT || true`);
+        // 🧹 Remove allow rule for this IP
+        execSync(`sudo iptables -D FORWARD -i ${lan} -o ${wan} -s ${ip} -j ACCEPT || true`);
 
         console.log(`Internet blocked for ${mac} (${ip})`);
 
@@ -291,6 +309,7 @@ async function blockMac(mac) {
         console.error('blockMac error:', err.message);
     }
 }
+
 
 
 
