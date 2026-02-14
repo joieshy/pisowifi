@@ -149,11 +149,15 @@ async function allowMac(mac, ip) {
         const wan = settings.wan_interface_name || 'enp1s0';
         const lan = settings.lan_interface_name || 'enx00e04c680013';
 
-        // Remove old rule if exists
-        execSync(`sudo iptables -D FORWARD -s ${ip} -j ACCEPT || true`);
+        // Remove old rules (para walang duplicate)
+        execSync(`sudo iptables -D FORWARD -i ${lan} -o ${wan} -s ${ip} -j ACCEPT || true`);
+        execSync(`sudo iptables -D FORWARD -i ${wan} -o ${lan} -d ${ip} -m state --state RELATED,ESTABLISHED -j ACCEPT || true`);
 
-        // Allow this client
+        // Allow LAN → WAN for this IP
         execSync(`sudo iptables -I FORWARD 1 -i ${lan} -o ${wan} -s ${ip} -j ACCEPT`);
+
+        // Allow return traffic
+        execSync(`sudo iptables -I FORWARD 1 -i ${wan} -o ${lan} -d ${ip} -m state --state RELATED,ESTABLISHED -j ACCEPT`);
 
         console.log(`Internet allowed for ${mac} (${ip})`);
 
@@ -253,16 +257,49 @@ async function blockMac(mac) {
 
     if (os.platform() !== 'linux') return;
 
-    db.get(`SELECT ip_address FROM users WHERE mac_address = ?`, [mac], (err, row) => {
-        if (!row || !row.ip_address) return;
+    try {
 
-        const ip = row.ip_address;
+        const settings = await new Promise((resolve, reject) => {
+            db.all(
+                `SELECT key, value FROM settings 
+                 WHERE key IN ('wan_interface_name','lan_interface_name')`,
+                [],
+                (err, rows) => {
+                    if (err) return reject(err);
+                    const s = {};
+                    rows.forEach(r => s[r.key] = r.value);
+                    resolve(s);
+                }
+            );
+        });
 
-        execSync(`sudo iptables -D FORWARD -s ${ip} -j ACCEPT || true`);
+        const wan = settings.wan_interface_name || 'enp1s0';
+        const lan = settings.lan_interface_name || 'enx00e04c680013';
 
-        console.log(`Internet blocked for ${mac}`);
-    });
+        // Get IP of this MAC
+        const user = await new Promise((resolve, reject) => {
+            db.get(`SELECT ip_address FROM users WHERE mac_address = ?`, [mac],
+                (err, row) => {
+                    if (err) return reject(err);
+                    resolve(row);
+                });
+        });
+
+        if (!user || !user.ip_address) return;
+
+        const ip = user.ip_address;
+
+        // Remove allow rules
+        execSync(`sudo iptables -D FORWARD -i ${lan} -o ${wan} -s ${ip} -j ACCEPT || true`);
+        execSync(`sudo iptables -D FORWARD -i ${wan} -o ${lan} -d ${ip} -m state --state RELATED,ESTABLISHED -j ACCEPT || true`);
+
+        console.log(`Internet blocked for ${mac} (${ip})`);
+
+    } catch (err) {
+        console.error('blockMac error:', err.message);
+    }
 }
+
 
 
 async function removeBandwidthLimits(ip, tcClassId, tcMark) {
