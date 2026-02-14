@@ -2445,15 +2445,6 @@ app.post('/api/save-network', async (req, res) => {
     }
 });
 
-// Bilang "Catch-all" para sa kahit anong hindi kilalang URL
-app.get('*', (req, res) => {
-    res.redirect('http://10.0.0.1');
-});
-
-// Saluhin lahat ng "check" URLs at i-redirect sa main page (10.0.0.1)
-app.get(['/redirect', '/generate_204', '/hotspot-detect.html'], (req, res) => {
-    res.redirect('http://10.0.0.1');
-});
 
 const HOST = '0.0.0.0'; // Temporarily hardcoded to 0.0.0.0 to resolve EADDRNOTAVAIL on server startup.
                         // This will be reverted to process.env.HOST || '0.0.0.0' once network setup is stable.
