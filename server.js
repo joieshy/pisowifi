@@ -161,20 +161,64 @@ async function allowMac(mac, ip) {
         
         // Add to FORWARD chain to allow traffic through the router (insert at top)
         // First, let's try without MAC and just use IP for simpler debugging
-        execSync(`sudo iptables -I FORWARD 1 -s ${ip} -d 0.0.0.0/0 -j ACCEPT`);
-        console.log(`Added FORWARD rule for source IP ${ip}`);
+        //execSync(`sudo iptables -I FORWARD 1 -s ${ip} -d 0.0.0.0/0 -j ACCEPT`);
+        //console.log(`Added FORWARD rule for source IP ${ip}`);
         
-        execSync(`sudo iptables -I FORWARD 1 -d ${ip} -s 0.0.0.0/0 -j ACCEPT`);
-        console.log(`Added FORWARD rule for destination IP ${ip}`);
+        //execSync(`sudo iptables -I FORWARD 1 -d ${ip} -s 0.0.0.0/0 -j ACCEPT`);
+        //console.log(`Added FORWARD rule for destination IP ${ip}`);
         
+        
+
         // Also add MAC-based rule
-        execSync(`sudo iptables -I FORWARD 1 -m mac --mac-source ${mac} -j ACCEPT`);
-        console.log(`Added FORWARD rule for MAC ${mac}`);
+        //execSync(`sudo iptables -I FORWARD 1 -m mac --mac-source ${mac} -j ACCEPT`);
+        //console.log(`Added FORWARD rule for MAC ${mac}`);
         
         // Also allow established/related connections for this IP
-        execSync(`sudo iptables -I FORWARD 1 -s ${ip} -m state --state ESTABLISHED,RELATED -j ACCEPT`);
-        console.log(`Added ESTABLISHED,RELATED rule for ${ip}`);
+        //execSync(`sudo iptables -I FORWARD 1 -s ${ip} -m state --state ESTABLISHED,RELATED -j ACCEPT`);
+        //console.log(`Added ESTABLISHED,RELATED rule for ${ip}`);
         
+        async function allowMac(mac, ip) {
+
+    if (os.platform() !== 'linux') {
+        console.log(`[Simulated] Allowing MAC: ${mac}`);
+        return;
+    }
+
+    try {
+
+        // NAT PREROUTING
+        execSync(`sudo iptables -t nat -I PREROUTING 1 -m mac --mac-source ${mac} -j ACCEPT`);
+
+        // ==== ILAGAY MO DITO ====
+
+        const settings = await new Promise((resolve, reject) => {
+            db.all(
+                `SELECT key, value FROM settings WHERE key IN ('wan_interface_name', 'lan_interface_name')`,
+                [],
+                (err, rows) => {
+                    if (err) return reject(err);
+                    const s = {};
+                    rows.forEach(row => s[row.key] = row.value);
+                    resolve(s);
+                }
+            );
+        });
+
+        const wanInterface = settings.wan_interface_name || 'enp1s0';
+        const lanInterface = settings.lan_interface_name || 'enx00e04c680013';
+
+        execSync(`sudo iptables -I FORWARD 1 -i ${lanInterface} -o ${wanInterface} -s ${ip} -j ACCEPT`);
+
+        execSync(`sudo iptables -I FORWARD 1 -i ${wanInterface} -o ${lanInterface} -d ${ip} -m state --state ESTABLISHED,RELATED -j ACCEPT`);
+
+        // ==== END ====
+
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+
         console.log(`=== ALLOWMAC: Rules added for MAC ${mac} (IP: ${ip}) ===`);
         
         // Verify rules were added
