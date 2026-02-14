@@ -220,7 +220,7 @@ async function applyDhcpAdvanced(config) {
 
 // 3. Firewall Settings - Configure DMZ, VPN passthrough, NAT loopback
 async function applyFirewallSettings(config) {
-    const { dmz_enabled, dmz_ip, vpn_passthrough, nat_loopback, ip_range_start, lan_interface_name } = config;
+    const { dmz_enabled, dmz_ip, vpn_passthrough, nat_loopback, ip_range_start, lan_interface_name, wan_interface_name } = config;
 
     if (process.platform !== 'linux') {
         console.log('[Simulated] Firewall settings skipped on non-Linux platform.');
@@ -231,6 +231,7 @@ async function applyFirewallSettings(config) {
         // Get LAN interface (usually the second interface)
         // Use configured interface or fallback to eth1
         let lanInterface = lan_interface_name || 'eth1';
+        let wanInterface = wan_interface_name || 'eth0';
 
         // Clear existing firewall rules
         await execPromise('sudo iptables -F FORWARD');
@@ -242,8 +243,8 @@ async function applyFirewallSettings(config) {
             await execPromise('sudo sysctl -w net.ipv4.ip_forward=1');
             
             // Add DMZ rule - forward all traffic to DMZ IP
-            await execPromise(`sudo iptables -A FORWARD -i eth0 -o ${lanInterface} -d ${dmz_ip} -j ACCEPT`);
-            await execPromise(`sudo iptables -t nat -A PREROUTING -i eth0 -j DNAT --to-destination ${dmz_ip}`);
+            await execPromise(`sudo iptables -A FORWARD -i ${wanInterface} -o ${lanInterface} -d ${dmz_ip} -j ACCEPT`);
+            await execPromise(`sudo iptables -t nat -A PREROUTING -i ${wanInterface} -j DNAT --to-destination ${dmz_ip}`);
         }
 
         // VPN Passthrough
