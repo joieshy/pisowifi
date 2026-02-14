@@ -261,30 +261,29 @@ async function applyBandwidthLimits(ip, downloadLimitMbps, uploadLimitMbps, tcCl
     }
 }
 
-async function blockMac(mac, ip) {
+async function blockMac(mac) {
 
     if (os.platform() !== 'linux') return;
 
     try {
 
-        const settings = await new Promise((resolve, reject) => {
-            db.all(
-                `SELECT key, value FROM settings 
-                 WHERE key IN ('wan_interface_name','lan_interface_name')`,
-                [],
-                (err, rows) => {
+        const user = await new Promise((resolve, reject) => {
+            db.get(
+                `SELECT ip_address FROM users WHERE mac_address = ?`,
+                [mac],
+                (err, row) => {
                     if (err) return reject(err);
-                    const s = {};
-                    rows.forEach(r => s[r.key] = r.value);
-                    resolve(s);
+                    resolve(row);
                 }
             );
         });
 
-        const wan = settings.wan_interface_name || 'enp1s0';
-        const lan = settings.lan_interface_name || 'enx00e04c680013';
+        if (!user || !user.ip_address) return;
 
-        execSync(`sudo iptables -D FORWARD -i ${lan} -o ${wan} -s ${ip} -j ACCEPT || true`);
+        const ip = user.ip_address;
+
+        // Remove allow rule for this IP
+        execSync(`sudo iptables -D FORWARD -s ${ip} -j ACCEPT || true`);
 
         console.log(`Internet blocked for ${mac} (${ip})`);
 
@@ -292,6 +291,7 @@ async function blockMac(mac, ip) {
         console.error('blockMac error:', err.message);
     }
 }
+
 
 
 async function removeBandwidthLimits(ip, tcClassId, tcMark) {
