@@ -390,9 +390,10 @@ bogus-priv
         execSync('sudo sysctl -w net.ipv4.ip_forward=1');
         
         // Clear existing rules to avoid duplicates
-        execSync('sudo iptables -F');
-        execSync('sudo iptables -t nat -F');
-        execSync('sudo iptables -t mangle -F'); // Also clear mangle table
+        // Clear only captive rules (safer)
+        execSync('sudo iptables -t nat -F PREROUTING || true');
+        execSync('sudo iptables -t nat -F POSTROUTING || true');
+
 
         // Allow all traffic from LAN interface (Fix for "Connection Refused" or blocked portal)
         execSync(`sudo iptables -A INPUT -i ${lanInterface} -j ACCEPT`);
