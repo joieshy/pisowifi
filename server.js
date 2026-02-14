@@ -407,8 +407,12 @@ bogus-priv
         execSync('sudo iptables -I FORWARD -p udp --sport 53 -j ACCEPT');
 
         // Add general FORWARD rules for internet sharing
+        // Allow established connections back
         execSync(`sudo iptables -A FORWARD -i ${wanInterface} -o ${lanInterface} -m state --state RELATED,ESTABLISHED -j ACCEPT`);
-        execSync(`sudo iptables -A FORWARD -i ${lanInterface} -o ${wanInterface} -j ACCEPT`);
+
+        // BLOCK everything from LAN by default
+        execSync(`sudo iptables -A FORWARD -i ${lanInterface} -o ${wanInterface} -j DROP`);
+
 
         // --- Captive Portal Rules ---
         // Log all traffic hitting PREROUTING from LAN for debugging
