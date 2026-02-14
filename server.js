@@ -131,12 +131,33 @@ async function allowMac(mac, ip) {
         console.log(`[Simulated] Allowing MAC: ${mac}`);
         return;
     }
+    
+    // Validate MAC address
+    if (!mac || mac === '00:00:00:00:00:00' || mac === 'null') {
+        console.error(`Invalid MAC address: ${mac}, cannot allow internet access`);
+        return;
+    }
+    
+    // Validate IP address
+    if (!ip || ip === 'null' || ip === '0.0.0.0') {
+        console.error(`Invalid IP address: ${ip}, cannot allow internet access`);
+        return;
+    }
+    
     try {
-        // Add to NAT PREROUTING to bypass redirection
-        execSync(`sudo iptables -t nat -I PREROUTING -m mac --mac-source ${mac} -j ACCEPT`);
-        // Add to FORWARD chain to allow traffic through the router
-        execSync(`sudo iptables -I FORWARD -m mac --mac-source ${mac} -j ACCEPT`);
-        console.log(`MAC ${mac} allowed in iptables`);
+        console.log(`Allowing internet access for MAC: ${mac}, IP: ${ip}`);
+        
+        // Add to NAT PREROUTING to bypass redirection (insert at top)
+        execSync(`sudo iptables -t nat -I PREROUTING 1 -m mac --mac-source ${mac} -j ACCEPT`);
+        
+        // Add to FORWARD chain to allow traffic through the router (insert at top)
+        execSync(`sudo iptables -I FORWARD 1 -m mac --mac-source ${mac} -j ACCEPT`);
+        
+        // Also allow by IP address for better reliability
+        execSync(`sudo iptables -I FORWARD 1 -s ${ip} -j ACCEPT`);
+        execSync(`sudo iptables -I FORWARD 1 -d ${ip} -j ACCEPT`);
+        
+        console.log(`MAC ${mac} (IP: ${ip}) allowed in iptables`);
 
         // Apply bandwidth limits if configured
         const settings = await new Promise((resolve, reject) => {
@@ -264,11 +285,39 @@ async function blockMac(mac) {
         console.log(`[Simulated] Blocking MAC: ${mac}`);
         return;
     }
+    
+    // Validate MAC address
+    if (!mac || mac === '00:00:00:00:00:00' || mac === 'null') {
+        console.error(`Invalid MAC address: ${mac}, cannot block`);
+        return;
+    }
+    
     try {
+        // Get user's IP before removing
+        let userIp = null;
+        try {
+            const user = await new Promise((resolve, reject) => {
+                db.get(`SELECT ip_address FROM users WHERE mac_address = ?`, [mac], (err, row) => {
+                    if (err) reject(err);
+                    resolve(row);
+                });
+            });
+            userIp = user ? user.ip_address : null;
+        } catch (e) {
+            console.warn('Could not fetch user IP for blocking:', e.message);
+        }
+
         // Remove from NAT PREROUTING
-        execSync(`sudo iptables -t nat -D PREROUTING -m mac --mac-source ${mac} -j ACCEPT`);
-        // Remove from FORWARD chain
-        execSync(`sudo iptables -D FORWARD -m mac --mac-source ${mac} -j ACCEPT`);
+        execSync(`sudo iptables -t nat -D PREROUTING -m mac --mac-source ${mac} -j ACCEPT || true`);
+        // Remove from FORWARD chain (MAC-based)
+        execSync(`sudo iptables -D FORWARD -m mac --mac-source ${mac} -j ACCEPT || true`);
+        
+        // Remove IP-based rules if we have the IP
+        if (userIp && userIp !== 'null' && userIp !== '0.0.0.0') {
+            execSync(`sudo iptables -D FORWARD -s ${userIp} -j ACCEPT || true`);
+            execSync(`sudo iptables -D FORWARD -d ${userIp} -j ACCEPT || true`);
+        }
+        
         console.log(`MAC ${mac} blocked in iptables`);
 
         // Remove bandwidth limits if they were applied
@@ -284,6 +333,7 @@ async function blockMac(mac) {
         });
     } catch (e) {
         // Rule might not exist, ignore error
+        console.warn(`Error blocking MAC ${mac}:`, e.message);
     }
 }
 
