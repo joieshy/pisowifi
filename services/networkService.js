@@ -234,8 +234,8 @@ async function applyFirewallSettings(config) {
         let wanInterface = wan_interface_name || 'eth0';
 
         // Clear existing firewall rules
-        await execPromise('sudo iptables -F FORWARD');
-        await execPromise('sudo iptables -t nat -F POSTROUTING');
+        //await execPromise('sudo iptables -F FORWARD');
+        //await execPromise('sudo iptables -t nat -F POSTROUTING');
 
         // DMZ Configuration
         if (dmz_enabled === 'true' && dmz_ip) {
