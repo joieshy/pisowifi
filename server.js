@@ -127,153 +127,41 @@ function getMacFromIp(ip) {
 }
 
 async function allowMac(mac, ip) {
-    if (os.platform() !== 'linux') {
-        console.log(`[Simulated] Allowing MAC: ${mac}`);
-        return;
-    }
-    
-    // Validate MAC address
-    if (!mac || mac === '00:00:00:00:00:00' || mac === 'null') {
-        console.error(`Invalid MAC address: ${mac}, cannot allow internet access`);
-        return;
-    }
-    
-    // Validate IP address
-    if (!ip || ip === 'null' || ip === '0.0.0.0') {
-        console.error(`Invalid IP address: ${ip}, cannot allow internet access`);
-        return;
-    }
-    
-    try {
-        console.log(`=== ALLOWMAC: Starting for MAC: ${mac}, IP: ${ip} ===`);
-        
-        // First, let's check current iptables rules for debugging
-        try {
-            const currentRules = execSync('sudo iptables -L FORWARD -n --line-numbers', { timeout: 5000 }).toString();
-            console.log(`Current FORWARD rules:\n${currentRules}`);
-        } catch (e) {
-            console.warn('Could not read FORWARD rules:', e.message);
-        }
-        
-        // Add to NAT PREROUTING to bypass redirection (insert at top)
-        execSync(`sudo iptables -t nat -I PREROUTING 1 -m mac --mac-source ${mac} -j ACCEPT`);
-        console.log(`Added NAT PREROUTING rule for MAC ${mac}`);
-        
-        // Add to FORWARD chain to allow traffic through the router (insert at top)
-        // First, let's try without MAC and just use IP for simpler debugging
-        //execSync(`sudo iptables -I FORWARD 1 -s ${ip} -d 0.0.0.0/0 -j ACCEPT`);
-        //console.log(`Added FORWARD rule for source IP ${ip}`);
-        
-        //execSync(`sudo iptables -I FORWARD 1 -d ${ip} -s 0.0.0.0/0 -j ACCEPT`);
-        //console.log(`Added FORWARD rule for destination IP ${ip}`);
-        
-        
 
-        // Also add MAC-based rule
-        //execSync(`sudo iptables -I FORWARD 1 -m mac --mac-source ${mac} -j ACCEPT`);
-        //console.log(`Added FORWARD rule for MAC ${mac}`);
-        
-        // Also allow established/related connections for this IP
-        //execSync(`sudo iptables -I FORWARD 1 -s ${ip} -m state --state ESTABLISHED,RELATED -j ACCEPT`);
-        //console.log(`Added ESTABLISHED,RELATED rule for ${ip}`);
-        
-        async function allowMac(mac, ip) {
-
-    if (os.platform() !== 'linux') {
-        console.log(`[Simulated] Allowing MAC: ${mac}`);
-        return;
-    }
+    if (os.platform() !== 'linux') return;
 
     try {
-
-        // NAT PREROUTING
-        execSync(`sudo iptables -t nat -I PREROUTING 1 -m mac --mac-source ${mac} -j ACCEPT`);
-
-        // ==== ILAGAY MO DITO ====
 
         const settings = await new Promise((resolve, reject) => {
             db.all(
-                `SELECT key, value FROM settings WHERE key IN ('wan_interface_name', 'lan_interface_name')`,
+                `SELECT key, value FROM settings 
+                 WHERE key IN ('wan_interface_name','lan_interface_name')`,
                 [],
                 (err, rows) => {
                     if (err) return reject(err);
                     const s = {};
-                    rows.forEach(row => s[row.key] = row.value);
+                    rows.forEach(r => s[r.key] = r.value);
                     resolve(s);
                 }
             );
         });
 
-        const wanInterface = settings.wan_interface_name || 'enp1s0';
-        const lanInterface = settings.lan_interface_name || 'enx00e04c680013';
+        const wan = settings.wan_interface_name || 'enp1s0';
+        const lan = settings.lan_interface_name || 'enx00e04c680013';
 
-        //execSync(`sudo iptables -I FORWARD 1 -i ${lanInterface} -o ${wanInterface} -s ${ip} -j ACCEPT`);
+        // Remove old rule if exists
+        execSync(`sudo iptables -D FORWARD -s ${ip} -j ACCEPT || true`);
 
-        //execSync(`sudo iptables -I FORWARD 1 -i ${wanInterface} -o ${lanInterface} -d ${ip} -m state --state ESTABLISHED,RELATED -j ACCEPT`);
+        // Allow this client
+        execSync(`sudo iptables -I FORWARD 1 -i ${lan} -o ${wan} -s ${ip} -j ACCEPT`);
 
-        // Allow LAN -> WAN
-        execSync(`sudo iptables -A FORWARD -i ${lanInterface} -o ${wanInterface} -j ACCEPT`);
+        console.log(`Internet allowed for ${mac} (${ip})`);
 
-        // Allow return traffic
-        execSync(`sudo iptables -A FORWARD -i ${wanInterface} -o ${lanInterface} -m state --state RELATED,ESTABLISHED -j ACCEPT`);
-
-        // Then drop everything else
-        execSync(`sudo iptables -A FORWARD -j DROP`);
-
-
-        // ==== END ====
-
-    } catch (e) {
-        console.error(e);
+    } catch (err) {
+        console.error('allowMac error:', err.message);
     }
 }
 
-
-        console.log(`=== ALLOWMAC: Rules added for MAC ${mac} (IP: ${ip}) ===`);
-        
-        // Verify rules were added
-        try {
-            const newRules = execSync('sudo iptables -L FORWARD -n --line-numbers -v', { timeout: 5000 }).toString();
-            console.log(`New FORWARD rules:\n${newRules}`);
-        } catch (e) {
-            console.warn('Could not read new FORWARD rules:', e.message);
-        }
-
-        // Apply bandwidth limits if configured
-        const settings = await new Promise((resolve, reject) => {
-            db.all(`SELECT key, value FROM settings WHERE key IN ('download_limit', 'upload_limit')`, [], (err, rows) => {
-                if (err) return reject(err);
-                const s = {};
-                rows.forEach(row => s[row.key] = row.value);
-                resolve(s);
-            });
-        });
-
-        const downloadLimit = parseFloat(settings.download_limit || '0');
-        const uploadLimit = parseFloat(settings.upload_limit || '0');
-
-        if (downloadLimit > 0 || uploadLimit > 0) {
-            db.get(`SELECT tc_class_id, tc_mark FROM users WHERE mac_address = ?`, [mac], (err, user) => {
-                if (err) {
-                    console.error('Error fetching user for TC:', err.message);
-                    return;
-                }
-                let tcClassId = user.tc_class_id;
-                let tcMark = user.tc_mark;
-
-                if (tcClassId === 0 || tcMark === 0) {
-                    tcClassId = nextTcClassId++;
-                    tcMark = tcClassId; // Use same value for mark for simplicity
-                    db.run(`UPDATE users SET tc_class_id = ?, tc_mark = ? WHERE mac_address = ?`, [tcClassId, tcMark, mac]);
-                }
-                applyBandwidthLimits(ip, downloadLimit, uploadLimit, tcClassId, tcMark);
-            });
-        }
-    } catch (e) {
-        console.error(`Failed to allow MAC ${mac}:`, e.message);
-        console.error(e.stack);
-    }
-}
 
 function applyGroupSettings(type, vlanId) {
     if (os.platform() !== 'linux') {
@@ -362,61 +250,20 @@ async function applyBandwidthLimits(ip, downloadLimitMbps, uploadLimitMbps, tcCl
 }
 
 async function blockMac(mac) {
-    if (os.platform() !== 'linux') {
-        console.log(`[Simulated] Blocking MAC: ${mac}`);
-        return;
-    }
-    
-    // Validate MAC address
-    if (!mac || mac === '00:00:00:00:00:00' || mac === 'null') {
-        console.error(`Invalid MAC address: ${mac}, cannot block`);
-        return;
-    }
-    
-    try {
-        // Get user's IP before removing
-        let userIp = null;
-        try {
-            const user = await new Promise((resolve, reject) => {
-                db.get(`SELECT ip_address FROM users WHERE mac_address = ?`, [mac], (err, row) => {
-                    if (err) reject(err);
-                    resolve(row);
-                });
-            });
-            userIp = user ? user.ip_address : null;
-        } catch (e) {
-            console.warn('Could not fetch user IP for blocking:', e.message);
-        }
 
-        // Remove from NAT PREROUTING
-        execSync(`sudo iptables -t nat -D PREROUTING -m mac --mac-source ${mac} -j ACCEPT || true`);
-        // Remove from FORWARD chain (MAC-based)
-        execSync(`sudo iptables -D FORWARD -m mac --mac-source ${mac} -j ACCEPT || true`);
-        
-        // Remove IP-based rules if we have the IP
-        if (userIp && userIp !== 'null' && userIp !== '0.0.0.0') {
-            execSync(`sudo iptables -D FORWARD -s ${userIp} -j ACCEPT || true`);
-            execSync(`sudo iptables -D FORWARD -d ${userIp} -j ACCEPT || true`);
-        }
-        
-        console.log(`MAC ${mac} blocked in iptables`);
+    if (os.platform() !== 'linux') return;
 
-        // Remove bandwidth limits if they were applied
-        db.get(`SELECT ip_address, tc_class_id, tc_mark FROM users WHERE mac_address = ?`, [mac], (err, user) => {
-            if (err) {
-                console.error('Error fetching user for TC removal:', err.message);
-                return;
-            }
-            if (user && user.ip_address && user.tc_class_id > 0 && user.tc_mark > 0) {
-                removeBandwidthLimits(user.ip_address, user.tc_class_id, user.tc_mark);
-                db.run(`UPDATE users SET tc_class_id = 0, tc_mark = 0 WHERE mac_address = ?`, [mac]);
-            }
-        });
-    } catch (e) {
-        // Rule might not exist, ignore error
-        console.warn(`Error blocking MAC ${mac}:`, e.message);
-    }
+    db.get(`SELECT ip_address FROM users WHERE mac_address = ?`, [mac], (err, row) => {
+        if (!row || !row.ip_address) return;
+
+        const ip = row.ip_address;
+
+        execSync(`sudo iptables -D FORWARD -s ${ip} -j ACCEPT || true`);
+
+        console.log(`Internet blocked for ${mac}`);
+    });
 }
+
 
 async function removeBandwidthLimits(ip, tcClassId, tcMark) {
     if (os.platform() !== 'linux') {
