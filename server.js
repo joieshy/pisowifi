@@ -173,25 +173,6 @@ async function allowMac(mac, ip) {
     }
 }
 
-function removeBandwidthLimits(ip, tcClassId, tcMark) {
-    if (os.platform() !== 'linux') {
-        console.log(`[Simulated] Removing bandwidth limits for IP: ${ip}, Class: ${tcClassId}, Mark: ${tcMark}`);
-        return;
-    }
-    try {
-        // Delete the class for this user
-        execSync(`sudo tc class del dev eth1 parent 1: classid 1:${tcClassId} || true`);
-        // Delete the filter for this user
-        execSync(`sudo tc filter del dev eth1 protocol ip parent 1: prio 1 handle ${tcMark} fw || true`);
-        // Remove iptables rule that marks traffic from this IP
-        execSync(`sudo iptables -t mangle -D POSTROUTING -s ${ip} -j MARK --set-mark ${tcMark} || true`);
-        execSync(`sudo iptables -t mangle -D PREROUTING -d ${ip} -j MARK --set-mark ${tcMark} || true`);
-        console.log(`Bandwidth limits removed for IP ${ip} (Class: 1:${tcClassId}, Mark: ${tcMark})`);
-    } catch (e) {
-        console.error(`Failed to remove bandwidth limits for IP ${ip}:`, e.message);
-    }
-}
-
 function applyGroupSettings(type, vlanId) {
     if (os.platform() !== 'linux') {
         console.log(`[Simulated] Applying Group Settings: Type=${type}, VLAN ID=${vlanId}`);
@@ -312,10 +293,19 @@ async function removeBandwidthLimits(ip, tcClassId, tcMark) {
         return;
     }
     try {
+        // Get LAN interface from DB
+        const settings = await new Promise((resolve, reject) => {
+            db.get(`SELECT value FROM settings WHERE key = 'lan_interface_name'`, [], (err, row) => {
+                if (err) return reject(err);
+                resolve(row ? row.value : 'eth1');
+            });
+        });
+        const lanInterface = settings || 'eth1';
+
         // Delete the class for this user
-        execSync(`sudo tc class del dev eth1 parent 1: classid 1:${tcClassId} || true`);
+        execSync(`sudo tc class del dev ${lanInterface} parent 1: classid 1:${tcClassId} || true`);
         // Delete the filter for this user
-        execSync(`sudo tc filter del dev eth1 protocol ip parent 1: prio 1 handle ${tcMark} fw || true`);
+        execSync(`sudo tc filter del dev ${lanInterface} protocol ip parent 1: prio 1 handle ${tcMark} fw || true`);
         // Remove iptables rule that marks traffic from this IP
         execSync(`sudo iptables -t mangle -D POSTROUTING -s ${ip} -j MARK --set-mark ${tcMark} || true`);
         execSync(`sudo iptables -t mangle -D PREROUTING -d ${ip} -j MARK --set-mark ${tcMark} || true`);
@@ -339,11 +329,35 @@ async function initNetwork() {
             });
         });
 
-        const wanInterface = settings.wan_interface_name || 'eth0';
-        const lanInterface = settings.lan_interface_name || 'eth1';
+        const wanInterface = settings.wan_interface_name || 'enp1s0';
+        const lanInterface = settings.lan_interface_name || 'enx00e04c680013';
         const lanIpAddress = settings.lan_ip_address ? settings.lan_ip_address.split('/')[0] : '10.0.0.1';
 
         console.log(`[Network] Configuring: WAN=${wanInterface}, LAN=${lanInterface} (EAP110), Gateway IP=${lanIpAddress}`);
+
+        // --- Configure DHCP (dnsmasq) to ensure clients get IP addresses ---
+        try {
+            const dnsmasqConfig = `interface=${lanInterface}
+dhcp-range=10.0.0.10,10.0.0.254,255.255.255.0,12h
+dhcp-option=3,${lanIpAddress}
+dhcp-option=6,${lanIpAddress},8.8.8.8
+server=8.8.8.8
+server=8.8.4.4
+bind-interfaces
+domain-needed
+bogus-priv
+`;
+            // Write config and restart dnsmasq
+            fs.writeFileSync('/tmp/pisowifi-dnsmasq.conf', dnsmasqConfig);
+            execSync('sudo mv /tmp/pisowifi-dnsmasq.conf /etc/dnsmasq.d/pisowifi.conf');
+            execSync('sudo systemctl unmask dnsmasq');
+            execSync('sudo systemctl enable dnsmasq');
+            execSync('sudo systemctl restart dnsmasq');
+            console.log('[Network] DHCP Server (dnsmasq) configured and restarted.');
+        } catch (e) {
+            console.error('[Network] Failed to configure DHCP:', e.message);
+            console.log('TIP: Ensure dnsmasq is installed: sudo apt install dnsmasq');
+        }
 
         // Enable IP Forwarding
         execSync('sudo sysctl -w net.ipv4.ip_forward=1');
@@ -678,12 +692,12 @@ db.serialize(() => {
 
     // Add network interface settings to the database if they don't exist
     const networkInterfaceSettings = [
-        ['wan_interface_name', 'eth0'],
+        ['wan_interface_name', 'enp1s0'],
         ['wan_config_type', 'dhcp'],
         ['wan_ip_address', ''],
         ['wan_gateway', ''],
         ['wan_dns_servers', '8.8.8.8,8.8.4.4'],
-        ['lan_interface_name', 'eth1'],
+        ['lan_interface_name', 'enx00e04c680013'],
         ['lan_ip_address', '10.0.0.1/24'],
         ['lan_dns_servers', '8.8.8.8,8.8.4.4']
     ];
@@ -691,10 +705,10 @@ db.serialize(() => {
         db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)`, setting);
     });
 
-    // Auto-fix: Update old specific interface names to generic ones if they haven't been changed by user
-    // Ito ay para palitan ang 'enx...' o 'enp...' kung sakaling naka-save na sa database mo
-    db.run(`UPDATE settings SET value = 'eth0' WHERE key = 'wan_interface_name' AND value = 'enp1s0'`);
-    db.run(`UPDATE settings SET value = 'eth1' WHERE key = 'lan_interface_name' AND value = 'enx00e04c680013'`);
+    // Auto-fix: Ensure the database uses the correct detected interfaces from 'ip a'
+    // Force update these keys to match the hardware found
+    db.run(`UPDATE settings SET value = 'enp1s0' WHERE key = 'wan_interface_name'`);
+    db.run(`UPDATE settings SET value = 'enx00e04c680013' WHERE key = 'lan_interface_name'`);
 
     // Ensure new audio settings exist for existing databases
     const newAudioSettings = [

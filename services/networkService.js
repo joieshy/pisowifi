@@ -220,7 +220,7 @@ async function applyDhcpAdvanced(config) {
 
 // 3. Firewall Settings - Configure DMZ, VPN passthrough, NAT loopback
 async function applyFirewallSettings(config) {
-    const { dmz_enabled, dmz_ip, vpn_passthrough, nat_loopback, ip_range_start } = config;
+    const { dmz_enabled, dmz_ip, vpn_passthrough, nat_loopback, ip_range_start, lan_interface_name } = config;
 
     if (process.platform !== 'linux') {
         console.log('[Simulated] Firewall settings skipped on non-Linux platform.');
@@ -229,11 +229,8 @@ async function applyFirewallSettings(config) {
 
     try {
         // Get LAN interface (usually the second interface)
-        let lanInterface = 'eth1';
-        try {
-            const result = await execPromise("ip route | grep default | awk '{print $NF}' | tail -1");
-            lanInterface = result.stdout.trim() || 'eth1';
-        } catch (e) {}
+        // Use configured interface or fallback to eth1
+        let lanInterface = lan_interface_name || 'eth1';
 
         // Clear existing firewall rules
         await execPromise('sudo iptables -F FORWARD');
@@ -375,7 +372,7 @@ async function applyWirelessAdvanced(config) {
 
 // 6. Bandwidth Advanced - Configure traffic shaping with tc (traffic control)
 async function applyBandwidthAdvanced(config) {
-    const { burst_download, burst_threshold, download_limit } = config;
+    const { burst_download, burst_threshold, download_limit, lan_interface_name } = config;
 
     if (process.platform !== 'linux') {
         console.log('[Simulated] Bandwidth advanced settings skipped on non-Linux platform.');
@@ -383,7 +380,7 @@ async function applyBandwidthAdvanced(config) {
     }
 
     try {
-        const lanInterface = 'eth1'; // LAN interface
+        const lanInterface = lan_interface_name || 'eth1'; // LAN interface
         
         // Clear existing qdisc rules
         await execPromise(`sudo tc qdisc del dev ${lanInterface} root 2>/dev/null || true`);
