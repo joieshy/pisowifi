@@ -362,11 +362,12 @@ async function initNetwork() {
 
         // --- Configure DHCP (dnsmasq) to ensure clients get IP addresses ---
         try {
-            const dnsmasqConfig = `interface=${lanInterface}
-except-interface=lo
+            const dnsmasqConfig = `
+interface=${lanInterface}
 dhcp-range=10.0.0.10,10.0.0.254,255.255.255.0,12h
 dhcp-option=3,${lanIpAddress}
 dhcp-option=6,${lanIpAddress}
+address=/#/${lanIpAddress}
 server=8.8.8.8
 server=8.8.4.4
 bind-interfaces
@@ -414,9 +415,6 @@ bogus-priv
 
         // REDIRECT: All HTTP traffic (port 80) from clients on LAN to Node.js portal (port 3000)
         execSync(`sudo iptables -t nat -A PREROUTING -i ${lanInterface} -p tcp --dport 80 -j REDIRECT --to-port ${PORT}`);
-
-        // REDIRECT: All HTTP traffic (port 80) from clients on WAN to Node.js portal (port 3000)
-        execSync(`sudo iptables -t nat -A PREROUTING -i ${wanInterface} -p tcp --dport 80 -j REDIRECT --to-port ${PORT}`);
 
         // REDIRECT: All DNS traffic (UDP 53) from clients on LAN (excluding the server itself) to the PisoWiFi server's DNS (dnsmasq)
         execSync(`sudo iptables -t nat -A PREROUTING -i ${lanInterface} -p udp --dport 53 ! -s ${lanIpAddress} -j DNAT --to-destination ${lanIpAddress}:53`);
