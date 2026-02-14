@@ -343,6 +343,8 @@ async function initNetwork() {
         const lanInterface = settings.lan_interface_name || 'eth1';
         const lanIpAddress = settings.lan_ip_address ? settings.lan_ip_address.split('/')[0] : '10.0.0.1';
 
+        console.log(`[Network] Configuring: WAN=${wanInterface}, LAN=${lanInterface} (EAP110), Gateway IP=${lanIpAddress}`);
+
         // Enable IP Forwarding
         execSync('sudo sysctl -w net.ipv4.ip_forward=1');
         
@@ -676,18 +678,23 @@ db.serialize(() => {
 
     // Add network interface settings to the database if they don't exist
     const networkInterfaceSettings = [
-        ['wan_interface_name', 'enp1s0'],
+        ['wan_interface_name', 'eth0'],
         ['wan_config_type', 'dhcp'],
         ['wan_ip_address', ''],
         ['wan_gateway', ''],
         ['wan_dns_servers', '8.8.8.8,8.8.4.4'],
-        ['lan_interface_name', 'enx00e04c680013'],
+        ['lan_interface_name', 'eth1'],
         ['lan_ip_address', '10.0.0.1/24'],
         ['lan_dns_servers', '8.8.8.8,8.8.4.4']
     ];
     networkInterfaceSettings.forEach(setting => {
         db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)`, setting);
     });
+
+    // Auto-fix: Update old specific interface names to generic ones if they haven't been changed by user
+    // Ito ay para palitan ang 'enx...' o 'enp...' kung sakaling naka-save na sa database mo
+    db.run(`UPDATE settings SET value = 'eth0' WHERE key = 'wan_interface_name' AND value = 'enp1s0'`);
+    db.run(`UPDATE settings SET value = 'eth1' WHERE key = 'lan_interface_name' AND value = 'enx00e04c680013'`);
 
     // Ensure new audio settings exist for existing databases
     const newAudioSettings = [
