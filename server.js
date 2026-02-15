@@ -1085,15 +1085,13 @@ let currentSessionCoins = 0;
 // Routes
 
 // Captive portal detection URLs - redirect to main portal
-app.get('/generate_204', (req, res) => {
-    res.redirect('/');
-});
-app.get('/hotspot-detect.html', (req, res) => {
-    res.redirect('/');
-});
-app.get('/connecttest.txt', (req, res) => {
-    res.redirect('/');
-});
+const PORTAL_IP = 'http://10.0.0.1';
+app.get('/generate_204', (req, res) => res.redirect(PORTAL_IP));
+app.get('/hotspot-detect.html', (req, res) => res.redirect(PORTAL_IP));
+app.get('/connecttest.txt', (req, res) => res.redirect(PORTAL_IP));
+app.get('/ncsi.txt', (req, res) => res.redirect(PORTAL_IP)); // Windows
+app.get('/canonical.html', (req, res) => res.redirect(PORTAL_IP)); // Android
+app.get('/success.txt', (req, res) => res.redirect(PORTAL_IP)); // Firefox
 
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
