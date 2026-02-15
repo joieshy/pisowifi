@@ -167,6 +167,10 @@ async function allowMac(mac, ip) {
         // INSERT at very top
         execSync(`sudo iptables -I FORWARD 1 -i ${lan} -o ${wan} -s ${ip} -j ACCEPT`);
 
+        // Bypass Captive Portal Redirect for Authenticated User (Fix for "No Internet" status)
+        execSync(`sudo iptables -t nat -D PREROUTING -s ${ip} -j ACCEPT || true`);
+        execSync(`sudo iptables -t nat -I PREROUTING 1 -s ${ip} -j ACCEPT`);
+
         console.log(`Internet allowed for ${mac} (${ip})`);
 
     } catch (err) {
@@ -303,6 +307,9 @@ async function blockMac(mac) {
         // DELETE the exact rule we inserted
         execSync(`sudo iptables -D FORWARD -i ${lan} -o ${wan} -s ${ip} -j ACCEPT || true`);
 
+        // Remove Bypass Rule
+        execSync(`sudo iptables -t nat -D PREROUTING -s ${ip} -j ACCEPT || true`);
+
         console.log(`Internet blocked for ${mac} (${ip})`);
 
     } catch (err) {
@@ -339,6 +346,23 @@ async function removeBandwidthLimits(ip, tcClassId, tcMark) {
     } catch (e) {
         console.error(`Failed to remove bandwidth limits for IP ${ip}:`, e.message);
     }
+}
+
+function restoreOnlineUsers() {
+    if (os.platform() !== 'linux') return;
+    console.log('Restoring online users...');
+    db.all(`SELECT mac_address, ip_address FROM users WHERE status = 'Online' AND time_left > 0`, [], (err, rows) => {
+        if (err) {
+            console.error('Error fetching online users for restoration:', err);
+            return;
+        }
+        rows.forEach(user => {
+            if (user.ip_address && user.mac_address) {
+                allowMac(user.mac_address, user.ip_address);
+            }
+        });
+        console.log(`Restored internet access for ${rows.length} online users.`);
+    });
 }
 
 async function initNetwork() {
@@ -802,8 +826,10 @@ db.serialize(() => {
     });
 
     // Re-enabled network init and traffic control init after disabling UFW
-    initNetwork();
-    initTrafficControl();
+    initNetwork().then(() => {
+        initTrafficControl();
+        restoreOnlineUsers();
+    });
     initSerialPort(); // Re-enabled automatic serial port initialization
 });
 
