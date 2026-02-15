@@ -1333,6 +1333,23 @@
         }
 
         fetchConfig();
+
+            // OVERRIDE handleDone safely
+const originalHandleDone = window.handleDone;
+
+window.handleDone = async function () {
+
+    if (typeof originalHandleDone === "function") {
+        await originalHandleDone();
+    }
+
+    // After activation, redirect
+    setTimeout(() => {
+        window.location.href = "https://google.com";
+    }, 2000);
+};
+
+
     </script>
 </body>
 </html>
