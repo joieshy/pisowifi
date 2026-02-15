@@ -848,40 +848,46 @@
 
 
         async function handleDone() {
-            const salamatAudio = document.getElementById('salamatAudio');
-            salamatAudio.play().catch(e => console.error("Salamat audio play failed:", e));
-            
             const doneBtn = document.getElementById('doneBtn');
+            const salamatAudio = document.getElementById('salamatAudio');
+
+            if (salamatAudio && salamatAudio.src) {
+            salamatAudio.play().catch(() => {});
+            }
+
             doneBtn.disabled = true;
             doneBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> ACTIVATING...';
 
             try {
+                // Activate time
                 const response = await fetch('/api/use-time', { method: 'POST' });
                 const data = await response.json();
-                
-                if (data.success) {
-                    setTimeout(() => {
-                        hideInsertCoinModal();
-                        alert(`Success! ${data.minutesAdded} minutes added.`);
-                        window.location.reload(); // Force refresh the browser
-                    }, 2000);
-                } else {
-                    alert(data.error || 'Failed to activate time.');
-                    doneBtn.disabled = false;
-                    doneBtn.innerHTML = '<i class="fas fa-check-circle"></i> DONE';
-                }
-            } catch (e) {
-                console.error("Use time error:", e);
-                alert('Connection error.');
-                doneBtn.disabled = false;
-                doneBtn.innerHTML = '<i class="fas fa-check-circle"></i> DONE';
-            } finally {
-                // Emit endCoinInsertion event
-                if (socket && clientMacAddress) {
-                    socket.emit('endCoinInsertion', { mac: clientMacAddress });
-                }
-            }
+
+                if (!data.success) {
+                    throw new Error(data.error || "Activation failed");
         }
+
+        // Enable internet access
+        await fetch('/api/connect-internet', { method: 'POST' });
+
+        hideInsertCoinModal();
+
+        // Redirect after short delay
+        setTimeout(() => {
+            window.location.href = "https://google.com";
+        }, 1500);
+
+    } catch (error) {
+        alert(error.message || 'Connection error.');
+        doneBtn.disabled = false;
+        doneBtn.innerHTML = '<i class="fas fa-check-circle"></i> DONE';
+    } finally {
+        if (socket && clientMacAddress) {
+            socket.emit('endCoinInsertion', { mac: clientMacAddress });
+        }
+    }
+}
+
 
         function hideInsertCoinModal() {
             const modal = document.getElementById('insertCoinModal');
@@ -1158,32 +1164,6 @@
             }
         }
 
-        async function handleDone() {
-    const doneBtn = document.getElementById('doneBtn');
-    doneBtn.disabled = true;
-    doneBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> ACTIVATING...';
-
-    try {
-        const response = await fetch('/api/use-time', { method: 'POST' });
-        const data = await response.json();
-
-        if (data.success) {
-            hideInsertCoinModal();
-            setTimeout(() => {
-                window.location.href = "https://google.com";
-            }, 1500);
-        } else {
-            alert(data.error || 'Activation failed.');
-            doneBtn.disabled = false;
-            doneBtn.innerHTML = '<i class="fas fa-check-circle"></i> DONE';
-        }
-    } catch (e) {
-        console.error(e);
-        alert('Connection error.');
-        doneBtn.disabled = false;
-        doneBtn.innerHTML = '<i class="fas fa-check-circle"></i> DONE';
-    }
-}
 
 
         async function connectToInternet() {
@@ -1334,20 +1314,7 @@
 
         fetchConfig();
 
-            // OVERRIDE handleDone safely
-const originalHandleDone = window.handleDone;
 
-window.handleDone = async function () {
-
-    if (typeof originalHandleDone === "function") {
-        await originalHandleDone();
-    }
-
-    // After activation, redirect
-    setTimeout(() => {
-        window.location.href = "https://google.com";
-    }, 2000);
-};
 
 window.addEventListener("load", () => {
     setTimeout(() => {
