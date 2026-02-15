@@ -42,6 +42,16 @@ app.use(session({
     }
 }));
 
+// --- GLOBAL HOST CHECK (Fix for Windows Images/Assets) ---
+// Force all traffic to use the local IP 10.0.0.1
+app.use((req, res, next) => {
+    const host = req.get('host');
+    if (host && !host.includes('10.0.0.1') && !host.includes('localhost') && !host.includes('127.0.0.1')) {
+        return res.redirect('http://10.0.0.1' + req.originalUrl);
+    }
+    next();
+});
+
 // Auth Middleware
 const isAuthenticated = (req, res, next) => {
     if (req.session && req.session.adminId) {
@@ -1055,9 +1065,13 @@ app.post('/api/serial-port/connect', isAuthenticated, async (req, res) => {
 });
 
 // Serve static files from the 'public' directory
-app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
+    setHeaders: (res, path) => {
+        // Disable cache for uploads to fix "picture not loading" issues
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    }
+}));
 app.use('/media', express.static(path.join(__dirname, 'media')));
 
 // Ensure uploads directory exists
@@ -1121,11 +1135,6 @@ app.get('/canonical.html', (req, res) => res.redirect(PORTAL_IP)); // Android
 app.get('/success.txt', (req, res) => res.redirect(PORTAL_IP)); // Firefox
 
 app.get('/', (req, res) => {
-    // Fix for Windows "Buggy" Portal: Force redirect to IP if accessing via domain
-    const host = req.get('host');
-    if (host && !host.includes('10.0.0.1') && !host.includes('localhost') && !host.includes('0.0.0.0')) {
-        return res.redirect('http://10.0.0.1');
-    }
     // Prevent caching to avoid loading glitches
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
