@@ -1158,6 +1158,34 @@
             }
         }
 
+        async function handleDone() {
+    const doneBtn = document.getElementById('doneBtn');
+    doneBtn.disabled = true;
+    doneBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> ACTIVATING...';
+
+    try {
+        const response = await fetch('/api/use-time', { method: 'POST' });
+        const data = await response.json();
+
+        if (data.success) {
+            hideInsertCoinModal();
+            setTimeout(() => {
+                window.location.href = "https://google.com";
+            }, 1500);
+        } else {
+            alert(data.error || 'Activation failed.');
+            doneBtn.disabled = false;
+            doneBtn.innerHTML = '<i class="fas fa-check-circle"></i> DONE';
+        }
+    } catch (e) {
+        console.error(e);
+        alert('Connection error.');
+        doneBtn.disabled = false;
+        doneBtn.innerHTML = '<i class="fas fa-check-circle"></i> DONE';
+    }
+}
+
+
         async function connectToInternet() {
             try {
                 const response = await fetch('/api/connect-internet', { method: 'POST' });
