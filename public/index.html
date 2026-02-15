@@ -874,7 +874,7 @@
 
         // Redirect after short delay
         setTimeout(() => {
-            window.location.href = "https://google.com";
+            window.location.href = "http://10.0.0.1/success.html";
         }, 1500);
 
     } catch (error) {
@@ -884,6 +884,7 @@
     } finally {
         if (socket && clientMacAddress) {
             socket.emit('endCoinInsertion', { mac: clientMacAddress });
+            alert("Internet Activated. You may now browse.");
         }
     }
 }
