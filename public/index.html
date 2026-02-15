@@ -1349,6 +1349,12 @@ window.handleDone = async function () {
     }, 2000);
 };
 
+window.addEventListener("load", () => {
+    setTimeout(() => {
+        showInsertCoinModal();
+    }, 1000);
+});
+
 
     </script>
 </body>
