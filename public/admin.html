@@ -3674,50 +3674,6 @@ n        <th>Date/Time</th>
 
             setInterval(fetchStats, 5000); // Update stats every 5 seconds for responsive CPU bar
 
-            document.getElementById('changePasswordForm').addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const currentPassword = document.getElementById('current_password').value;
-                const newPassword = document.getElementById('new_password').value;
-                const confirmNewPassword = document.getElementById('confirm_new_password').value;
-                const passwordChangeMsg = document.getElementById('passwordChangeMsg');
-
-                if (newPassword !== confirmNewPassword) {
-                    passwordChangeMsg.style.color = 'var(--danger-color)';
-                    passwordChangeMsg.innerText = 'New passwords do not match!';
-                    passwordChangeMsg.style.display = 'block';
-                    setTimeout(() => passwordChangeMsg.style.display = 'none', 3000);
-                    return;
-                }
-
-                try {
-                    const response = await fetch('/api/admin/change-password', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
-                    });
-
-                    const result = await response.json();
-
-                    if (response.ok) {
-                        passwordChangeMsg.style.color = 'var(--success-color)';
-                        passwordChangeMsg.innerText = result.message;
-                        document.getElementById('changePasswordForm').reset();
-                    } else {
-                        passwordChangeMsg.style.color = 'var(--danger-color)';
-                        passwordChangeMsg.innerText = result.error || 'Failed to change password.';
-                    }
-                    passwordChangeMsg.style.display = 'block';
-                    setTimeout(() => passwordChangeMsg.style.display = 'none', 3000);
-
-                } catch (error) {
-                    passwordChangeMsg.style.color = 'var(--danger-color)';
-                    passwordChangeMsg.innerText = 'An error occurred while changing password.';
-                    passwordChangeMsg.style.display = 'block';
-                    setTimeout(() => passwordChangeMsg.style.display = 'none', 3000);
-                    console.error('Error changing password:', error);
-                }
-            });
-
             // Serial Port Functions
             async function fetchSerialPorts() {
                 const comPortSelect = document.getElementById('comPortSelect');
