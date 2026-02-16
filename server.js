@@ -42,6 +42,15 @@ app.use(session({
     }
 }));
 
+// Force redirect to port 3000 for 10.0.0.1 to fix image loading issues
+app.use((req, res, next) => {
+    const host = req.get('host');
+    if (host && host.includes('10.0.0.1') && !host.includes(':3000')) {
+        return res.redirect(`http://10.0.0.1:3000${req.originalUrl}`);
+    }
+    next();
+});
+
 // Auth Middleware
 const isAuthenticated = (req, res, next) => {
     if (req.session && req.session.adminId) {
@@ -1190,7 +1199,7 @@ let currentSessionCoins = 0;
 // Routes
 
 // Captive portal detection URLs - redirect to main portal
-const PORTAL_IP = 'http://10.0.0.1';
+const PORTAL_IP = 'http://10.0.0.1:3000';
 app.get('/generate_204', (req, res) => res.redirect(PORTAL_IP));
 app.get('/hotspot-detect.html', (req, res) => res.redirect(PORTAL_IP));
 app.get('/connecttest.txt', (req, res) => res.redirect(PORTAL_IP));
@@ -2614,7 +2623,7 @@ app.post('/api/save-network', async (req, res) => {
 
 // 1. Unahin ang Redirect Routes para masalo agad ang Windows/Apple checks
 app.get('/redirect', (req, res) => {
-    res.redirect('http://10.0.0.1');
+    res.redirect('http://10.0.0.1:3000');
 });
 
 const HOST = '0.0.0.0'; // Temporarily hardcoded to 0.0.0.0 to resolve EADDRNOTAVAIL on server startup.
