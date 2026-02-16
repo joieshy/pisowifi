@@ -158,7 +158,7 @@ async function allowMac(mac, ip) {
         const settings = await new Promise((resolve, reject) => {
             db.all(
                 `SELECT key, value FROM settings 
-                 WHERE key IN ('wan_interface_name','lan_interface_name')`,
+                 WHERE key IN ('wan_interface_name','lan_interface_name', 'lan_ip_address')`,
                 [],
                 (err, rows) => {
                     if (err) return reject(err);
@@ -171,6 +171,7 @@ async function allowMac(mac, ip) {
 
         const wan = settings.wan_interface_name || 'enp1s0';
         const lan = settings.lan_interface_name || 'enx00e04c680013';
+        const lanIp = (settings.lan_ip_address || '10.0.0.1').split('/')[0];
 
         // REMOVE existing rule first (important)
         execSync(`sudo iptables -D FORWARD -i ${lan} -o ${wan} -s ${ip} -j ACCEPT || true`);
@@ -179,8 +180,10 @@ async function allowMac(mac, ip) {
         execSync(`sudo iptables -I FORWARD 1 -i ${lan} -o ${wan} -s ${ip} -j ACCEPT`);
 
         // Bypass Captive Portal Redirect for Authenticated User (Fix for "No Internet" status)
+        // We exclude the LAN IP (Portal) from the bypass so it still gets redirected to port 3000
         execSync(`sudo iptables -t nat -D PREROUTING -s ${ip} -j ACCEPT || true`);
-        execSync(`sudo iptables -t nat -I PREROUTING 1 -s ${ip} -j ACCEPT`);
+        execSync(`sudo iptables -t nat -D PREROUTING -s ${ip} ! -d ${lanIp} -j ACCEPT || true`);
+        execSync(`sudo iptables -t nat -I PREROUTING 1 -s ${ip} ! -d ${lanIp} -j ACCEPT`);
 
         // Apply Bandwidth Limits
         try {
@@ -337,7 +340,7 @@ async function blockMac(mac) {
         const settings = await new Promise((resolve, reject) => {
             db.all(
                 `SELECT key, value FROM settings 
-                 WHERE key IN ('wan_interface_name','lan_interface_name')`,
+                 WHERE key IN ('wan_interface_name','lan_interface_name', 'lan_ip_address')`,
                 [],
                 (err, rows) => {
                     if (err) return reject(err);
@@ -352,6 +355,7 @@ async function blockMac(mac) {
 
         const wan = settings.wan_interface_name || 'enp1s0';
         const lan = settings.lan_interface_name || 'enx00e04c680013';
+        const lanIp = (settings.lan_ip_address || '10.0.0.1').split('/')[0];
 
         const user = await new Promise((resolve, reject) => {
             db.get(
@@ -372,7 +376,8 @@ async function blockMac(mac) {
         execSync(`sudo iptables -D FORWARD -i ${lan} -o ${wan} -s ${ip} -j ACCEPT || true`);
 
         // Remove Bypass Rule
-        execSync(`sudo iptables -t nat -D PREROUTING -s ${ip} -j ACCEPT || true`);
+        execSync(`sudo iptables -t nat -D PREROUTING -s ${ip} ! -d ${lanIp} -j ACCEPT || true`);
+        execSync(`sudo iptables -t nat -D PREROUTING -s ${ip} -j ACCEPT || true`); // Clean up old rules too
 
         // Remove Bandwidth Limits
         if (user.tc_class_id) {
