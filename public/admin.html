@@ -849,11 +849,12 @@ n        <th>Date/Time</th>
                             <th>IP Address</th>
                             <th>Download</th>
                             <th>Upload</th>
+                            <th>Action</th>
                         </tr>
                     </thead>
                     <tbody id="activeBandwidthUsersTableBody">
                         <tr>
-                            <td colspan="4" style="text-align: center;">Loading active users...</td>
+                            <td colspan="5" style="text-align: center;">Loading active users...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -2285,6 +2286,37 @@ n        <th>Date/Time</th>
             document.getElementById('userHistoryModal').style.display = 'none';
         }
 
+    <!-- User Bandwidth Limit Modal -->
+    <div id="userBandwidthModal" class="modal">
+        <div class="modal-content">
+            <h3 id="userBandwidthModalTitle" style="color: var(--info-color); margin-bottom: 1rem;">
+                <i class="fas fa-tachometer-alt"></i> Set User Bandwidth Limit
+            </h3>
+            <form id="userBandwidthForm">
+                <input type="hidden" id="userBandwidthMac">
+                <div class="form-group">
+                    <label>Download Limit (Mbps)</label>
+                    <input type="number" id="userDownloadLimit" name="download_limit" min="0" step="0.1" placeholder="0 for unlimited">
+                    <p style="font-size: 0.8rem; color: #858796;">Set to 0 for unlimited (uses global limit).</p>
+                </div>
+                <div class="form-group">
+                    <label>Upload Limit (Mbps)</label>
+                    <input type="number" id="userUploadLimit" name="upload_limit" min="0" step="0.1" placeholder="0 for unlimited">
+                    <p style="font-size: 0.8rem; color: #858796;">Set to 0 for unlimited (uses global limit).</p>
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button type="submit" class="btn btn-info">
+                        <i class="fas fa-save"></i> Save Bandwidth Limit
+                    </button>
+                    <button type="button" class="btn btn-secondary" onclick="closeUserBandwidthModal()">
+                        <i class="fas fa-times"></i> Cancel
+                    </button>
+                </div>
+            </form>
+            <div id="userBandwidthMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">Bandwidth limit saved!</div>
+        </div>
+    </div>
+
         // Add event listener for the change password form
         document.getElementById('changePasswordForm').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -2638,20 +2670,27 @@ n        <th>Date/Time</th>
                 const tableBody = document.getElementById('activeBandwidthUsersTableBody');
                 tableBody.innerHTML = '';
 
-                const activeUsersWithLimits = users.filter(user => user.status === 'Online' && (user.download_limit > 0 || user.upload_limit > 0));
+                // Show all online users, not just those with limits
+                const activeUsers = users.filter(user => user.status === 'Online');
 
-                if (activeUsersWithLimits.length === 0) {
-                    tableBody.innerHTML = '<tr><td colspan="4" style="text-align: center;">No active users with bandwidth limits</td></tr>';
+                if (activeUsers.length === 0) {
+                    tableBody.innerHTML = '<tr><td colspan="5" style="text-align: center;">No active users</td></tr>';
                     return;
                 }
 
-                activeUsersWithLimits.forEach(user => {
+                activeUsers.forEach(user => {
+                    const hasCustomLimit = user.download_limit > 0 || user.upload_limit > 0;
                     tableBody.innerHTML += `
                         <tr>
                             <td><strong>${user.username}</strong></td>
                             <td>${user.ip_address}</td>
-                            <td>${user.download_limit > 0 ? user.download_limit + ' Mbps' : 'Unlimited'}</td>
-                            <td>${user.upload_limit > 0 ? user.upload_limit + ' Mbps' : 'Unlimited'}</td>
+                            <td>${user.download_limit > 0 ? user.download_limit + ' Mbps' : (settings.download_limit > 0 ? settings.download_limit + ' Mbps (Global)' : 'Unlimited')}</td>
+                            <td>${user.upload_limit > 0 ? user.upload_limit + ' Mbps' : (settings.upload_limit > 0 ? settings.upload_limit + ' Mbps (Global)' : 'Unlimited')}</td>
+                            <td>
+                                <button class="btn btn-sm btn-info" onclick="openUserBandwidthModal('${user.mac_address}', '${user.username}', ${user.download_limit || 0}, ${user.upload_limit || 0})">
+                                    <i class="fas fa-cog"></i> ${hasCustomLimit ? 'Edit' : 'Set'}
+                                </button>
+                            </td>
                         </tr>
                     `;
                 });
@@ -2659,9 +2698,67 @@ n        <th>Date/Time</th>
             } catch (e) {
                 console.error('Error fetching bandwidth settings or users:', e);
                 const tableBody = document.getElementById('activeBandwidthUsersTableBody');
-                tableBody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--danger-color);">Error loading bandwidth data</td></tr>';
+                tableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--danger-color);">Error loading bandwidth data</td></tr>';
             }
         }
+
+        // Open user bandwidth modal
+        function openUserBandwidthModal(mac, username, downloadLimit, uploadLimit) {
+            document.getElementById('userBandwidthMac').value = mac;
+            document.getElementById('userBandwidthModalTitle').innerHTML = '<i class="fas fa-tachometer-alt"></i> Set Bandwidth Limit for ' + username;
+            document.getElementById('userDownloadLimit').value = downloadLimit;
+            document.getElementById('userUploadLimit').value = uploadLimit;
+            document.getElementById('userBandwidthMsg').style.display = 'none';
+            document.getElementById('userBandwidthModal').style.display = 'block';
+        }
+
+        // Close user bandwidth modal
+        function closeUserBandwidthModal() {
+            document.getElementById('userBandwidthModal').style.display = 'none';
+        }
+
+        // Handle user bandwidth form submission
+        document.getElementById('userBandwidthForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const mac = document.getElementById('userBandwidthMac').value;
+            const downloadLimit = document.getElementById('userDownloadLimit').value;
+            const uploadLimit = document.getElementById('userUploadLimit').value;
+
+            try {
+                const response = await fetch('/api/users/bandwidth', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        mac: mac, 
+                        download_limit: parseFloat(downloadLimit) || 0,
+                        upload_limit: parseFloat(uploadLimit) || 0
+                    })
+                });
+
+                if (response.ok) {
+                    const msg = document.getElementById('userBandwidthMsg');
+                    msg.innerText = 'Bandwidth limit saved successfully!';
+                    msg.style.color = 'var(--success-color)';
+                    msg.style.display = 'block';
+                    setTimeout(() => {
+                        closeUserBandwidthModal();
+                        fetchBandwidth(); // Refresh the table
+                    }, 1500);
+                } else {
+                    const result = await response.json();
+                    const msg = document.getElementById('userBandwidthMsg');
+                    msg.innerText = result.error || 'Failed to save bandwidth limit';
+                    msg.style.color = 'var(--danger-color)';
+                    msg.style.display = 'block';
+                }
+            } catch (e) {
+                console.error('Error saving user bandwidth:', e);
+                const msg = document.getElementById('userBandwidthMsg');
+                msg.innerText = 'Error saving bandwidth limit';
+                msg.style.color = 'var(--danger-color)';
+                msg.style.display = 'block';
+            }
+        });
 
         document.getElementById('bandwidthForm').addEventListener('submit', async (e) => {
             e.preventDefault();
