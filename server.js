@@ -42,16 +42,6 @@ app.use(session({
     }
 }));
 
-// --- GLOBAL HOST CHECK (Fix for Windows Images/Assets) ---
-// Force all traffic to use the local IP 10.0.0.1
-app.use((req, res, next) => {
-    const host = req.get('host');
-    if (host && !host.includes('10.0.0.1') && !host.includes('localhost') && !host.includes('127.0.0.1')) {
-        return res.redirect('http://10.0.0.1' + req.originalUrl);
-    }
-    next();
-});
-
 // Auth Middleware
 const isAuthenticated = (req, res, next) => {
     if (req.session && req.session.adminId) {
