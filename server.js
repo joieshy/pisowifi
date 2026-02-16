@@ -171,70 +171,31 @@ async function allowMac(mac, ip) {
         execSync(`sudo iptables -t nat -D PREROUTING -s ${ip} -j ACCEPT || true`);
         execSync(`sudo iptables -t nat -I PREROUTING 1 -s ${ip} -j ACCEPT`);
 
-        console.log(`Internet allowed for ${mac} (${ip})`);
+        // Apply Bandwidth Limits
+        db.all(`SELECT key, value FROM settings WHERE key IN ('download_limit', 'upload_limit')`, [], (err, rows) => {
+            if (!err) {
+                const bwSettings = {};
+                rows.forEach(r => bwSettings[r.key] = r.value);
+                const dlLimit = parseFloat(bwSettings.download_limit || 0);
+                const ulLimit = parseFloat(bwSettings.upload_limit || 0);
 
-        // Apply bandwidth limits if set
-        const user = await new Promise((resolve, reject) => {
-            db.get(`SELECT download_limit, upload_limit, tc_class_id, tc_mark FROM users WHERE mac_address = ?`, [mac], (err, row) => {
-                if (err) return reject(err);
-                resolve(row);
-            });
+                if (dlLimit > 0 || ulLimit > 0) {
+                    db.get(`SELECT id, tc_class_id FROM users WHERE mac_address = ?`, [mac], (err, user) => {
+                        if (user) {
+                            let classId = user.tc_class_id;
+                            if (!classId) {
+                                classId = user.id + 100; // Generate a simple unique ID based on user ID
+                                db.run(`UPDATE users SET tc_class_id = ? WHERE mac_address = ?`, [classId, mac]);
+                            }
+                            // Apply limits
+                            applyBandwidthLimits(ip, dlLimit, ulLimit, classId);
+                        }
+                    });
+                }
+            }
         });
 
-        if (user && (user.download_limit > 0 || user.upload_limit > 0)) {
-            // User has custom bandwidth limits, apply them
-            const globalSettings = await new Promise((resolve, reject) => {
-                db.all(`SELECT key, value FROM settings WHERE key IN ('download_limit', 'upload_limit', 'lan_interface_name')`, [], (err, rows) => {
-                    if (err) return reject(err);
-                    const s = {};
-                    rows.forEach(r => s[r.key] = r.value);
-                    resolve(s);
-                });
-            });
-            // test
-            const lanInterface = globalSettings.lan_interface_name || 'eth1';
-            const dlLimit = user.download_limit > 0 ? user.download_limit : parseFloat(globalSettings.download_limit || '0');
-            const ulLimit = user.upload_limit > 0 ? user.upload_limit : parseFloat(globalSettings.upload_limit || '0');
-            
-            let tcClassId = user.tc_class_id;
-            let tcMark = user.tc_mark;
-            
-            // Generate unique class ID and mark if not exists
-            if (!tcClassId || tcClassId === 0) {
-                tcClassId = Math.floor(Math.random() * 254) + 2;
-                tcMark = tcClassId;
-                db.run(`UPDATE users SET tc_class_id = ?, tc_mark = ? WHERE mac_address = ?`, [tcClassId, tcMark, mac]);
-            }
-            
-            const dlRate = dlLimit > 0 ? `${dlLimit}mbit` : '1000mbit';
-            const ulRate = ulLimit > 0 ? `${ulLimit}mbit` : '1000mbit';
-            
-            try {
-                // Remove existing limits first
-                execSync(`sudo tc class del dev ${lanInterface} parent 1: classid 1:${tcClassId} 2>/dev/null || true`);
-                execSync(`sudo tc filter del dev ${lanInterface} protocol ip parent 1: prio 1 handle ${tcMark} fw 2>/dev/null || true`);
-                execSync(`sudo iptables -t mangle -D POSTROUTING -s ${ip} -j MARK --set-mark ${tcMark} 2>/dev/null || true`);
-                execSync(`sudo iptables -t mangle -D PREROUTING -d ${ip} -j MARK --set-mark ${tcMark} 2>/dev/null || true`);
-                
-                // Apply upload limit
-                execSync(`sudo tc class add dev ${lanInterface} parent 1: classid 1:${tcClassId} htb rate ${ulRate} ceil ${ulRate}`);
-                execSync(`sudo iptables -t mangle -A POSTROUTING -s ${ip} -j MARK --set-mark ${tcMark}`);
-                execSync(`sudo tc filter add dev ${lanInterface} protocol ip parent 1: prio 1 handle ${tcMark} fw classid 1:${tcClassId}`);
-                
-                // Apply download limit
-                try {
-                    execSync(`sudo tc class add dev ifb0 parent 1: classid 1:${tcClassId} htb rate ${dlRate} ceil ${dlRate}`);
-                    execSync(`sudo iptables -t mangle -A PREROUTING -d ${ip} -j MARK --set-mark ${tcMark}`);
-                    execSync(`sudo tc filter add dev ifb0 protocol ip parent 1: prio 1 handle ${tcMark} fw classid 1:${tcClassId}`);
-                } catch (e) {
-                    console.warn('IFB download shaping failed:', e.message);
-                }
-                
-                console.log(`Bandwidth limits applied for ${ip}: DL=${dlLimit}Mbps, UL=${ulLimit}Mbps`);
-            } catch (e) {
-                console.error(`Failed to apply bandwidth limits for ${ip}:`, e.message);
-            }
-        }
+        console.log(`Internet allowed for ${mac} (${ip})`);
 
     } catch (err) {
         console.error('allowMac error:', err.message);
@@ -275,9 +236,9 @@ function applyGroupSettings(type, vlanId) {
     }
 }
 
-async function applyBandwidthLimits(ip, downloadLimitMbps, uploadLimitMbps, tcClassId, tcMark) {
+async function applyBandwidthLimits(ip, downloadLimitMbps, uploadLimitMbps, tcClassId) {
     if (os.platform() !== 'linux') {
-        console.log(`[Simulated] Applying bandwidth limits for IP: ${ip}, DL: ${downloadLimitMbps}Mbps, UL: ${uploadLimitMbps}Mbps`);
+        console.log(`[Simulated] Applying bandwidth limits for IP: ${ip}, DL: ${downloadLimitMbps}Mbps, UL: ${uploadLimitMbps}Mbps, ClassID: ${tcClassId}`);
         return;
     }
 
@@ -285,43 +246,38 @@ async function applyBandwidthLimits(ip, downloadLimitMbps, uploadLimitMbps, tcCl
         const settings = await new Promise((resolve, reject) => {
             db.get(`SELECT value FROM settings WHERE key = 'lan_interface_name'`, [], (err, row) => {
                 if (err) return reject(err);
-                resolve(row ? row.value : 'eth1');
+                resolve(row ? row.value : 'enx00e04c680013');
             });
         });
-        const lanInterface = settings || 'eth1';
+        const lanInterface = settings || 'enx00e04c680013';
 
         // Convert Mbps to Mbits for tc
         const dlRate = downloadLimitMbps > 0 ? `${downloadLimitMbps}mbit` : '1000mbit';
         const ulRate = uploadLimitMbps > 0 ? `${uploadLimitMbps}mbit` : '1000mbit';
+        const classId = `1:${tcClassId}`;
+        const prio = tcClassId + 100; // Offset priority to avoid conflicts
 
-        // Ensure the parent class exists (it should from initTrafficControl)
-        execSync(`sudo tc class add dev ${lanInterface} parent 1: classid 1:${tcClassId} htb rate ${ulRate} ceil ${ulRate} || true`);
-        
-        // Add a filter to mark packets from this IP
-        execSync(`sudo iptables -t mangle -A POSTROUTING -s ${ip} -j MARK --set-mark ${tcMark}`);
-        execSync(`sudo iptables -t mangle -D PREROUTING -d ${ip} -j MARK --set-mark ${tcMark}`);
+        // Clean up existing limits for this class ID/Prio just in case
+        try { execSync(`sudo tc filter del dev ${lanInterface} parent 1: prio ${prio}`); } catch (e) {}
+        try { execSync(`sudo tc class del dev ${lanInterface} parent 1: classid ${classId}`); } catch (e) {}
+        try { execSync(`sudo tc filter del dev ifb0 parent 1: prio ${prio}`); } catch (e) {}
+        try { execSync(`sudo tc class del dev ifb0 parent 1: classid ${classId}`); } catch (e) {}
 
-        // Add filter to direct marked packets to the specific class for outbound (upload)
-        execSync(`sudo tc filter add dev ${lanInterface} protocol ip parent 1: prio 1 handle ${tcMark} fw classid 1:${tcClassId}`);
-
-        // For download limits, we need an ingress qdisc
-        // Create an IFB device for ingress shaping if it doesn't exist
-        try {
-            execSync('sudo ip link show ifb0 || sudo ip link add name ifb0 type ifb');
-            execSync('sudo ip link set dev ifb0 up');
-            execSync('sudo tc qdisc add dev ifb0 root handle 1: htb default 10 || true');
-            execSync('sudo tc class add dev ifb0 parent 1: classid 1:10 htb rate 1000mbit || true');
-            execSync('sudo tc filter add dev ifb0 protocol ip parent 1: prio 1 handle 1: fw classid 1:1 || true');
-            // Redirect ingress traffic from LAN interface to ifb0
-            execSync(`sudo tc filter add dev ${lanInterface} ingress protocol ip u32 match u32 0 0 flowid 1:1 action mirred egress redirect dev ifb0`);
-        } catch (e) {
-            console.warn('IFB device setup failed, ingress shaping may not work:', e.message);
+        // DOWNLOAD (LAN Interface Egress) - Server to Client
+        if (downloadLimitMbps > 0) {
+            // Create class
+            execSync(`sudo tc class add dev ${lanInterface} parent 1: classid ${classId} htb rate ${dlRate} ceil ${dlRate}`);
+            // Filter: Match Destination IP (Client IP)
+            execSync(`sudo tc filter add dev ${lanInterface} protocol ip parent 1: prio ${prio} u32 match ip dst ${ip}/32 flowid ${classId}`);
         }
 
-        // Add class for download limit on ifb0
-        execSync(`sudo tc class add dev ifb0 parent 1: classid 1:${tcClassId} htb rate ${dlRate} ceil ${dlRate} || true`);
-        // Add filter to direct marked packets to the specific class for inbound (download)
-        execSync(`sudo tc filter add dev ifb0 protocol ip parent 1: prio 1 handle ${tcMark} fw classid 1:${tcClassId}`);
+        // UPLOAD (IFB0 Interface Egress, redirected from LAN Ingress) - Client to Server
+        if (uploadLimitMbps > 0) {
+            // Create class
+            execSync(`sudo tc class add dev ifb0 parent 1: classid ${classId} htb rate ${ulRate} ceil ${ulRate}`);
+            // Filter: Match Source IP (Client IP)
+            execSync(`sudo tc filter add dev ifb0 protocol ip parent 1: prio ${prio} u32 match ip src ${ip}/32 flowid ${classId}`);
+        }
 
         console.log(`Bandwidth limits applied for IP ${ip} (DL: ${downloadLimitMbps}Mbps, UL: ${uploadLimitMbps}Mbps)`);
     } catch (e) {
@@ -348,6 +304,8 @@ async function blockMac(mac) {
                 }
             );
         });
+        
+        const globalSettings = settings; // Keep reference
 
         const wan = settings.wan_interface_name || 'enp1s0';
         const lan = settings.lan_interface_name || 'enx00e04c680013';
@@ -373,19 +331,12 @@ async function blockMac(mac) {
         // Remove Bypass Rule
         execSync(`sudo iptables -t nat -D PREROUTING -s ${ip} -j ACCEPT || true`);
 
-        // Remove bandwidth limits for this user
-        if (user.tc_class_id && user.tc_class_id > 0) {
-            const lanInterface = settings.lan_interface_name || 'eth1';
-            try {
-                execSync(`sudo tc class del dev ${lanInterface} parent 1: classid 1:${user.tc_class_id} 2>/dev/null || true`);
-                execSync(`sudo tc filter del dev ${lanInterface} protocol ip parent 1: prio 1 handle ${user.tc_mark} fw 2>/dev/null || true`);
-                execSync(`sudo iptables -t mangle -D POSTROUTING -s ${ip} -j MARK --set-mark ${user.tc_mark} 2>/dev/null || true`);
-                execSync(`sudo iptables -t mangle -D PREROUTING -d ${ip} -j MARK --set-mark ${user.tc_mark} 2>/dev/null || true`);
-                execSync(`sudo tc class del dev ifb0 parent 1: classid 1:${user.tc_class_id} 2>/dev/null || true`);
-                console.log(`Bandwidth limits removed for ${ip}`);
-            } catch (e) {
-                console.warn('Failed to remove bandwidth limits:', e.message);
-            }
+        // Remove Bandwidth Limits
+        if (user.tc_class_id) {
+            removeBandwidthLimits(ip, user.tc_class_id);
+        } else {
+            // Try to remove based on ID if class_id wasn't set but might exist
+            removeBandwidthLimits(ip, user.id + 100);
         }
 
         console.log(`Internet blocked for ${mac} (${ip})`);
@@ -398,9 +349,9 @@ async function blockMac(mac) {
 
 
 
-async function removeBandwidthLimits(ip, tcClassId, tcMark) {
+async function removeBandwidthLimits(ip, tcClassId) {
     if (os.platform() !== 'linux') {
-        console.log(`[Simulated] Removing bandwidth limits for IP: ${ip}, Class: ${tcClassId}, Mark: ${tcMark}`);
+        console.log(`[Simulated] Removing bandwidth limits for IP: ${ip}, Class: ${tcClassId}`);
         return;
     }
     try {
@@ -408,19 +359,19 @@ async function removeBandwidthLimits(ip, tcClassId, tcMark) {
         const settings = await new Promise((resolve, reject) => {
             db.get(`SELECT value FROM settings WHERE key = 'lan_interface_name'`, [], (err, row) => {
                 if (err) return reject(err);
-                resolve(row ? row.value : 'eth1');
+                resolve(row ? row.value : 'enx00e04c680013');
             });
         });
-        const lanInterface = settings || 'eth1';
+        const lanInterface = settings || 'enx00e04c680013';
+        const classId = `1:${tcClassId}`;
+        const prio = tcClassId + 100;
 
-        // Delete the class for this user
-        execSync(`sudo tc class del dev ${lanInterface} parent 1: classid 1:${tcClassId} || true`);
-        // Delete the filter for this user
-        execSync(`sudo tc filter del dev ${lanInterface} protocol ip parent 1: prio 1 handle ${tcMark} fw || true`);
-        // Remove iptables rule that marks traffic from this IP
-        execSync(`sudo iptables -t mangle -D POSTROUTING -s ${ip} -j MARK --set-mark ${tcMark} || true`);
-        execSync(`sudo iptables -t mangle -D PREROUTING -d ${ip} -j MARK --set-mark ${tcMark} || true`);
-        console.log(`Bandwidth limits removed for IP ${ip} (Class: 1:${tcClassId}, Mark: ${tcMark})`);
+        try { execSync(`sudo tc filter del dev ${lanInterface} parent 1: prio ${prio}`); } catch (e) {}
+        try { execSync(`sudo tc class del dev ${lanInterface} parent 1: classid ${classId}`); } catch (e) {}
+        try { execSync(`sudo tc filter del dev ifb0 parent 1: prio ${prio}`); } catch (e) {}
+        try { execSync(`sudo tc class del dev ifb0 parent 1: classid ${classId}`); } catch (e) {}
+        
+        console.log(`Bandwidth limits removed for IP ${ip} (Class: ${classId})`);
     } catch (e) {
         console.error(`Failed to remove bandwidth limits for IP ${ip}:`, e.message);
     }
@@ -571,52 +522,35 @@ async function initTrafficControl() {
         const settings = await new Promise((resolve, reject) => {
             db.get(`SELECT value FROM settings WHERE key = 'lan_interface_name'`, [], (err, row) => {
                 if (err) return reject(err);
-                resolve(row ? row.value : 'eth1');
+                resolve(row ? row.value : 'enx00e04c680013');
             });
         });
-        const lanInterface = settings || 'eth1';
+        const lanInterface = settings || 'enx00e04c680013';
+
+        // Load IFB module for ingress shaping (Upload limit)
+        try { execSync('sudo modprobe ifb numifbs=1'); } catch (e) {}
+        try { execSync('sudo ip link set dev ifb0 up'); } catch (e) {}
 
         // Clear existing qdisc, classes, and filters on LAN interface
         execSync(`sudo tc qdisc del dev ${lanInterface} root || true`);
         execSync(`sudo tc qdisc del dev ${lanInterface} ingress || true`);
+        execSync(`sudo tc qdisc del dev ifb0 root || true`);
 
-        // Add a Hierarchical Token Bucket (HTB) qdisc to the root of LAN interface
+        // 1. LAN Interface (Download/Egress)
+        // Add HTB root qdisc
         execSync(`sudo tc qdisc add dev ${lanInterface} root handle 1: htb default 10`);
-        
-        // Add an ingress qdisc for inbound traffic shaping
-        execSync(`sudo tc qdisc add dev ${lanInterface} ingress`);
+        // Add default class (unlimited)
+        execSync(`sudo tc class add dev ${lanInterface} parent 1: classid 1:10 htb rate 1000mbit`);
 
-        // Create a default class (1:10) for unclassified traffic
-        execSync(`sudo tc class add dev ${lanInterface} parent 1: classid 1:10 htb rate 1000mbit`); // Default unlimited
+        // 2. LAN Interface (Upload/Ingress) -> Redirect to IFB0
+        execSync(`sudo tc qdisc add dev ${lanInterface} handle ffff: ingress`);
+        // Redirect all ingress traffic to ifb0
+        execSync(`sudo tc filter add dev ${lanInterface} parent ffff: protocol ip u32 match u32 0 0 action mirred egress redirect dev ifb0`);
 
-        // Add a filter to classify packets based on iptables mark
-        execSync(`sudo tc filter add dev ${lanInterface} protocol ip parent 1: prio 1 handle 1: fw classid 1:1`); // Default class for marked traffic
+        // 3. IFB0 Interface (Upload Shaping)
+        execSync(`sudo tc qdisc add dev ifb0 root handle 1: htb default 10`);
+        execSync(`sudo tc class add dev ifb0 parent 1: classid 1:10 htb rate 1000mbit`);
 
-        // Setup IFB (Intermediate Functional Block) for ingress (download) shaping
-        try {
-            // Create IFB device if it doesn't exist
-            execSync('sudo ip link show ifb0 || sudo ip link add name ifb0 type ifb');
-            execSync('sudo ip link set dev ifb0 up');
-            
-            // Clear existing qdisc on IFB
-            execSync('sudo tc qdisc del dev ifb0 root 2>/dev/null || true');
-            
-            // Add HTB qdisc to IFB
-            execSync('sudo tc qdisc add dev ifb0 root handle 1: htb default 10');
-            
-            // Add default class
-            execSync('sudo tc class add dev ifb0 parent 1: classid 1:10 htb rate 1000mbit');
-            
-            // Add filter for marked packets
-            execSync('sudo tc filter add dev ifb0 protocol ip parent 1: prio 1 handle 1: fw classid 1:1');
-            
-            // Redirect ingress traffic from LAN to IFB
-            execSync(`sudo tc filter add dev ${lanInterface} ingress protocol ip u32 match u32 0 0 flowid 1:1 action mirred egress redirect dev ifb0`);
-            
-            console.log('IFB device configured for ingress shaping.');
-        } catch (e) {
-            console.warn('IFB device setup failed:', e.message);
-        }
 
         console.log('Traffic Control (TC) initialization complete.');
     } catch (e) {
@@ -1644,17 +1578,18 @@ app.post('/api/settings', isAuthenticated, async (req, res) => {
         const downloadLimit = parseFloat(settings.download_limit || '0');
         const uploadLimit = parseFloat(settings.upload_limit || '0');
 
-        db.all(`SELECT ip_address, mac_address, tc_class_id, tc_mark FROM users WHERE status = 'Online'`, [], (err, users) => {
+        db.all(`SELECT id, ip_address, mac_address, tc_class_id FROM users WHERE status = 'Online'`, [], (err, users) => {
             if (err) {
                 console.error('Error fetching active users for bandwidth update:', err.message);
                 return res.status(500).json({ error: 'Database error' });
             }
             users.forEach(user => {
-                if (user.ip_address && user.tc_class_id > 0 && user.tc_mark > 0) {
+                if (user.ip_address) {
+                    const classId = user.tc_class_id || (user.id + 100);
                     // Remove existing limits first
-                    removeBandwidthLimits(user.ip_address, user.tc_class_id, user.tc_mark);
+                    removeBandwidthLimits(user.ip_address, classId);
                     // Apply new limits
-                    applyBandwidthLimits(user.ip_address, downloadLimit, uploadLimit, user.tc_class_id, user.tc_mark);
+                    applyBandwidthLimits(user.ip_address, downloadLimit, uploadLimit, classId);
                 }
             });
         });
@@ -1865,7 +1800,7 @@ app.post('/api/users/bandwidth', isAuthenticated, async (req, res) => {
     try {
         // Get user's current IP and status
         const user = await new Promise((resolve, reject) => {
-            db.get(`SELECT ip_address, status, tc_class_id, tc_mark FROM users WHERE mac_address = ?`, [mac], (err, row) => {
+            db.get(`SELECT id, ip_address, status, tc_class_id FROM users WHERE mac_address = ?`, [mac], (err, row) => {
                 if (err) return reject(err);
                 resolve(row);
             });
@@ -1881,81 +1816,11 @@ app.post('/api/users/bandwidth', isAuthenticated, async (req, res) => {
         
         // If user is online, apply the new bandwidth limits
         if (user.status === 'Online' && user.ip_address) {
-            const { execSync } = require('child_process');
-            const os = require('os');
-            
-            // Get LAN interface
-            const settings = await new Promise((resolve, reject) => {
-                db.get(`SELECT value FROM settings WHERE key = 'lan_interface_name'`, [], (err, row) => {
-                    if (err) return reject(err);
-                    resolve(row ? row.value : 'eth1');
-                });
-            });
-            const lanInterface = settings || 'eth1';
-            
-            // Generate unique class ID and mark for this user if not exists
-            let tcClassId = user.tc_class_id;
-            let tcMark = user.tc_mark;
-            
-            if (!tcClassId || tcClassId === 0) {
-                // Generate a unique class ID (2-255)
-                const randomId = Math.floor(Math.random() * 254) + 2;
-                tcClassId = randomId;
-                tcMark = randomId;
-                db.run(`UPDATE users SET tc_class_id = ?, tc_mark = ? WHERE mac_address = ?`, 
-                    [tcClassId, tcMark, mac]);
-            }
-            
-            if (os.platform() === 'linux') {
-                try {
-                    const dlRate = downloadLimit > 0 ? `${downloadLimit}mbit` : '1000mbit';
-                    const ulRate = uploadLimit > 0 ? `${uploadLimit}mbit` : '1000mbit';
-                    const userIp = user.ip_address;
-                    
-                    // Remove existing limits first
-                    execSync(`sudo tc class del dev ${lanInterface} parent 1: classid 1:${tcClassId} 2>/dev/null || true`);
-                    execSync(`sudo tc filter del dev ${lanInterface} protocol ip parent 1: prio 1 handle ${tcMark} fw 2>/dev/null || true`);
-                    execSync(`sudo iptables -t mangle -D POSTROUTING -s ${userIp} -j MARK --set-mark ${tcMark} 2>/dev/null || true`);
-                    execSync(`sudo iptables -t mangle -D PREROUTING -d ${userIp} -j MARK --set-mark ${tcMark} 2>/dev/null || true`);
-                    
-                    // Apply new limits only if limits are set
-                    if (downloadLimit > 0 || uploadLimit > 0) {
-                        // Add class for upload limit
-                        execSync(`sudo tc class add dev ${lanInterface} parent 1: classid 1:${tcClassId} htb rate ${ulRate} ceil ${ulRate}`);
-                        
-                        // Mark packets for upload (from user)
-                        execSync(`sudo iptables -t mangle -A POSTROUTING -s ${userIp} -j MARK --set-mark ${tcMark}`);
-                        
-                        // Add filter for upload
-                        execSync(`sudo tc filter add dev ${lanInterface} protocol ip parent 1: prio 1 handle ${tcMark} fw classid 1:${tcClassId}`);
-                        
-                        // For download limits, use IFB
-                        try {
-                            execSync('sudo ip link show ifb0 || sudo ip link add name ifb0 type ifb');
-                            execSync('sudo ip link set dev ifb0 up');
-                            execSync('sudo tc qdisc add dev ifb0 root handle 1: htb default 10 2>/dev/null || true');
-                            execSync('sudo tc class add dev ifb0 parent 1: classid 1:10 htb rate 1000mbit 2>/dev/null || true');
-                            execSync('sudo tc filter add dev ifb0 protocol ip parent 1: prio 1 handle 1: fw classid 1:1 2>/dev/null || true');
-                            execSync(`sudo tc filter add dev ${lanInterface} ingress protocol ip u32 match u32 0 0 flowid 1:1 action mirred egress redirect dev ifb0 2>/dev/null || true`);
-                        } catch (e) {
-                            console.warn('IFB device setup failed:', e.message);
-                        }
-                        
-                        // Add class for download limit on ifb0
-                        execSync(`sudo tc class add dev ifb0 parent 1: classid 1:${tcClassId} htb rate ${dlRate} ceil ${dlRate}`);
-                        // Mark packets for download (to user)
-                        execSync(`sudo iptables -t mangle -A PREROUTING -d ${userIp} -j MARK --set-mark ${tcMark}`);
-                        // Add filter for download
-                        execSync(`sudo tc filter add dev ifb0 protocol ip parent 1: prio 1 handle ${tcMark} fw classid 1:${tcClassId}`);
-                        
-                        console.log(`Per-user bandwidth limits applied for ${userIp}: DL=${downloadLimit}Mbps, UL=${uploadLimit}Mbps`);
-                    }
-                } catch (e) {
-                    console.error(`Failed to apply bandwidth limits for ${user.ip_address}:`, e.message);
-                }
-            } else {
-                console.log(`[Simulated] Per-user bandwidth limits for MAC ${mac}: DL=${downloadLimit}Mbps, UL=${uploadLimit}Mbps`);
-            }
+            const classId = user.tc_class_id || (user.id + 100);
+            // Remove existing limits first
+            removeBandwidthLimits(user.ip_address, classId);
+            // Apply new limits
+            applyBandwidthLimits(user.ip_address, downloadLimit, uploadLimit, classId);
         }
         
         res.json({ success: true, message: 'Bandwidth limits updated successfully' });
