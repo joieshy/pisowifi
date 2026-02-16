@@ -172,28 +172,39 @@ async function allowMac(mac, ip) {
         execSync(`sudo iptables -t nat -I PREROUTING 1 -s ${ip} -j ACCEPT`);
 
         // Apply Bandwidth Limits
-        db.all(`SELECT key, value FROM settings WHERE key IN ('download_limit', 'upload_limit')`, [], (err, rows) => {
-            if (!err) {
-                const bwSettings = {};
-                rows.forEach(r => bwSettings[r.key] = r.value);
-                const dlLimit = parseFloat(bwSettings.download_limit || 0);
-                const ulLimit = parseFloat(bwSettings.upload_limit || 0);
+        try {
+            // 1. Get Global Settings
+            const settingsRows = await new Promise((resolve) => {
+                db.all(`SELECT key, value FROM settings WHERE key IN ('download_limit', 'upload_limit')`, [], (err, rows) => resolve(rows || []));
+            });
+            const bwSettings = {};
+            settingsRows.forEach(r => bwSettings[r.key] = r.value);
+            const globalDl = parseFloat(bwSettings.download_limit || 0);
+            const globalUl = parseFloat(bwSettings.upload_limit || 0);
+
+            // 2. Get User Settings
+            const user = await new Promise((resolve) => {
+                db.get(`SELECT id, download_limit, upload_limit, tc_class_id FROM users WHERE mac_address = ?`, [mac], (err, row) => resolve(row));
+            });
+
+            if (user) {
+                // 3. Determine Effective Limits (User overrides Global)
+                const dlLimit = (user.download_limit > 0) ? user.download_limit : globalDl;
+                const ulLimit = (user.upload_limit > 0) ? user.upload_limit : globalUl;
 
                 if (dlLimit > 0 || ulLimit > 0) {
-                    db.get(`SELECT id, tc_class_id FROM users WHERE mac_address = ?`, [mac], (err, user) => {
-                        if (user) {
-                            let classId = user.tc_class_id;
-                            if (!classId) {
-                                classId = user.id + 100; // Generate a simple unique ID based on user ID
-                                db.run(`UPDATE users SET tc_class_id = ? WHERE mac_address = ?`, [classId, mac]);
-                            }
-                            // Apply limits
-                            applyBandwidthLimits(ip, dlLimit, ulLimit, classId);
-                        }
-                    });
+                    let classId = user.tc_class_id;
+                    if (!classId) {
+                        classId = user.id + 100; // Generate a simple unique ID based on user ID
+                        db.run(`UPDATE users SET tc_class_id = ? WHERE mac_address = ?`, [classId, mac]);
+                    }
+                    // Apply limits
+                    applyBandwidthLimits(ip, dlLimit, ulLimit, classId);
                 }
             }
-        });
+        } catch (bwErr) {
+            console.error('Error applying bandwidth limits in allowMac:', bwErr);
+        }
 
         console.log(`Internet allowed for ${mac} (${ip})`);
 
@@ -251,23 +262,26 @@ async function applyBandwidthLimits(ip, downloadLimitMbps, uploadLimitMbps, tcCl
         });
         const lanInterface = settings || 'enx00e04c680013';
 
-        // --- FIX: Ensure Upload Shaping Prerequisites ---
-        // 1. Ensure IFB module is loaded and interface is up
+        // --- ENSURE TRAFFIC CONTROL INFRASTRUCTURE ---
+        // 1. LAN Interface (Download) - Ensure root qdisc exists
+        try { execSync(`sudo tc qdisc add dev ${lanInterface} root handle 1: htb default 10 2>/dev/null || true`); } catch (e) {}
+        try { execSync(`sudo tc class add dev ${lanInterface} parent 1: classid 1:10 htb rate 1000mbit 2>/dev/null || true`); } catch (e) {}
+
+        // 2. IFB Interface (Upload) - Ensure module loaded and root qdisc exists
         try { execSync('sudo modprobe ifb numifbs=1'); } catch (e) {}
         try { execSync('sudo ip link set dev ifb0 up'); } catch (e) {}
+        try { execSync(`sudo tc qdisc add dev ifb0 root handle 1: htb default 10 2>/dev/null || true`); } catch (e) {}
+        try { execSync(`sudo tc class add dev ifb0 parent 1: classid 1:10 htb rate 1000mbit 2>/dev/null || true`); } catch (e) {}
 
-        // 2. Ensure LAN interface has Ingress Qdisc and Redirection to IFB0
+        // 3. LAN Ingress Redirection (Redirect Upload to IFB)
         try {
-            // Try to add ingress qdisc (fails silently if exists)
             execSync(`sudo tc qdisc add dev ${lanInterface} handle ffff: ingress 2>/dev/null || true`);
-            
-            // Check if redirection filter exists, if not, add it
             const currentFilters = execSync(`sudo tc filter show dev ${lanInterface} parent ffff:`).toString();
             if (!currentFilters.includes('mirred')) {
                  execSync(`sudo tc filter add dev ${lanInterface} parent ffff: protocol ip u32 match u32 0 0 action mirred egress redirect dev ifb0`);
             }
         } catch (e) {}
-        // ------------------------------------------------
+        // ---------------------------------------------
 
         // Convert Mbps to Mbits for tc
         const dlRate = downloadLimitMbps > 0 ? `${downloadLimitMbps}mbit` : '1000mbit';
@@ -291,10 +305,6 @@ async function applyBandwidthLimits(ip, downloadLimitMbps, uploadLimitMbps, tcCl
 
         // UPLOAD (IFB0 Interface Egress, redirected from LAN Ingress) - Client to Server
         if (uploadLimitMbps > 0) {
-            // Ensure root qdisc exists on ifb0 (in case it was reset or never set)
-            try { execSync(`sudo tc qdisc add dev ifb0 root handle 1: htb default 10 2>/dev/null || true`); } catch (e) {}
-            try { execSync(`sudo tc class add dev ifb0 parent 1: classid 1:10 htb rate 1000mbit 2>/dev/null || true`); } catch (e) {}
-
             // Create class
             execSync(`sudo tc class add dev ifb0 parent 1: classid ${classId} htb rate ${ulRate} ceil ${ulRate}`);
             // Filter: Match Source IP (Client IP)
