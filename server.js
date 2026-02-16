@@ -251,6 +251,24 @@ async function applyBandwidthLimits(ip, downloadLimitMbps, uploadLimitMbps, tcCl
         });
         const lanInterface = settings || 'enx00e04c680013';
 
+        // --- FIX: Ensure Upload Shaping Prerequisites ---
+        // 1. Ensure IFB module is loaded and interface is up
+        try { execSync('sudo modprobe ifb numifbs=1'); } catch (e) {}
+        try { execSync('sudo ip link set dev ifb0 up'); } catch (e) {}
+
+        // 2. Ensure LAN interface has Ingress Qdisc and Redirection to IFB0
+        try {
+            // Try to add ingress qdisc (fails silently if exists)
+            execSync(`sudo tc qdisc add dev ${lanInterface} handle ffff: ingress 2>/dev/null || true`);
+            
+            // Check if redirection filter exists, if not, add it
+            const currentFilters = execSync(`sudo tc filter show dev ${lanInterface} parent ffff:`).toString();
+            if (!currentFilters.includes('mirred')) {
+                 execSync(`sudo tc filter add dev ${lanInterface} parent ffff: protocol ip u32 match u32 0 0 action mirred egress redirect dev ifb0`);
+            }
+        } catch (e) {}
+        // ------------------------------------------------
+
         // Convert Mbps to Mbits for tc
         const dlRate = downloadLimitMbps > 0 ? `${downloadLimitMbps}mbit` : '1000mbit';
         const ulRate = uploadLimitMbps > 0 ? `${uploadLimitMbps}mbit` : '1000mbit';
@@ -258,10 +276,10 @@ async function applyBandwidthLimits(ip, downloadLimitMbps, uploadLimitMbps, tcCl
         const prio = tcClassId + 100; // Offset priority to avoid conflicts
 
         // Clean up existing limits for this class ID/Prio just in case
-        try { execSync(`sudo tc filter del dev ${lanInterface} parent 1: prio ${prio}`); } catch (e) {}
-        try { execSync(`sudo tc class del dev ${lanInterface} parent 1: classid ${classId}`); } catch (e) {}
-        try { execSync(`sudo tc filter del dev ifb0 parent 1: prio ${prio}`); } catch (e) {}
-        try { execSync(`sudo tc class del dev ifb0 parent 1: classid ${classId}`); } catch (e) {}
+        try { execSync(`sudo tc filter del dev ${lanInterface} parent 1: prio ${prio} 2>/dev/null || true`); } catch (e) {}
+        try { execSync(`sudo tc class del dev ${lanInterface} parent 1: classid ${classId} 2>/dev/null || true`); } catch (e) {}
+        try { execSync(`sudo tc filter del dev ifb0 parent 1: prio ${prio} 2>/dev/null || true`); } catch (e) {}
+        try { execSync(`sudo tc class del dev ifb0 parent 1: classid ${classId} 2>/dev/null || true`); } catch (e) {}
 
         // DOWNLOAD (LAN Interface Egress) - Server to Client
         if (downloadLimitMbps > 0) {
@@ -273,6 +291,10 @@ async function applyBandwidthLimits(ip, downloadLimitMbps, uploadLimitMbps, tcCl
 
         // UPLOAD (IFB0 Interface Egress, redirected from LAN Ingress) - Client to Server
         if (uploadLimitMbps > 0) {
+            // Ensure root qdisc exists on ifb0 (in case it was reset or never set)
+            try { execSync(`sudo tc qdisc add dev ifb0 root handle 1: htb default 10 2>/dev/null || true`); } catch (e) {}
+            try { execSync(`sudo tc class add dev ifb0 parent 1: classid 1:10 htb rate 1000mbit 2>/dev/null || true`); } catch (e) {}
+
             // Create class
             execSync(`sudo tc class add dev ifb0 parent 1: classid ${classId} htb rate ${ulRate} ceil ${ulRate}`);
             // Filter: Match Source IP (Client IP)
@@ -366,10 +388,10 @@ async function removeBandwidthLimits(ip, tcClassId) {
         const classId = `1:${tcClassId}`;
         const prio = tcClassId + 100;
 
-        try { execSync(`sudo tc filter del dev ${lanInterface} parent 1: prio ${prio}`); } catch (e) {}
-        try { execSync(`sudo tc class del dev ${lanInterface} parent 1: classid ${classId}`); } catch (e) {}
-        try { execSync(`sudo tc filter del dev ifb0 parent 1: prio ${prio}`); } catch (e) {}
-        try { execSync(`sudo tc class del dev ifb0 parent 1: classid ${classId}`); } catch (e) {}
+        try { execSync(`sudo tc filter del dev ${lanInterface} parent 1: prio ${prio} 2>/dev/null || true`); } catch (e) {}
+        try { execSync(`sudo tc class del dev ${lanInterface} parent 1: classid ${classId} 2>/dev/null || true`); } catch (e) {}
+        try { execSync(`sudo tc filter del dev ifb0 parent 1: prio ${prio} 2>/dev/null || true`); } catch (e) {}
+        try { execSync(`sudo tc class del dev ifb0 parent 1: classid ${classId} 2>/dev/null || true`); } catch (e) {}
         
         console.log(`Bandwidth limits removed for IP ${ip} (Class: ${classId})`);
     } catch (e) {
