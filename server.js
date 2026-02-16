@@ -191,7 +191,7 @@ async function allowMac(mac, ip) {
                     resolve(s);
                 });
             });
-            
+            // test
             const lanInterface = globalSettings.lan_interface_name || 'eth1';
             const dlLimit = user.download_limit > 0 ? user.download_limit : parseFloat(globalSettings.download_limit || '0');
             const ulLimit = user.upload_limit > 0 ? user.upload_limit : parseFloat(globalSettings.upload_limit || '0');
