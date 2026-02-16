@@ -46,6 +46,8 @@ app.use(session({
 app.use((req, res, next) => {
     const host = req.get('host');
     if (host && host.includes('10.0.0.1') && !host.includes(':3000')) {
+        console.log(`Redirecting client from ${host} to port 3000`);
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
         return res.redirect(`http://10.0.0.1:3000${req.originalUrl}`);
     }
     next();
