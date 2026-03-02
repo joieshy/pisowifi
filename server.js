@@ -2288,6 +2288,154 @@ app.post('/api/network/interfaces', isAuthenticated, async (req, res) => {
     }
 });
 
+// API to apply WAN-only settings
+app.post('/api/apply-wan-settings', isAuthenticated, async (req, res) => {
+    const {
+        wan_interface_name, wan_config_type, wan_ip_address, wan_gateway, wan_dns_servers
+    } = req.body;
+
+    if (!wan_interface_name) {
+        return res.status(400).json({ error: 'WAN interface name is required.' });
+    }
+
+    // Save WAN settings to database
+    db.serialize(() => {
+        const stmt = db.prepare(`UPDATE settings SET value = ? WHERE key = ?`);
+        stmt.run(wan_interface_name, 'wan_interface_name');
+        stmt.run(wan_config_type, 'wan_config_type');
+        stmt.run(wan_ip_address || '', 'wan_ip_address');
+        stmt.run(wan_gateway || '', 'wan_gateway');
+        stmt.run(wan_dns_servers ? wan_dns_servers.join(',') : '', 'wan_dns_servers');
+        stmt.finalize();
+    });
+
+    if (os.platform() !== 'linux') {
+        console.log('[Simulated] WAN configuration skipped on non-Linux platform.');
+        return res.json({ success: true, message: 'WAN configuration saved (simulated).' });
+    }
+
+    try {
+        // Get current LAN settings from database to preserve them
+        const lanSettings = await new Promise((resolve, reject) => {
+            db.all(`SELECT key, value FROM settings WHERE key IN ('lan_interface_name', 'lan_ip_address', 'lan_dns_servers')`, [], (err, rows) => {
+                if (err) return reject(err);
+                const settings = {};
+                rows.forEach(row => settings[row.key] = row.value);
+                resolve(settings);
+            });
+        });
+
+        const lan_interface_name = lanSettings.lan_interface_name || 'enx00e04c680013';
+        const lan_ip_address = lanSettings.lan_ip_address || '10.0.0.1/24';
+        const lan_dns_servers = lanSettings.lan_dns_servers ? lanSettings.lan_dns_servers.split(',').map(s => s.trim()).filter(s => s) : [];
+
+        // Generate Netplan config with WAN settings and existing LAN settings
+        const netplanConfig = generateNetplanConfig(
+            wan_interface_name, wan_config_type, wan_ip_address, wan_gateway, wan_dns_servers,
+            lan_interface_name, lan_ip_address, lan_dns_servers
+        );
+        
+        const netplanFilePath = `/etc/netplan/01-pisowifi-config.yaml`;
+
+        // Write Netplan config to a temporary file first, then move it
+        const tempNetplanPath = `/tmp/01-pisowifi-config.yaml.tmp`;
+        fs.writeFileSync(tempNetplanPath, netplanConfig);
+        execSync(`sudo mv ${tempNetplanPath} ${netplanFilePath}`);
+        execSync(`sudo chmod 600 ${netplanFilePath}`);
+
+        console.log(`WAN configuration written to ${netplanFilePath}`);
+        console.log('Applying WAN configuration...');
+        execSync('sudo netplan apply');
+        console.log('WAN configuration applied successfully.');
+
+        res.json({ success: true, message: 'WAN settings applied successfully!' });
+    } catch (e) {
+        console.error('Failed to apply WAN configuration:', e.message);
+        res.status(500).json({ error: `Failed to apply WAN configuration: ${e.message}` });
+    }
+});
+
+// API to get WAN IP address
+app.get('/api/wan-ip', isAuthenticated, async (req, res) => {
+    try {
+        let wanIp = null;
+        let source = 'unknown';
+
+        // First, try to get WAN interface from database
+        const wanInterface = await new Promise((resolve, reject) => {
+            db.get(`SELECT value FROM settings WHERE key = 'wan_interface_name'`, [], (err, row) => {
+                if (err) return reject(err);
+                resolve(row ? row.value : 'enp1s0');
+            });
+        });
+
+        if (os.platform() === 'linux') {
+            // Method 1: Try to get IP from the WAN interface using ip command
+            try {
+                const output = execSync(`ip -4 addr show ${wanInterface} 2>/dev/null || ip addr show ${wanInterface} 2>/dev/null`).toString();
+                const match = output.match(/inet\s+(\d+\.\d+\.\d+\.\d+)/);
+                if (match) {
+                    wanIp = match[1];
+                    source = `Interface ${wanInterface}`;
+                }
+            } catch (e) {}
+
+            // Method 2: If interface IP not found, try to get default route IP
+            if (!wanIp) {
+                try {
+                    const output = execSync('ip route get 8.8.8.8 2>/dev/null').toString();
+                    const match = output.match(/src\s+(\d+\.\d+\.\d+\.\d+)/);
+                    if (match) {
+                        wanIp = match[1];
+                        source = 'Default route';
+                    }
+                } catch (e) {}
+            }
+        } else {
+            // For Windows, use ipconfig
+            try {
+                const output = execSync('ipconfig').toString();
+                const lines = output.split('\n');
+                for (let i = 0; i < lines.length; i++) {
+                    if (lines[i].includes('IPv4 Address') || lines[i].includes('IP Address')) {
+                        const match = lines[i].match(/\d+\.\d+\.\d+\.\d+/);
+                        if (match) {
+                            wanIp = match[0];
+                            source = 'Windows ipconfig';
+                            break;
+                        }
+                    }
+                }
+            } catch (e) {}
+        }
+
+        // Method 3: If still not found, try external service
+        if (!wanIp) {
+            try {
+                const response = await axios.get('https://api.ipify.org?format=json', { timeout: 5000 });
+                wanIp = response.data.ip;
+                source = 'External API (ipify.org)';
+            } catch (e) {
+                // Fallback to another service
+                try {
+                    const response = await axios.get('https://ifconfig.me/ip', { timeout: 5000 });
+                    wanIp = response.data.trim();
+                    source = 'External API (ifconfig.me)';
+                } catch (e2) {}
+            }
+        }
+
+        if (wanIp) {
+            res.json({ ip: wanIp, source: source });
+        } else {
+            res.status(404).json({ error: 'Unable to detect WAN IP address' });
+        }
+    } catch (error) {
+        console.error('Error fetching WAN IP:', error.message);
+        res.status(500).json({ error: 'Failed to fetch WAN IP: ' + error.message });
+    }
+});
+
 // License: Generate (Super Admin)
 app.post('/api/license/generate', isAuthenticated, (req, res) => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';

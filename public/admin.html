@@ -1104,13 +1104,38 @@ n        <th>Date/Time</th>
                                 <label>WAN Gateway</label>
                                 <input type="text" id="wan_gateway" name="wan_gateway" placeholder="e.g., 192.168.1.1" class="form-control">
                             </div>
-                            <div class="form-group">
-                                <label>WAN DNS Servers (comma-separated)</label>
-                                <input type="text" id="wan_dns_servers" name="wan_dns_servers" placeholder="e.g., 8.8.8.8,8.8.4.4" class="form-control">
+                        <div class="form-group">
+                            <label>WAN DNS Servers (comma-separated)</label>
+                            <input type="text" id="wan_dns_servers" name="wan_dns_servers" placeholder="e.g., 8.8.8.8,8.8.4.4" class="form-control">
+                        </div>
+                    </div>
+
+                    <!-- WAN Apply Button and IP Display -->
+                    <div style="margin-top: 15px; margin-bottom: 20px; padding: 15px; background: #f8f9fc; border-radius: 8px; border: 1px solid #e3e6f0;">
+                        <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
+                            <button type="button" onclick="applyWanSettings()" class="btn btn-primary" style="flex: 1;">
+                                <i class="fas fa-check-circle"></i> Apply WAN Settings
+                            </button>
+                            <button type="button" onclick="fetchWanIp()" class="btn btn-info" style="flex: 1;">
+                                <i class="fas fa-sync"></i> Refresh WAN IP
+                            </button>
+                        </div>
+                        <div id="wanIpDisplay" style="display: none; padding: 10px; background: white; border-radius: 5px; border: 1px solid #ddd;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <strong>WAN IP Address:</strong>
+                                    <span id="wanIpAddress" style="font-family: monospace; font-weight: bold; color: var(--primary-color); margin-left: 10px;">Loading...</span>
+                                </div>
+                                <div id="wanIpStatus" class="badge badge-online" style="margin-left: 10px;">Connected</div>
+                            </div>
+                            <div style="margin-top: 5px; font-size: 0.8rem; color: #666;">
+                                <span id="wanIpSource">Detected from interface</span>
                             </div>
                         </div>
+                        <div id="wanApplyMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;"></div>
+                    </div>
 
-                        <h4 style="margin-top: 25px;">LAN Interface (Clients)</h4>
+                    <h4 style="margin-top: 25px;">LAN Interface (Clients)</h4>
                         <div class="form-group">
                             <label>LAN Interface Name</label>
                             <select id="lan_interface_name" name="lan_interface_name" class="form-control" required>
@@ -3620,7 +3645,7 @@ n        <th>Date/Time</th>
         }
 
         checkSuperAdmin();
-        fetchConfig();
+         fetchConfig();
         
         // Restore last active section or default to dashboard
         const savedSection = localStorage.getItem('adminActiveSection') || 'dashboard';
@@ -3785,6 +3810,118 @@ n        <th>Date/Time</th>
             fetchNetwork = async () => {
                 await originalFetchNetwork();
                 await fetchAvailableNetworkInterfaces();
+            };
+
+            // WAN-specific functions
+            async function applyWanSettings() {
+                const wanInterfaceName = document.getElementById('wan_interface_name').value;
+                const wanConfigType = document.getElementById('wan_config_type').value;
+                const wanIpAddress = document.getElementById('wan_ip_address').value;
+                const wanGateway = document.getElementById('wan_gateway').value;
+                const wanDnsServers = document.getElementById('wan_dns_servers').value.split(',').map(s => s.trim()).filter(s => s);
+
+                if (!wanInterfaceName) {
+                    alert('Please select a WAN interface.');
+                    return;
+                }
+
+                const payload = {
+                    wan_interface_name: wanInterfaceName,
+                    wan_config_type: wanConfigType,
+                    wan_ip_address: wanConfigType === 'static' ? wanIpAddress : '',
+                    wan_gateway: wanConfigType === 'static' ? wanGateway : '',
+                    wan_dns_servers: wanConfigType === 'static' ? wanDnsServers : []
+                };
+
+                const msg = document.getElementById('wanApplyMsg');
+                msg.style.display = 'block';
+                msg.style.color = 'var(--primary-color)';
+                msg.innerText = 'Applying WAN settings...';
+
+                try {
+                    const response = await fetch('/api/apply-wan-settings', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    const result = await response.json();
+                    
+                    if (response.ok) {
+                        msg.style.color = 'var(--success-color)';
+                        msg.innerText = result.message || 'WAN settings applied successfully!';
+                        
+                        // After applying WAN settings, fetch the WAN IP
+                        setTimeout(fetchWanIp, 2000);
+                    } else {
+                        msg.style.color = 'var(--danger-color)';
+                        msg.innerText = result.error || 'Failed to apply WAN settings.';
+                    }
+                } catch (error) {
+                    msg.style.color = 'var(--danger-color)';
+                    msg.innerText = 'Error applying WAN settings: ' + error.message;
+                }
+
+                setTimeout(() => msg.style.display = 'none', 5000);
+            }
+
+            async function fetchWanIp() {
+                const wanIpDisplay = document.getElementById('wanIpDisplay');
+                const wanIpAddress = document.getElementById('wanIpAddress');
+                const wanIpStatus = document.getElementById('wanIpStatus');
+                const wanIpSource = document.getElementById('wanIpSource');
+                
+                wanIpDisplay.style.display = 'block';
+                wanIpAddress.innerText = 'Checking...';
+                wanIpStatus.innerText = 'Checking';
+                wanIpStatus.className = 'badge badge-warning';
+                wanIpSource.innerText = 'Detecting WAN IP...';
+
+                try {
+                    const response = await fetch('/api/wan-ip');
+                    const result = await response.json();
+
+                    if (response.ok && result.ip) {
+                        wanIpAddress.innerText = result.ip;
+                        wanIpStatus.innerText = 'Connected';
+                        wanIpStatus.className = 'badge badge-online';
+                        wanIpSource.innerText = result.source || 'Detected from interface';
+                        
+                        // Check if IP is public or private
+                        const ip = result.ip;
+                        const isPrivate = ip.startsWith('10.') || 
+                                         ip.startsWith('192.168.') || 
+                                         ip.startsWith('172.') && 
+                                         parseInt(ip.split('.')[1]) >= 16 && 
+                                         parseInt(ip.split('.')[1]) <= 31;
+                        
+                        if (isPrivate) {
+                            wanIpSource.innerText += ' (Private IP - Check router/modem)';
+                            wanIpStatus.innerText = 'Private IP';
+                            wanIpStatus.className = 'badge badge-warning';
+                        }
+                    } else {
+                        wanIpAddress.innerText = 'Not detected';
+                        wanIpStatus.innerText = 'Disconnected';
+                        wanIpStatus.className = 'badge badge-offline';
+                        wanIpSource.innerText = result.error || 'Unable to detect WAN IP';
+                    }
+                } catch (error) {
+                    wanIpAddress.innerText = 'Error';
+                    wanIpStatus.innerText = 'Error';
+                    wanIpStatus.className = 'badge badge-offline';
+                    wanIpSource.innerText = 'Failed to fetch WAN IP: ' + error.message;
+                }
+            }
+
+            // Auto-fetch WAN IP when network section is shown
+            const originalShowSection = showSection;
+            showSection = function(section) {
+                originalShowSection(section);
+                if (section === 'network') {
+                    // Fetch WAN IP after a short delay to ensure interface dropdowns are loaded
+                    setTimeout(fetchWanIp, 1000);
+                }
             };
         </script>
     </body>
