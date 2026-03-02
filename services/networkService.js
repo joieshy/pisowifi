@@ -103,7 +103,7 @@ async function applyNetworkConfig(config) {
         console.log('Applying Netplan configuration...');
         
         // Use sudoExec helper
-        await sudoExec('netplan apply');
+        await sudoExec('/usr/sbin/netplan apply');
         
         console.log('Netplan configuration applied successfully.');
 

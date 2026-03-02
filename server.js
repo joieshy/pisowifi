@@ -2280,6 +2280,7 @@ app.post('/api/network/interfaces', isAuthenticated, async (req, res) => {
         console.log(`Netplan configuration written to ${netplanFilePath}`);
         console.log('Applying Netplan configuration...');
         await sudoExec('netplan apply');
+        await sudoExec('/usr/sbin/netplan apply');
         console.log('Netplan configuration applied successfully.');
 
         res.json({ success: true, message: 'Network configuration applied successfully!' });
