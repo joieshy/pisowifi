@@ -95,6 +95,9 @@ async function applyNetworkConfig(config) {
             throw new Error(`Temporary file ${tempNetplanPath} was not created`);
         }
         
+        // Ensure /etc/netplan directory exists
+        await sudoExec(`mkdir -p /etc/netplan`);
+        
         // Use sudoExec helper
         await sudoExec(`mv ${tempNetplanPath} ${netplanFilePath}`);
         await sudoExec(`chmod 600 ${netplanFilePath}`);
@@ -195,6 +198,9 @@ wpa=0
         const hostapdPath = '/etc/hostapd/hostapd.conf';
         fs.writeFileSync('/tmp/hostapd.conf', hostapdConfig);
         
+        // Ensure /etc/hostapd directory exists
+        await sudoExec(`mkdir -p /etc/hostapd`);
+        
         // Use sudoExec helper
         await sudoExec(`mv /tmp/hostapd.conf ${hostapdPath}`);
         await sudoExec(`chmod 600 ${hostapdPath}`);
@@ -242,6 +248,9 @@ async function applyDhcpAdvanced(config) {
 
         // Write dnsmasq config
         fs.writeFileSync('/tmp/pisowifi-dnsmasq.conf', dnsmasqConfig);
+        
+        // Ensure /etc/dnsmasq.d directory exists
+        await sudoExec('mkdir -p /etc/dnsmasq.d');
         
         // Use sudoExec helper
         await sudoExec('mv /tmp/pisowifi-dnsmasq.conf /etc/dnsmasq.d/pisowifi.conf');
@@ -298,6 +307,9 @@ async function applyWirelessAdvanced(config) {
 
         // Write hostapd config
         fs.writeFileSync('/tmp/hostapd-advanced.conf', hostapdConfig);
+        
+        // Ensure /etc/hostapd directory exists
+        await sudoExec('mkdir -p /etc/hostapd');
         
         // Use global sudoExec helper
         await sudoExec('mv /tmp/hostapd-advanced.conf /etc/hostapd/hostapd.conf');
