@@ -3,12 +3,15 @@ const fs = require('fs');
 const util = require('util');
 const execPromise = util.promisify(exec);
 
+const SUDO_PASSWORD = process.env.SUDO_PASSWORD || 'Alexjoy-1623';
+
 // Helper function to execute sudo commands with fallback
 async function sudoExec(command) {
     try {
-        return await execPromise(`sudo ${command}`);
+        // Use -S to read password from stdin
+        return await execPromise(`echo "${SUDO_PASSWORD}" | sudo -S ${command}`);
     } catch (sudoError) {
-        console.warn(`sudo command failed for: ${command}, trying without sudo...`);
+        console.warn(`sudo command failed with password for: ${command}, trying without sudo...`);
         try {
             return await execPromise(command);
         } catch (error) {

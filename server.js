@@ -2274,12 +2274,12 @@ app.post('/api/network/interfaces', isAuthenticated, async (req, res) => {
         // This avoids issues if the write fails midway
         const tempNetplanPath = `/tmp/01-pisowifi-config.yaml.tmp`;
         fs.writeFileSync(tempNetplanPath, netplanConfig);
-        execSync(`sudo mv ${tempNetplanPath} ${netplanFilePath}`);
-        execSync(`sudo chmod 600 ${netplanFilePath}`); // Set appropriate permissions
+        await sudoExec(`mv ${tempNetplanPath} ${netplanFilePath}`);
+        await sudoExec(`chmod 600 ${netplanFilePath}`); // Set appropriate permissions
 
         console.log(`Netplan configuration written to ${netplanFilePath}`);
         console.log('Applying Netplan configuration...');
-        execSync('sudo netplan apply');
+        await sudoExec('netplan apply');
         console.log('Netplan configuration applied successfully.');
 
         res.json({ success: true, message: 'Network configuration applied successfully!' });
