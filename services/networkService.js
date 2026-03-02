@@ -77,7 +77,20 @@ async function applyNetworkConfig(config) {
 
         // Write Netplan config to a temporary file first, then move it
         const tempNetplanPath = `/tmp/01-pisowifi-config.yaml.tmp`;
-        fs.writeFileSync(tempNetplanPath, netplanConfig);
+        
+        // Check if /tmp directory exists and is writable
+        try {
+            fs.writeFileSync(tempNetplanPath, netplanConfig);
+            console.log(`Temporary Netplan config written to ${tempNetplanPath}`);
+        } catch (writeError) {
+            console.error(`Failed to write temporary file: ${writeError.message}`);
+            throw new Error(`Failed to write temporary configuration file: ${writeError.message}`);
+        }
+        
+        // Check if file was created
+        if (!fs.existsSync(tempNetplanPath)) {
+            throw new Error(`Temporary file ${tempNetplanPath} was not created`);
+        }
         
         // Use sudoExec helper
         await sudoExec(`mv ${tempNetplanPath} ${netplanFilePath}`);

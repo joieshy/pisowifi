@@ -468,19 +468,19 @@ async function initNetwork() {
             console.log(`[Network] Setting static IP ${lanIpAddress} on ${lanInterface}...`);
             
             // 1. Ensure interface is UP
-            execSync(`sudo ip link set dev ${lanInterface} up`);
+            await sudoExec(`ip link set dev ${lanInterface} up`);
             
             // 2. Flush existing IPs and set Static IP (10.0.0.1)
-            try { execSync(`sudo ip addr flush dev ${lanInterface}`); } catch (e) {}
-            execSync(`sudo ip addr add ${lanIpAddress}/24 dev ${lanInterface}`);
+            try { await sudoExec(`ip addr flush dev ${lanInterface}`); } catch (e) {}
+            await sudoExec(`ip addr add ${lanIpAddress}/24 dev ${lanInterface}`);
             
             // 3. Stop systemd-resolved to free up Port 53 for dnsmasq (Fix for DNS conflict)
             try {
-                execSync('sudo systemctl stop systemd-resolved');
-                execSync('sudo systemctl disable systemd-resolved');
+                await sudoExec('systemctl stop systemd-resolved');
+                await sudoExec('systemctl disable systemd-resolved');
                 // Fix /etc/resolv.conf so the server still has internet
-                execSync('sudo rm -f /etc/resolv.conf');
-                execSync('echo "nameserver 8.8.8.8" | sudo tee /etc/resolv.conf > /dev/null');
+                await sudoExec('rm -f /etc/resolv.conf');
+                await sudoExec('echo "nameserver 8.8.8.8" | tee /etc/resolv.conf > /dev/null');
             } catch (e) {
                 console.log('[Network] Note: systemd-resolved handling skipped or failed.');
             }
@@ -504,10 +504,10 @@ bogus-priv
 `;
             // Write config and restart dnsmasq
             fs.writeFileSync('/tmp/pisowifi-dnsmasq.conf', dnsmasqConfig);
-            execSync('sudo mv /tmp/pisowifi-dnsmasq.conf /etc/dnsmasq.d/pisowifi.conf');
-            execSync('sudo systemctl unmask dnsmasq');
-            execSync('sudo systemctl enable dnsmasq');
-            execSync('sudo systemctl restart dnsmasq');
+            await sudoExec('mv /tmp/pisowifi-dnsmasq.conf /etc/dnsmasq.d/pisowifi.conf');
+            await sudoExec('systemctl unmask dnsmasq');
+            await sudoExec('systemctl enable dnsmasq');
+            await sudoExec('systemctl restart dnsmasq');
             console.log('[Network] DHCP Server (dnsmasq) configured and restarted.');
         } catch (e) {
             console.error('[Network] Failed to configure DHCP:', e.message);
@@ -515,42 +515,42 @@ bogus-priv
         }
 
         // Enable IP Forwarding
-        execSync('sudo sysctl -w net.ipv4.ip_forward=1');
+        await sudoExec('sysctl -w net.ipv4.ip_forward=1');
         
         // Clear existing rules to avoid duplicates
         // Clear only captive rules (safer)
-        execSync('sudo iptables -t nat -F PREROUTING || true');
-        execSync('sudo iptables -t nat -F POSTROUTING || true');
+        await sudoExec('iptables -t nat -F PREROUTING || true');
+        await sudoExec('iptables -t nat -F POSTROUTING || true');
 
 
         // Allow all traffic from LAN interface (Fix for "Connection Refused" or blocked portal)
-        execSync(`sudo iptables -A INPUT -i ${lanInterface} -j ACCEPT`);
-        execSync('sudo iptables -A INPUT -i lo -j ACCEPT');
+        await sudoExec(`iptables -A INPUT -i ${lanInterface} -j ACCEPT`);
+        await sudoExec('iptables -A INPUT -i lo -j ACCEPT');
         
         // Setup NAT (MASQUERADE)
-        execSync(`sudo iptables -t nat -A POSTROUTING -o ${wanInterface} -j MASQUERADE`);
+        await sudoExec(`iptables -t nat -A POSTROUTING -o ${wanInterface} -j MASQUERADE`);
         
         // Allow DNS traffic (UDP 53) so users can resolve the portal domain
-        execSync('sudo iptables -I FORWARD -p udp --dport 53 -j ACCEPT');
-        execSync('sudo iptables -I FORWARD -p udp --sport 53 -j ACCEPT');
+        await sudoExec('iptables -I FORWARD -p udp --dport 53 -j ACCEPT');
+        await sudoExec('iptables -I FORWARD -p udp --sport 53 -j ACCEPT');
 
         // Add general FORWARD rules for internet sharing
         // Allow established connections back
-        execSync(`sudo iptables -A FORWARD -i ${wanInterface} -o ${lanInterface} -m state --state RELATED,ESTABLISHED -j ACCEPT`);
+        await sudoExec(`iptables -A FORWARD -i ${wanInterface} -o ${lanInterface} -m state --state RELATED,ESTABLISHED -j ACCEPT`);
 
         // BLOCK everything from LAN by default
-        execSync(`sudo iptables -A FORWARD -i ${lanInterface} -o ${wanInterface} -j DROP`);
+        await sudoExec(`iptables -A FORWARD -i ${lanInterface} -o ${wanInterface} -j DROP`);
 
 
         // --- Captive Portal Rules ---
         // Log all traffic hitting PREROUTING from LAN for debugging
-        execSync(`sudo iptables -t nat -A PREROUTING -i ${lanInterface} -j LOG --log-prefix "PISOWIFI_PREROUTING: " --log-level 7`);
+        await sudoExec(`iptables -t nat -A PREROUTING -i ${lanInterface} -j LOG --log-prefix "PISOWIFI_PREROUTING: " --log-level 7`);
 
         // REDIRECT: All HTTP traffic (port 80) from clients on LAN to Node.js portal (port 3000)
-        execSync(`sudo iptables -t nat -A PREROUTING -i ${lanInterface} -p tcp --dport 80 -j REDIRECT --to-port ${PORT}`);
+        await sudoExec(`iptables -t nat -A PREROUTING -i ${lanInterface} -p tcp --dport 80 -j REDIRECT --to-port ${PORT}`);
 
         // REDIRECT: All DNS traffic (UDP 53) from clients on LAN (excluding the server itself) to the PisoWiFi server's DNS (dnsmasq)
-        execSync(`sudo iptables -t nat -A PREROUTING -i ${lanInterface} -p udp --dport 53 ! -s ${lanIpAddress} -j DNAT --to-destination ${lanIpAddress}:53`);
+        await sudoExec(`iptables -t nat -A PREROUTING -i ${lanInterface} -p udp --dport 53 ! -s ${lanIpAddress} -j DNAT --to-destination ${lanIpAddress}:53`);
 
         console.log('Network initialization complete.');
     } catch (e) {
@@ -577,28 +577,28 @@ async function initTrafficControl() {
         const lanInterface = settings || 'enx00e04c680013';
 
         // Load IFB module for ingress shaping (Upload limit)
-        try { execSync('sudo modprobe ifb numifbs=1'); } catch (e) {}
-        try { execSync('sudo ip link set dev ifb0 up'); } catch (e) {}
+        try { await sudoExec('modprobe ifb numifbs=1'); } catch (e) {}
+        try { await sudoExec('ip link set dev ifb0 up'); } catch (e) {}
 
         // Clear existing qdisc, classes, and filters on LAN interface
-        execSync(`sudo tc qdisc del dev ${lanInterface} root || true`);
-        execSync(`sudo tc qdisc del dev ${lanInterface} ingress || true`);
-        execSync(`sudo tc qdisc del dev ifb0 root || true`);
+        await sudoExec(`tc qdisc del dev ${lanInterface} root || true`);
+        await sudoExec(`tc qdisc del dev ${lanInterface} ingress || true`);
+        await sudoExec(`tc qdisc del dev ifb0 root || true`);
 
         // 1. LAN Interface (Download/Egress)
         // Add HTB root qdisc
-        execSync(`sudo tc qdisc add dev ${lanInterface} root handle 1: htb default 10`);
+        await sudoExec(`tc qdisc add dev ${lanInterface} root handle 1: htb default 10`);
         // Add default class (unlimited)
-        execSync(`sudo tc class add dev ${lanInterface} parent 1: classid 1:10 htb rate 1000mbit`);
+        await sudoExec(`tc class add dev ${lanInterface} parent 1: classid 1:10 htb rate 1000mbit`);
 
         // 2. LAN Interface (Upload/Ingress) -> Redirect to IFB0
-        execSync(`sudo tc qdisc add dev ${lanInterface} handle ffff: ingress`);
+        await sudoExec(`tc qdisc add dev ${lanInterface} handle ffff: ingress`);
         // Redirect all ingress traffic to ifb0
-        execSync(`sudo tc filter add dev ${lanInterface} parent ffff: protocol ip u32 match u32 0 0 action mirred egress redirect dev ifb0`);
+        await sudoExec(`tc filter add dev ${lanInterface} parent ffff: protocol ip u32 match u32 0 0 action mirred egress redirect dev ifb0`);
 
         // 3. IFB0 Interface (Upload Shaping)
-        execSync(`sudo tc qdisc add dev ifb0 root handle 1: htb default 10`);
-        execSync(`sudo tc class add dev ifb0 parent 1: classid 1:10 htb rate 1000mbit`);
+        await sudoExec(`tc qdisc add dev ifb0 root handle 1: htb default 10`);
+        await sudoExec(`tc class add dev ifb0 parent 1: classid 1:10 htb rate 1000mbit`);
 
 
         console.log('Traffic Control (TC) initialization complete.');
