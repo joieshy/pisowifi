@@ -257,47 +257,6 @@ async function applyDhcpAdvanced(config) {
     }
 }
 
-// 4. WiFi Schedule - Schedule WiFi on/off using cron
-async function applyWifiSchedule(config) {
-    const { wifi_schedule_enabled, wifi_schedule_start, wifi_schedule_end } = config;
-
-    if (process.platform !== 'linux') {
-        console.log('[Simulated] WiFi schedule skipped on non-Linux platform.');
-        return { success: true, message: 'WiFi schedule saved (simulated).' };
-    }
-
-    try {
-        // Remove existing pisowifi schedule cron jobs
-        await sudoExec('crontab -l 2>/dev/null | grep -v "pisowifi-schedule" | crontab -');
-
-        if (wifi_schedule_enabled === 'true') {
-            // Parse time strings (format: HH:MM)
-            const [startHour, startMin] = (wifi_schedule_start || '00:00').split(':');
-            const [endHour, endMin] = (wifi_schedule_end || '23:59').split(':');
-
-            // Create cron jobs
-            // WiFi OFF at start time
-            const offCron = `${startMin} ${startHour} * * * systemctl stop hostapd`;
-            // WiFi ON at end time
-            const onCron = `${endMin} ${endHour} * * * systemctl start hostapd`;
-
-            // Add to crontab
-            const currentCrontab = await sudoExec('crontab -l 2>/dev/null').catch(() => '');
-            const newCrontab = currentCrontab + '\n# PisoWiFi Schedule\n' + offCron + '\n' + onCron + '\n';
-            
-            fs.writeFileSync('/tmp/pisowifi-cron', newCrontab);
-            await sudoExec('crontab /tmp/pisowifi-cron');
-            
-            console.log('WiFi schedule applied successfully.');
-            return { success: true, message: 'WiFi schedule applied successfully!' };
-        }
-
-        return { success: true, message: 'WiFi schedule disabled.' };
-    } catch (e) {
-        console.error('Failed to apply WiFi schedule:', e.message);
-        throw new Error(`Failed to apply WiFi schedule: ${e.message}`);
-    }
-}
 
 // 5. Wireless Advanced - Configure advanced wireless settings
 async function applyWirelessAdvanced(config) {
@@ -408,9 +367,6 @@ async function applyAllNetworkSettings(config) {
             results.push(await applyDhcpAdvanced(config));
         }
 
-        if (config.wifi_schedule_enabled !== undefined || config.wifi_schedule_start || config.wifi_schedule_end) {
-            results.push(await applyWifiSchedule(config));
-        }
 
         if (config.wifi_isolation !== undefined || config.wifi_beacon_interval || config.wifi_rts_cts || config.wifi_dtIM) {
             results.push(await applyWirelessAdvanced(config));

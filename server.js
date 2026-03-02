@@ -839,10 +839,6 @@ db.serialize(() => {
         ['wifi_hidden', 'false'],
         // NEW: DHCP Advanced
         ['dhcp_lease_time', '1440'], // minutes (default 24 hours)
-        // NEW: Access Control
-        ['wifi_schedule_enabled', 'false'],
-        ['wifi_schedule_start', '00:00'],
-        ['wifi_schedule_end', '23:59'],
         // NEW: Wireless Advanced
         ['wifi_isolation', 'false'],
         ['wifi_beacon_interval', '100'],
