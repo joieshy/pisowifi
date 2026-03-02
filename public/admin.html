@@ -1111,15 +1111,15 @@ n        <th>Date/Time</th>
                     </div>
 
                     <!-- WAN Apply Button and IP Display -->
+                    <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px;">
+                        <button type="button" onclick="applyWanSettings()" class="btn btn-primary" style="width: 100%; padding: 10px 20px; border-radius: 8px; font-size: 1rem;">
+                            <i class="fas fa-check-circle" style="margin-right: 8px;"></i> Apply WAN Settings
+                        </button>
+                        <button type="button" onclick="fetchWanIp()" class="btn btn-secondary" style="width: 100%; padding: 10px 20px; border-radius: 8px; font-size: 1rem;">
+                            <i class="fas fa-sync" style="margin-right: 8px;"></i> Refresh WAN IP
+                        </button>
+                    </div>
                     <div style="margin-top: 15px; margin-bottom: 20px; padding: 15px; background: #f8f9fc; border-radius: 8px; border: 1px solid #e3e6f0;">
-                        <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px;">
-                            <button type="button" onclick="applyWanSettings()" class="btn btn-primary" style="width: 100%; padding: 10px 20px; border-radius: 8px; font-size: 1rem;">
-                                <i class="fas fa-check-circle" style="margin-right: 8px;"></i> Apply WAN Settings
-                            </button>
-                            <button type="button" onclick="fetchWanIp()" class="btn btn-secondary" style="width: 100%; padding: 10px 20px; border-radius: 8px; font-size: 1rem;">
-                                <i class="fas fa-sync" style="margin-right: 8px;"></i> Refresh WAN IP
-                            </button>
-                        </div>
                         <div id="wanIpDisplay" style="display: none; padding: 10px; background: white; border-radius: 5px; border: 1px solid #ddd;">
                             <div style="display: flex; justify-content: space-between; align-items: center;">
                                 <div>
