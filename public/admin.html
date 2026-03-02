@@ -1240,48 +1240,6 @@ n        <th>Date/Time</th>
                     <div id="dhcpAdvancedMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">DHCP settings saved!</div>
                 </div>
 
-                <!-- Firewall Settings -->
-                <div class="card">
-                    <h3 style="margin-top: 0; color: #e74a3b; border-bottom: 1px solid #eee; padding-bottom: 10px;">
-                        <i class="fas fa-shield-alt"></i> Firewall Settings
-                    </h3>
-                    <form id="firewallForm">
-                        <h4 style="margin-top: 15px; color: var(--danger-color);">DMZ</h4>
-                        <div class="form-group">
-                            <label>DMZ Status</label>
-                            <select id="dmz_enabled" name="dmz_enabled">
-                                <option value="false">Disabled</option>
-                                <option value="true">Enabled</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>DMZ IP Address</label>
-                            <input type="text" id="dmz_ip" name="dmz_ip" placeholder="e.g., 10.0.0.50">
-                        </div>
-                        
-                        <h4 style="margin-top: 20px; color: var(--primary-color);">VPN & NAT</h4>
-                        <div class="form-group">
-                            <label>VPN Passthrough</label>
-                            <select id="vpn_passthrough" name="vpn_passthrough">
-                                <option value="true">Enabled</option>
-                                <option value="false">Disabled</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>NAT Loopback (Hairpin NAT)</label>
-                            <select id="nat_loopback" name="nat_loopback">
-                                <option value="true">Enabled</option>
-                                <option value="false">Disabled</option>
-                            </select>
-                        </div>
-                        
-                        <button type="submit" class="btn btn-danger" style="width: 100%;">
-                            <i class="fas fa-save"></i> Save Firewall Settings
-                        </button>
-                    </form>
-                    <div id="firewallMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">Firewall settings saved!</div>
-                </div>
-
                 <!-- Access Control / WiFi Schedule -->
                 <div class="card">
                     <h3 style="margin-top: 0; color: #6f42c1; border-bottom: 1px solid #eee; padding-bottom: 10px;">
@@ -3185,21 +3143,6 @@ n        <th>Date/Time</th>
                 body: JSON.stringify(data)
             });
             const msg = document.getElementById('dhcpAdvancedMsg');
-            if (response.ok) {
-                msg.style.display = 'block';
-                setTimeout(() => msg.style.display = 'none', 3000);
-            }
-        });
-
-        document.getElementById('firewallForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const data = Object.fromEntries(new FormData(e.target).entries());
-            const response = await fetch('/api/settings', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            });
-            const msg = document.getElementById('firewallMsg');
             if (response.ok) {
                 msg.style.display = 'block';
                 setTimeout(() => msg.style.display = 'none', 3000);

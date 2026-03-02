@@ -257,64 +257,6 @@ async function applyDhcpAdvanced(config) {
     }
 }
 
-// 3. Firewall Settings - Configure DMZ, VPN passthrough, NAT loopback
-async function applyFirewallSettings(config) {
-    const { dmz_enabled, dmz_ip, vpn_passthrough, nat_loopback, ip_range_start, lan_interface_name, wan_interface_name } = config;
-
-    if (process.platform !== 'linux') {
-        console.log('[Simulated] Firewall settings skipped on non-Linux platform.');
-        return { success: true, message: 'Firewall settings saved (simulated).' };
-    }
-
-    try {
-        // Get LAN interface (usually the second interface)
-        // Use configured interface or fallback to eth1
-        let lanInterface = lan_interface_name || 'eth1';
-        let wanInterface = wan_interface_name || 'eth0';
-
-        // Clear existing firewall rules
-        //await sudoExec('iptables -F FORWARD');
-        //await sudoExec('iptables -t nat -F POSTROUTING');
-
-        // DMZ Configuration
-        if (dmz_enabled === 'true' && dmz_ip) {
-            // Enable IP forwarding
-            await sudoExec('sysctl -w net.ipv4.ip_forward=1');
-            
-            // Add DMZ rule - forward all traffic to DMZ IP
-            await sudoExec(`iptables -A FORWARD -i ${wanInterface} -o ${lanInterface} -d ${dmz_ip} -j ACCEPT`);
-            await sudoExec(`iptables -t nat -A PREROUTING -i ${wanInterface} -j DNAT --to-destination ${dmz_ip}`);
-        }
-
-        // VPN Passthrough
-        if (vpn_passthrough === 'true') {
-            // Allow PPTP
-            await sudoExec('iptables -A FORWARD -p gre -j ACCEPT');
-            // Allow IPSec
-            await sudoExec('iptables -A FORWARD -p udp --dport 500 -j ACCEPT');
-            await sudoExec('iptables -A FORWARD -p udp --dport 4500 -j ACCEPT');
-            await sudoExec('iptables -A FORWARD -p udp --dport 1701 -j ACCEPT');
-            // Allow OpenVPN
-            await sudoExec('iptables -A FORWARD -i tun+ -j ACCEPT');
-            await sudoExec('iptables -A FORWARD -o tun+ -j ACCEPT');
-        }
-
-        // NAT Loopback (Hairpin NAT)
-        if (nat_loopback === 'true') {
-            await sudoExec(`iptables -t nat -A POSTROUTING -s ${ip_range_start || '10.0.0.0'}/24 -o ${lanInterface} -j MASQUERADE`);
-        }
-
-        // Save iptables rules
-        await sudoExec('iptables-save > /etc/iptables.rules');
-        
-        console.log('Firewall settings applied successfully.');
-        return { success: true, message: 'Firewall settings applied successfully!' };
-    } catch (e) {
-        console.error('Failed to apply firewall settings:', e.message);
-        throw new Error(`Failed to apply firewall settings: ${e.message}`);
-    }
-}
-
 // 4. WiFi Schedule - Schedule WiFi on/off using cron
 async function applyWifiSchedule(config) {
     const { wifi_schedule_enabled, wifi_schedule_start, wifi_schedule_end } = config;
@@ -464,10 +406,6 @@ async function applyAllNetworkSettings(config) {
 
         if (config.dhcp_lease_time || config.ip_range_start || config.ip_range_end) {
             results.push(await applyDhcpAdvanced(config));
-        }
-
-        if (config.dmz_enabled !== undefined || config.vpn_passthrough !== undefined || config.nat_loopback !== undefined) {
-            results.push(await applyFirewallSettings(config));
         }
 
         if (config.wifi_schedule_enabled !== undefined || config.wifi_schedule_start || config.wifi_schedule_end) {

@@ -839,11 +839,6 @@ db.serialize(() => {
         ['wifi_hidden', 'false'],
         // NEW: DHCP Advanced
         ['dhcp_lease_time', '1440'], // minutes (default 24 hours)
-        // NEW: Firewall
-        ['dmz_enabled', 'false'],
-        ['dmz_ip', ''],
-        ['vpn_passthrough', 'true'],
-        ['nat_loopback', 'true'],
         // NEW: Access Control
         ['wifi_schedule_enabled', 'false'],
         ['wifi_schedule_start', '00:00'],
