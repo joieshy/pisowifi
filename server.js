@@ -12,16 +12,17 @@ const { exec, execSync } = require('child_process');
 const https = require('https');
 const axios = require('axios');
 const { SerialPort, ReadlineParser } = require('serialport'); // Import serialport
-const { applyNetworkConfig } = require('./services/networkService'); // Idinagdag ito
+const { applyNetworkConfig, sudoExec } = require('./services/networkService'); // Idinagdag ito
 const app = express();
 app.set('trust proxy', true);
 
 if (os.platform() === 'linux') {
     try {
-        execSync('sudo iptables -F');
-        execSync('sudo iptables -P FORWARD DROP');
-        execSync('sudo iptables -A FORWARD -i enp1s0 -o enx00e04c680013 -m state --state RELATED,ESTABLISHED -j ACCEPT');
-        execSync('sudo iptables -A FORWARD -i enx00e04c680013 -o enp1s0 -j DROP');
+        // Use sudoExec for firewall reset
+        sudoExec('iptables -F');
+        sudoExec('iptables -P FORWARD DROP');
+        sudoExec('iptables -A FORWARD -i enp1s0 -o enx00e04c680013 -m state --state RELATED,ESTABLISHED -j ACCEPT');
+        sudoExec('iptables -A FORWARD -i enx00e04c680013 -o enp1s0 -j DROP');
         console.log('Firewall reset on startup');
     } catch (e) {
         console.log('Firewall reset failed');
@@ -174,16 +175,16 @@ async function allowMac(mac, ip) {
         const lanIp = (settings.lan_ip_address || '10.0.0.1').split('/')[0];
 
         // REMOVE existing rule first (important)
-        execSync(`sudo iptables -D FORWARD -i ${lan} -o ${wan} -s ${ip} -j ACCEPT || true`);
+        await sudoExec(`iptables -D FORWARD -i ${lan} -o ${wan} -s ${ip} -j ACCEPT || true`);
 
         // INSERT at very top
-        execSync(`sudo iptables -I FORWARD 1 -i ${lan} -o ${wan} -s ${ip} -j ACCEPT`);
+        await sudoExec(`iptables -I FORWARD 1 -i ${lan} -o ${wan} -s ${ip} -j ACCEPT`);
 
         // Bypass Captive Portal Redirect for Authenticated User (Fix for "No Internet" status)
         // We exclude the LAN IP (Portal) from the bypass so it still gets redirected to port 3000
-        execSync(`sudo iptables -t nat -D PREROUTING -s ${ip} -j ACCEPT || true`);
-        execSync(`sudo iptables -t nat -D PREROUTING -s ${ip} ! -d ${lanIp} -j ACCEPT || true`);
-        execSync(`sudo iptables -t nat -I PREROUTING 1 -s ${ip} ! -d ${lanIp} -j ACCEPT`);
+        await sudoExec(`iptables -t nat -D PREROUTING -s ${ip} -j ACCEPT || true`);
+        await sudoExec(`iptables -t nat -D PREROUTING -s ${ip} ! -d ${lanIp} -j ACCEPT || true`);
+        await sudoExec(`iptables -t nat -I PREROUTING 1 -s ${ip} ! -d ${lanIp} -j ACCEPT`);
 
         // Apply Bandwidth Limits
         try {
@@ -278,21 +279,21 @@ async function applyBandwidthLimits(ip, downloadLimitMbps, uploadLimitMbps, tcCl
 
         // --- ENSURE TRAFFIC CONTROL INFRASTRUCTURE ---
         // 1. LAN Interface (Download) - Ensure root qdisc exists
-        try { execSync(`sudo tc qdisc add dev ${lanInterface} root handle 1: htb default 10 2>/dev/null || true`); } catch (e) {}
-        try { execSync(`sudo tc class add dev ${lanInterface} parent 1: classid 1:10 htb rate 1000mbit 2>/dev/null || true`); } catch (e) {}
+        try { await sudoExec(`tc qdisc add dev ${lanInterface} root handle 1: htb default 10 2>/dev/null || true`); } catch (e) {}
+        try { await sudoExec(`tc class add dev ${lanInterface} parent 1: classid 1:10 htb rate 1000mbit 2>/dev/null || true`); } catch (e) {}
 
         // 2. IFB Interface (Upload) - Ensure module loaded and root qdisc exists
-        try { execSync('sudo modprobe ifb numifbs=1'); } catch (e) {}
-        try { execSync('sudo ip link set dev ifb0 up'); } catch (e) {}
-        try { execSync(`sudo tc qdisc add dev ifb0 root handle 1: htb default 10 2>/dev/null || true`); } catch (e) {}
-        try { execSync(`sudo tc class add dev ifb0 parent 1: classid 1:10 htb rate 1000mbit 2>/dev/null || true`); } catch (e) {}
+        try { await sudoExec('modprobe ifb numifbs=1'); } catch (e) {}
+        try { await sudoExec('ip link set dev ifb0 up'); } catch (e) {}
+        try { await sudoExec(`tc qdisc add dev ifb0 root handle 1: htb default 10 2>/dev/null || true`); } catch (e) {}
+        try { await sudoExec(`tc class add dev ifb0 parent 1: classid 1:10 htb rate 1000mbit 2>/dev/null || true`); } catch (e) {}
 
         // 3. LAN Ingress Redirection (Redirect Upload to IFB)
         try {
-            execSync(`sudo tc qdisc add dev ${lanInterface} handle ffff: ingress 2>/dev/null || true`);
-            const currentFilters = execSync(`sudo tc filter show dev ${lanInterface} parent ffff:`).toString();
-            if (!currentFilters.includes('mirred')) {
-                 execSync(`sudo tc filter add dev ${lanInterface} parent ffff: protocol ip u32 match u32 0 0 action mirred egress redirect dev ifb0`);
+            await sudoExec(`tc qdisc add dev ${lanInterface} handle ffff: ingress 2>/dev/null || true`);
+            const currentFilters = await sudoExec(`tc filter show dev ${lanInterface} parent ffff:`);
+            if (!currentFilters.stdout.includes('mirred')) {
+                 await sudoExec(`tc filter add dev ${lanInterface} parent ffff: protocol ip u32 match u32 0 0 action mirred egress redirect dev ifb0`);
             }
         } catch (e) {}
         // ---------------------------------------------
@@ -304,25 +305,25 @@ async function applyBandwidthLimits(ip, downloadLimitMbps, uploadLimitMbps, tcCl
         const prio = tcClassId + 100; // Offset priority to avoid conflicts
 
         // Clean up existing limits for this class ID/Prio just in case
-        try { execSync(`sudo tc filter del dev ${lanInterface} parent 1: prio ${prio} 2>/dev/null || true`); } catch (e) {}
-        try { execSync(`sudo tc class del dev ${lanInterface} parent 1: classid ${classId} 2>/dev/null || true`); } catch (e) {}
-        try { execSync(`sudo tc filter del dev ifb0 parent 1: prio ${prio} 2>/dev/null || true`); } catch (e) {}
-        try { execSync(`sudo tc class del dev ifb0 parent 1: classid ${classId} 2>/dev/null || true`); } catch (e) {}
+        try { await sudoExec(`tc filter del dev ${lanInterface} parent 1: prio ${prio} 2>/dev/null || true`); } catch (e) {}
+        try { await sudoExec(`tc class del dev ${lanInterface} parent 1: classid ${classId} 2>/dev/null || true`); } catch (e) {}
+        try { await sudoExec(`tc filter del dev ifb0 parent 1: prio ${prio} 2>/dev/null || true`); } catch (e) {}
+        try { await sudoExec(`tc class del dev ifb0 parent 1: classid ${classId} 2>/dev/null || true`); } catch (e) {}
 
         // DOWNLOAD (LAN Interface Egress) - Server to Client
         if (downloadLimitMbps > 0) {
             // Create class
-            execSync(`sudo tc class add dev ${lanInterface} parent 1: classid ${classId} htb rate ${dlRate} ceil ${dlRate}`);
+            await sudoExec(`tc class add dev ${lanInterface} parent 1: classid ${classId} htb rate ${dlRate} ceil ${dlRate}`);
             // Filter: Match Destination IP (Client IP)
-            execSync(`sudo tc filter add dev ${lanInterface} protocol ip parent 1: prio ${prio} u32 match ip dst ${ip}/32 flowid ${classId}`);
+            await sudoExec(`tc filter add dev ${lanInterface} protocol ip parent 1: prio ${prio} u32 match ip dst ${ip}/32 flowid ${classId}`);
         }
 
         // UPLOAD (IFB0 Interface Egress, redirected from LAN Ingress) - Client to Server
         if (uploadLimitMbps > 0) {
             // Create class
-            execSync(`sudo tc class add dev ifb0 parent 1: classid ${classId} htb rate ${ulRate} ceil ${ulRate}`);
+            await sudoExec(`tc class add dev ifb0 parent 1: classid ${classId} htb rate ${ulRate} ceil ${ulRate}`);
             // Filter: Match Source IP (Client IP)
-            execSync(`sudo tc filter add dev ifb0 protocol ip parent 1: prio ${prio} u32 match ip src ${ip}/32 flowid ${classId}`);
+            await sudoExec(`tc filter add dev ifb0 protocol ip parent 1: prio ${prio} u32 match ip src ${ip}/32 flowid ${classId}`);
         }
 
         console.log(`Bandwidth limits applied for IP ${ip} (DL: ${downloadLimitMbps}Mbps, UL: ${uploadLimitMbps}Mbps)`);
@@ -373,11 +374,11 @@ async function blockMac(mac) {
         const ip = user.ip_address;
 
         // DELETE the exact rule we inserted
-        execSync(`sudo iptables -D FORWARD -i ${lan} -o ${wan} -s ${ip} -j ACCEPT || true`);
+        await sudoExec(`iptables -D FORWARD -i ${lan} -o ${wan} -s ${ip} -j ACCEPT || true`);
 
         // Remove Bypass Rule
-        execSync(`sudo iptables -t nat -D PREROUTING -s ${ip} ! -d ${lanIp} -j ACCEPT || true`);
-        execSync(`sudo iptables -t nat -D PREROUTING -s ${ip} -j ACCEPT || true`); // Clean up old rules too
+        await sudoExec(`iptables -t nat -D PREROUTING -s ${ip} ! -d ${lanIp} -j ACCEPT || true`);
+        await sudoExec(`iptables -t nat -D PREROUTING -s ${ip} -j ACCEPT || true`); // Clean up old rules too
 
         // Remove Bandwidth Limits
         if (user.tc_class_id) {
@@ -414,10 +415,10 @@ async function removeBandwidthLimits(ip, tcClassId) {
         const classId = `1:${tcClassId}`;
         const prio = tcClassId + 100;
 
-        try { execSync(`sudo tc filter del dev ${lanInterface} parent 1: prio ${prio} 2>/dev/null || true`); } catch (e) {}
-        try { execSync(`sudo tc class del dev ${lanInterface} parent 1: classid ${classId} 2>/dev/null || true`); } catch (e) {}
-        try { execSync(`sudo tc filter del dev ifb0 parent 1: prio ${prio} 2>/dev/null || true`); } catch (e) {}
-        try { execSync(`sudo tc class del dev ifb0 parent 1: classid ${classId} 2>/dev/null || true`); } catch (e) {}
+        try { await sudoExec(`tc filter del dev ${lanInterface} parent 1: prio ${prio} 2>/dev/null || true`); } catch (e) {}
+        try { await sudoExec(`tc class del dev ${lanInterface} parent 1: classid ${classId} 2>/dev/null || true`); } catch (e) {}
+        try { await sudoExec(`tc filter del dev ifb0 parent 1: prio ${prio} 2>/dev/null || true`); } catch (e) {}
+        try { await sudoExec(`tc class del dev ifb0 parent 1: classid ${classId} 2>/dev/null || true`); } catch (e) {}
         
         console.log(`Bandwidth limits removed for IP ${ip} (Class: ${classId})`);
     } catch (e) {
@@ -2309,11 +2310,6 @@ app.post('/api/apply-wan-settings', isAuthenticated, async (req, res) => {
         stmt.finalize();
     });
 
-    if (os.platform() !== 'linux') {
-        console.log('[Simulated] WAN configuration skipped on non-Linux platform.');
-        return res.json({ success: true, message: 'WAN configuration saved (simulated).' });
-    }
-
     try {
         // Get current LAN settings from database to preserve them
         const lanSettings = await new Promise((resolve, reject) => {
@@ -2329,24 +2325,17 @@ app.post('/api/apply-wan-settings', isAuthenticated, async (req, res) => {
         const lan_ip_address = lanSettings.lan_ip_address || '10.0.0.1/24';
         const lan_dns_servers = lanSettings.lan_dns_servers ? lanSettings.lan_dns_servers.split(',').map(s => s.trim()).filter(s => s) : [];
 
-        // Generate Netplan config with WAN settings and existing LAN settings
-        const netplanConfig = generateNetplanConfig(
-            wan_interface_name, wan_config_type, wan_ip_address, wan_gateway, wan_dns_servers,
-            lan_interface_name, lan_ip_address, lan_dns_servers
-        );
-        
-        const netplanFilePath = `/etc/netplan/01-pisowifi-config.yaml`;
-
-        // Write Netplan config to a temporary file first, then move it
-        const tempNetplanPath = `/tmp/01-pisowifi-config.yaml.tmp`;
-        fs.writeFileSync(tempNetplanPath, netplanConfig);
-        execSync(`sudo mv ${tempNetplanPath} ${netplanFilePath}`);
-        execSync(`sudo chmod 600 ${netplanFilePath}`);
-
-        console.log(`WAN configuration written to ${netplanFilePath}`);
-        console.log('Applying WAN configuration...');
-        execSync('sudo netplan apply');
-        console.log('WAN configuration applied successfully.');
+        // Use the applyNetworkConfig function from networkService.js
+        await applyNetworkConfig({
+            wan_interface_name,
+            wan_config_type,
+            wan_ip_address,
+            wan_gateway,
+            wan_dns_servers,
+            lan_interface_name,
+            lan_ip_address,
+            lan_dns_servers
+        });
 
         res.json({ success: true, message: 'WAN settings applied successfully!' });
     } catch (e) {

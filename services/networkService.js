@@ -473,4 +473,4 @@ async function applyAllNetworkSettings(config) {
     }
 }
 
-module.exports = { applyNetworkConfig, applyAllNetworkSettings };
+module.exports = { applyNetworkConfig, applyAllNetworkSettings, sudoExec };
