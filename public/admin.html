@@ -2900,27 +2900,61 @@ n        <th>Date/Time</th>
         });
 
         async function fetchNetwork() {
-            const response = await fetch('/api/settings');
-            const settings = await response.json();
-            document.getElementById('dns_primary').value = settings.dns_primary || '8.8.8.8';
-            document.getElementById('dns_secondary').value = settings.dns_secondary || '8.8.4.4';
-            // Add these lines for IP Range (DHCP)
-            if (document.getElementById('ip_range_start')) {
-                document.getElementById('ip_range_start').value = settings.ip_range_start || '192.168.1.100';
+            // Clear values stored in DB + dynamic lists (server-side)
+            try {
+                await fetch('/api/network/clear', { method: 'POST' });
+            } catch (e) {
+                console.error('Failed to clear network settings on server:', e);
             }
-            if (document.getElementById('ip_range_end')) {
-                document.getElementById('ip_range_end').value = settings.ip_range_end || '192.168.1.200';
-            }
-            document.getElementById('qos_enabled').value = settings.qos_enabled || 'false';
-            document.getElementById('qos_gaming_priority').value = settings.qos_gaming_priority || 'high';
-            
-            // Group Settings
-            document.getElementById('group_type').value = settings.group_type || 'direct';
-            document.getElementById('vlan_id').value = settings.vlan_id || '';
+
+            // BLANK all fields in Network tab (per request)
+            document.getElementById('dns_primary').value = '';
+            document.getElementById('dns_secondary').value = '';
+            if (document.getElementById('ip_range_start')) document.getElementById('ip_range_start').value = '';
+            if (document.getElementById('ip_range_end')) document.getElementById('ip_range_end').value = '';
+
+            document.getElementById('qos_enabled').value = 'false';
+            document.getElementById('qos_gaming_priority').value = 'high';
+
+            document.getElementById('group_type').value = 'direct';
+            document.getElementById('vlan_id').value = '';
             toggleVlanInput();
 
+            // Also blank ALL network interface inputs
+            if (document.getElementById('wan_interface_name')) document.getElementById('wan_interface_name').value = '';
+            if (document.getElementById('wan_config_type')) document.getElementById('wan_config_type').value = 'dhcp';
+            if (document.getElementById('wan_ip_address')) document.getElementById('wan_ip_address').value = '';
+            if (document.getElementById('wan_gateway')) document.getElementById('wan_gateway').value = '';
+            if (document.getElementById('wan_dns_servers')) document.getElementById('wan_dns_servers').value = '';
+
+            if (document.getElementById('lan_interface_name')) document.getElementById('lan_interface_name').value = '';
+            if (document.getElementById('lan_ip_address')) document.getElementById('lan_ip_address').value = '';
+            if (document.getElementById('lan_dns_servers')) document.getElementById('lan_dns_servers').value = '';
+
+            // Also blank WiFi + advanced settings
+            if (document.getElementById('wifi_password')) document.getElementById('wifi_password').value = '';
+            if (document.getElementById('wifi_security')) document.getElementById('wifi_security').value = 'wpa2';
+            if (document.getElementById('wifi_max_users')) document.getElementById('wifi_max_users').value = '';
+            if (document.getElementById('wifi_transmit_power')) document.getElementById('wifi_transmit_power').value = '';
+            if (document.getElementById('wifi_hidden')) document.getElementById('wifi_hidden').value = 'false';
+            if (document.getElementById('wifi_channel')) document.getElementById('wifi_channel').value = 'auto';
+
+            if (document.getElementById('dhcp_lease_time')) document.getElementById('dhcp_lease_time').value = '';
+
+            if (document.getElementById('wifi_isolation')) document.getElementById('wifi_isolation').value = 'false';
+            if (document.getElementById('wifi_beacon_interval')) document.getElementById('wifi_beacon_interval').value = '';
+            if (document.getElementById('wifi_rts_cts')) document.getElementById('wifi_rts_cts').value = '';
+            if (document.getElementById('wifi_dtIM')) document.getElementById('wifi_dtIM').value = '';
+
+            if (document.getElementById('burst_download')) document.getElementById('burst_download').value = '';
+            if (document.getElementById('burst_upload')) document.getElementById('burst_upload').value = '';
+            if (document.getElementById('burst_threshold')) document.getElementById('burst_threshold').value = '';
+            if (document.getElementById('burst_time')) document.getElementById('burst_time').value = '';
+
+            toggleStaticWanFields();
+
+            // Reload dynamic tables after clearing
             fetchPortTriggers();
-            fetchNetworkInterfaces(); // Fetch and display network interface settings
         }
 
         // Function to toggle static WAN fields visibility

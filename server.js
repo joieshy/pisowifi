@@ -2207,6 +2207,77 @@ function generateNetplanConfig(wanInterface, wanConfigType, wanIp, wanGateway, w
     return config;
 }
 
+/**
+ * Clear/blank all Network tab related saved values
+ * - settings table: network keys -> set to ''
+ * - port_triggers table: delete all
+ *
+ * NOTE: This only clears saved config values. It does NOT run applyNetworkConfig().
+ */
+app.post('/api/network/clear', isAuthenticated, (req, res) => {
+    const keysToBlank = [
+        // DNS + DHCP
+        'dns_primary',
+        'dns_secondary',
+        'ip_range_start',
+        'ip_range_end',
+        'dhcp_lease_time',
+
+        // VLAN / Grouping
+        'group_type',
+        'vlan_id',
+
+        // QoS
+        'qos_enabled',
+        'qos_gaming_priority',
+        'qos_streaming_priority',
+        'qos_browsing_priority',
+
+        // WAN/LAN interface config
+        'wan_interface_name',
+        'wan_config_type',
+        'wan_ip_address',
+        'wan_gateway',
+        'wan_dns_servers',
+        'lan_interface_name',
+        'lan_ip_address',
+        'lan_dns_servers',
+
+        // WiFi
+        'wifi_password',
+        'wifi_security',
+        'wifi_max_users',
+        'wifi_transmit_power',
+        'wifi_hidden',
+        'wifi_channel',
+
+        // Wireless advanced
+        'wifi_isolation',
+        'wifi_beacon_interval',
+        'wifi_rts_cts',
+        'wifi_dtIM',
+
+        // Bandwidth advanced
+        'burst_download',
+        'burst_upload',
+        'burst_threshold',
+        'burst_time'
+    ];
+
+    db.serialize(() => {
+        // Blank settings
+        const stmt = db.prepare(`UPDATE settings SET value = '' WHERE key = ?`);
+        keysToBlank.forEach((k) => stmt.run(k));
+        stmt.finalize();
+
+        // Clear port triggers
+        db.run(`DELETE FROM port_triggers`, (err) => {
+            if (err) return res.status(500).json({ error: 'Failed to clear port triggers' });
+            res.json({ success: true });
+        });
+    });
+});
+
 // API to get network interface settings
 app.get('/api/network/interfaces', isAuthenticated, (req, res) => {
     db.all(`SELECT key, value FROM settings WHERE key LIKE 'wan_%' OR key LIKE 'lan_%'`, [], (err, rows) => {
