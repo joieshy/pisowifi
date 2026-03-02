@@ -3,6 +3,20 @@ const fs = require('fs');
 const util = require('util');
 const execPromise = util.promisify(exec);
 
+// Helper function to execute sudo commands with fallback
+async function sudoExec(command) {
+    try {
+        return await execPromise(`sudo ${command}`);
+    } catch (sudoError) {
+        console.warn(`sudo command failed for: ${command}, trying without sudo...`);
+        try {
+            return await execPromise(command);
+        } catch (error) {
+            throw new Error(`Failed to execute command: ${error.message}. Original sudo error: ${sudoError.message}`);
+        }
+    }
+}
+
 // Helper function to generate Netplan YAML content
 function generateNetplanConfig(wanInterface, wanConfigType, wanIp, wanGateway, wanDns, lanInterface, lanIp, lanDns) {
     let config = `network:
@@ -64,12 +78,17 @@ async function applyNetworkConfig(config) {
         // Write Netplan config to a temporary file first, then move it
         const tempNetplanPath = `/tmp/01-pisowifi-config.yaml.tmp`;
         fs.writeFileSync(tempNetplanPath, netplanConfig);
-        await execPromise(`sudo mv ${tempNetplanPath} ${netplanFilePath}`);
-        await execPromise(`sudo chmod 600 ${netplanFilePath}`);
+        
+        // Use sudoExec helper
+        await sudoExec(`mv ${tempNetplanPath} ${netplanFilePath}`);
+        await sudoExec(`chmod 600 ${netplanFilePath}`);
 
         console.log(`Netplan configuration written to ${netplanFilePath}`);
         console.log('Applying Netplan configuration...');
-        await execPromise('sudo netplan apply');
+        
+        // Use sudoExec helper
+        await sudoExec('netplan apply');
+        
         console.log('Netplan configuration applied successfully.');
 
         return { success: true, message: 'Network configuration applied successfully!' };
@@ -159,11 +178,13 @@ wpa=0
         // Write hostapd config
         const hostapdPath = '/etc/hostapd/hostapd.conf';
         fs.writeFileSync('/tmp/hostapd.conf', hostapdConfig);
-        await execPromise(`sudo mv /tmp/hostapd.conf ${hostapdPath}`);
-        await execPromise(`sudo chmod 600 ${hostapdPath}`);
+        
+        // Use sudoExec helper
+        await sudoExec(`mv /tmp/hostapd.conf ${hostapdPath}`);
+        await sudoExec(`chmod 600 ${hostapdPath}`);
 
         // Restart hostapd
-        await execPromise('sudo systemctl restart hostapd');
+        await sudoExec('systemctl restart hostapd');
         
         console.log('WiFi settings applied successfully.');
         return { success: true, message: 'WiFi settings applied successfully!' };
@@ -205,10 +226,12 @@ async function applyDhcpAdvanced(config) {
 
         // Write dnsmasq config
         fs.writeFileSync('/tmp/pisowifi-dnsmasq.conf', dnsmasqConfig);
-        await execPromise('sudo mv /tmp/pisowifi-dnsmasq.conf /etc/dnsmasq.d/pisowifi.conf');
+        
+        // Use sudoExec helper
+        await sudoExec('mv /tmp/pisowifi-dnsmasq.conf /etc/dnsmasq.d/pisowifi.conf');
         
         // Restart dnsmasq
-        await execPromise('sudo systemctl restart dnsmasq');
+        await sudoExec('systemctl restart dnsmasq');
         
         console.log('DHCP advanced settings applied successfully.');
         return { success: true, message: 'DHCP advanced settings applied successfully!' };
@@ -234,39 +257,39 @@ async function applyFirewallSettings(config) {
         let wanInterface = wan_interface_name || 'eth0';
 
         // Clear existing firewall rules
-        //await execPromise('sudo iptables -F FORWARD');
-        //await execPromise('sudo iptables -t nat -F POSTROUTING');
+        //await sudoExec('iptables -F FORWARD');
+        //await sudoExec('iptables -t nat -F POSTROUTING');
 
         // DMZ Configuration
         if (dmz_enabled === 'true' && dmz_ip) {
             // Enable IP forwarding
-            await execPromise('sudo sysctl -w net.ipv4.ip_forward=1');
+            await sudoExec('sysctl -w net.ipv4.ip_forward=1');
             
             // Add DMZ rule - forward all traffic to DMZ IP
-            await execPromise(`sudo iptables -A FORWARD -i ${wanInterface} -o ${lanInterface} -d ${dmz_ip} -j ACCEPT`);
-            await execPromise(`sudo iptables -t nat -A PREROUTING -i ${wanInterface} -j DNAT --to-destination ${dmz_ip}`);
+            await sudoExec(`iptables -A FORWARD -i ${wanInterface} -o ${lanInterface} -d ${dmz_ip} -j ACCEPT`);
+            await sudoExec(`iptables -t nat -A PREROUTING -i ${wanInterface} -j DNAT --to-destination ${dmz_ip}`);
         }
 
         // VPN Passthrough
         if (vpn_passthrough === 'true') {
             // Allow PPTP
-            await execPromise('sudo iptables -A FORWARD -p gre -j ACCEPT');
+            await sudoExec('iptables -A FORWARD -p gre -j ACCEPT');
             // Allow IPSec
-            await execPromise('sudo iptables -A FORWARD -p udp --dport 500 -j ACCEPT');
-            await execPromise('sudo iptables -A FORWARD -p udp --dport 4500 -j ACCEPT');
-            await execPromise('sudo iptables -A FORWARD -p udp --dport 1701 -j ACCEPT');
+            await sudoExec('iptables -A FORWARD -p udp --dport 500 -j ACCEPT');
+            await sudoExec('iptables -A FORWARD -p udp --dport 4500 -j ACCEPT');
+            await sudoExec('iptables -A FORWARD -p udp --dport 1701 -j ACCEPT');
             // Allow OpenVPN
-            await execPromise('sudo iptables -A FORWARD -i tun+ -j ACCEPT');
-            await execPromise('sudo iptables -A FORWARD -o tun+ -j ACCEPT');
+            await sudoExec('iptables -A FORWARD -i tun+ -j ACCEPT');
+            await sudoExec('iptables -A FORWARD -o tun+ -j ACCEPT');
         }
 
         // NAT Loopback (Hairpin NAT)
         if (nat_loopback === 'true') {
-            await execPromise(`sudo iptables -t nat -A POSTROUTING -s ${ip_range_start || '10.0.0.0'}/24 -o ${lanInterface} -j MASQUERADE`);
+            await sudoExec(`iptables -t nat -A POSTROUTING -s ${ip_range_start || '10.0.0.0'}/24 -o ${lanInterface} -j MASQUERADE`);
         }
 
         // Save iptables rules
-        await execPromise('sudo iptables-save > /etc/iptables.rules');
+        await sudoExec('iptables-save > /etc/iptables.rules');
         
         console.log('Firewall settings applied successfully.');
         return { success: true, message: 'Firewall settings applied successfully!' };
@@ -287,7 +310,7 @@ async function applyWifiSchedule(config) {
 
     try {
         // Remove existing pisowifi schedule cron jobs
-        await execPromise('sudo crontab -l 2>/dev/null | grep -v "pisowifi-schedule" | sudo crontab -');
+        await sudoExec('crontab -l 2>/dev/null | grep -v "pisowifi-schedule" | crontab -');
 
         if (wifi_schedule_enabled === 'true') {
             // Parse time strings (format: HH:MM)
@@ -296,16 +319,16 @@ async function applyWifiSchedule(config) {
 
             // Create cron jobs
             // WiFi OFF at start time
-            const offCron = `${startMin} ${startHour} * * * sudo systemctl stop hostapd`;
+            const offCron = `${startMin} ${startHour} * * * systemctl stop hostapd`;
             // WiFi ON at end time
-            const onCron = `${endMin} ${endHour} * * * sudo systemctl start hostapd`;
+            const onCron = `${endMin} ${endHour} * * * systemctl start hostapd`;
 
             // Add to crontab
-            const currentCrontab = await execPromise('sudo crontab -l 2>/dev/null').catch(() => '');
+            const currentCrontab = await sudoExec('crontab -l 2>/dev/null').catch(() => '');
             const newCrontab = currentCrontab + '\n# PisoWiFi Schedule\n' + offCron + '\n' + onCron + '\n';
             
             fs.writeFileSync('/tmp/pisowifi-cron', newCrontab);
-            await execPromise('sudo crontab /tmp/pisowifi-cron');
+            await sudoExec('crontab /tmp/pisowifi-cron');
             
             console.log('WiFi schedule applied successfully.');
             return { success: true, message: 'WiFi schedule applied successfully!' };
@@ -358,10 +381,12 @@ async function applyWirelessAdvanced(config) {
 
         // Write hostapd config
         fs.writeFileSync('/tmp/hostapd-advanced.conf', hostapdConfig);
-        await execPromise('sudo mv /tmp/hostapd-advanced.conf /etc/hostapd/hostapd.conf');
+        
+        // Use global sudoExec helper
+        await sudoExec('mv /tmp/hostapd-advanced.conf /etc/hostapd/hostapd.conf');
         
         // Restart hostapd
-        await execPromise('sudo systemctl restart hostapd');
+        await sudoExec('systemctl restart hostapd');
         
         console.log('Wireless advanced settings applied successfully.');
         return { success: true, message: 'Wireless advanced settings applied successfully!' };
@@ -384,7 +409,7 @@ async function applyBandwidthAdvanced(config) {
         const lanInterface = lan_interface_name || 'eth1'; // LAN interface
         
         // Clear existing qdisc rules
-        await execPromise(`sudo tc qdisc del dev ${lanInterface} root 2>/dev/null || true`);
+        await sudoExec(`tc qdisc del dev ${lanInterface} root 2>/dev/null || true`);
 
         // Convert Mbps to kbit/s (1 Mbps = 1000 kbit/s)
         const downloadRate = download_limit ? Math.round(download_limit * 1000) : 0;
@@ -394,13 +419,13 @@ async function applyBandwidthAdvanced(config) {
 
         if (downloadRate > 0) {
             // Apply download shaping (tc is applied on the interface connected to clients)
-            let tcCmd = `sudo tc qdisc add dev ${lanInterface} root handle 1: htb default 10`;
+            let tcCmd = `tc qdisc add dev ${lanInterface} root handle 1: htb default 10`;
             if (burstDownload > 0 && burstDownload > downloadRate) {
-                tcCmd += ` && sudo tc class add dev ${lanInterface} parent 1: classid 1:10 htb rate=${downloadRate}kbit burst=${burstDownload}kbit cburst=${cburstDownload}kbit`;
+                tcCmd += ` && tc class add dev ${lanInterface} parent 1: classid 1:10 htb rate=${downloadRate}kbit burst=${burstDownload}kbit cburst=${cburstDownload}kbit`;
             } else {
-                tcCmd += ` && sudo tc class add dev ${lanInterface} parent 1: classid 1:10 htb rate=${downloadRate}kbit`;
+                tcCmd += ` && tc class add dev ${lanInterface} parent 1: classid 1:10 htb rate=${downloadRate}kbit`;
             }
-            await execPromise(tcCmd);
+            await sudoExec(tcCmd);
         }
 
         console.log('Bandwidth advanced settings applied successfully.');
