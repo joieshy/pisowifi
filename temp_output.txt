@@ -1,0 +1,82 @@
+﻿
+> public\admin.html:1276:                <!-- Bandwidth Advanced -->
+  public\admin.html:1277:                <div class="card">
+  public\admin.html:1278:                    <h3 style="margin-top: 0; color: #f6c23e; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+> public\admin.html:1279:                        <i class="fas fa-tachometer-alt"></i> Bandwidth Advanced
+  public\admin.html:1280:                    </h3>
+  public\admin.html:1281:                    <form id="bandwidthAdvancedForm">
+  public\admin.html:1282:                        <h4 style="margin-top: 15px; color: var(--success-color);">Burst Settings</h4>
+  public\admin.html:1283:                        <div class="form-group">
+  public\admin.html:1284:                            <label>Burst Download (Mbps)</label>
+  public\admin.html:1285:                            <input type="number" id="burst_download" name="burst_download" min="0" step="0.1" placeholder="0 for no burst">
+  public\admin.html:1286:                        </div>
+  public\admin.html:1287:                        <div class="form-group">
+  public\admin.html:1288:                            <label>Burst Upload (Mbps)</label>
+  public\admin.html:1289:                            <input type="number" id="burst_upload" name="burst_upload" min="0" step="0.1" placeholder="0 for no burst">
+  public\admin.html:1290:                        </div>
+  public\admin.html:1291:                        <div class="form-group">
+  public\admin.html:1292:                            <label>Burst Threshold (Mbps)</label>
+  public\admin.html:1293:                            <input type="number" id="burst_threshold" name="burst_threshold" min="0" step="0.1" placeholder="Threshold before bursting">
+  public\admin.html:1294:                        </div>
+  public\admin.html:1295:                        <div class="form-group">
+  public\admin.html:1296:                            <label>Burst Time (seconds)</label>
+  public\admin.html:1297:                            <input type="number" id="burst_time" name="burst_time" min="1" max="60" placeholder="10">
+  public\admin.html:1298:                        </div>
+  public\admin.html:1299:                        <button type="submit" class="btn btn-warning" style="width: 100%; color: white;">
+  public\admin.html:1300:                            <i class="fas fa-save"></i> Save Burst Settings
+  public\admin.html:1301:                        </button>
+  public\admin.html:1302:                    </form>
+> public\admin.html:1303:                    <div id="bandwidthAdvancedMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">Bandwidth advanced 
+settings saved!</div>
+  public\admin.html:1304:                </div>
+  public\admin.html:1305:
+  public\admin.html:1306:                <!-- Port Triggering -->
+  public\admin.html:1307:                <div class="card">
+  public\admin.html:1308:                    <h3 style="margin-top: 0; color: #6f42c1; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+  public\admin.html:1309:                        <i class="fas fa-door-open"></i> Port Triggering
+  public\admin.html:1310:                    </h3>
+  public\admin.html:1311:                    <form id="addPortTriggerForm" style="margin-bottom: 15px;">
+  public\admin.html:1312:                        <div class="form-group">
+  public\admin.html:1313:                            <input type="text" name="name" placeholder="App Name (e.g. Steam)" required>
+  public\admin.html:1314:                        </div>
+  public\admin.html:1315:                        <div class="form-group">
+  public\admin.html:1316:                            <input type="number" name="trigger_port" placeholder="Trigger Port" required>
+  public\admin.html:1317:                        </div>
+  public\admin.html:1318:                        <div class="form-group">
+  public\admin.html:1319:                            <select name="trigger_proto">
+  public\admin.html:1320:                                <option value="TCP">TCP</option>
+  public\admin.html:1321:                                <option value="UDP">UDP</option>
+  public\admin.html:1322:                                <option value="BOTH">BOTH</option>
+  public\admin.html:1323:                            </select>
+  public\admin.html:1324:                        </div>
+  public\admin.html:1325:                        <div class="form-group">
+  public\admin.html:1326:                            <input type="text" name="open_port" placeholder="Open Ports (e.g. 27000-27015)" required>
+  public\admin.html:1327:                        </div>
+  public\admin.html:1328:                        <div class="form-group">
+  public\admin.html:1329:                            <button type="submit" class="btn btn-primary" style="width: 100%;">Add Trigger</button>
+  public\admin.html:1330:                        </div>
+  public\admin.html:1331:                    </form>
+  public\admin.html:1332:                    <div style="max-height: 200px; overflow-y: auto;">
+  public\admin.html:1333:                        <table style="font-size: 0.8rem;">
+  public\admin.html:1334:                            <thead>
+  public\admin.html:1335:                                <tr>
+  public\admin.html:1336:                                    <th>Name</th>
+  public\admin.html:1337:                                    <th>Trigger</th>
+  public\admin.html:1338:                                    <th>Open Ports</th>
+  public\admin.html:1339:                                    <th>Action</th>
+  public\admin.html:1340:                                </tr>
+  public\admin.html:1341:                            </thead>
+  public\admin.html:1342:                            <tbody id="portTriggersTable">
+  public\admin.html:1343:                                <tr><td colspan="4" style="text-align: center;">Loading...</td></tr>
+  public\admin.html:1344:                            </tbody>
+  public\admin.html:1345:                        </table>
+  public\admin.html:1346:                    </div>
+  public\admin.html:1347:                    <div id="networkMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">Network settings updated!</div>
+  public\admin.html:1348:                </div>
+  public\admin.html:1349:            </div>
+  public\admin.html:1350:        </div>
+  public\admin.html:1351:
+  public\admin.html:1352:        <!-- Security & Filtering Section -->
+  public\admin.html:1353:        <div id="securitySection" style="display: none;">
+
+
