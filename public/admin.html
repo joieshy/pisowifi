@@ -1112,12 +1112,12 @@ n        <th>Date/Time</th>
 
                     <!-- WAN Apply Button and IP Display -->
                     <div style="margin-top: 15px; margin-bottom: 20px; padding: 15px; background: #f8f9fc; border-radius: 8px; border: 1px solid #e3e6f0;">
-                        <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
-                            <button type="button" onclick="applyWanSettings()" class="btn btn-primary" style="flex: 2;">
-                                <i class="fas fa-check-circle"></i> Apply WAN Settings
+                        <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px;">
+                            <button type="button" onclick="applyWanSettings()" class="btn btn-primary" style="width: 100%; padding: 10px 20px; border-radius: 8px; font-size: 1rem;">
+                                <i class="fas fa-check-circle" style="margin-right: 8px;"></i> Apply WAN Settings
                             </button>
-                            <button type="button" onclick="fetchWanIp()" class="btn btn-secondary" style="flex: 1;">
-                                <i class="fas fa-sync"></i> Refresh WAN IP
+                            <button type="button" onclick="fetchWanIp()" class="btn btn-secondary" style="width: 100%; padding: 10px 20px; border-radius: 8px; font-size: 1rem;">
+                                <i class="fas fa-sync" style="margin-right: 8px;"></i> Refresh WAN IP
                             </button>
                         </div>
                         <div id="wanIpDisplay" style="display: none; padding: 10px; background: white; border-radius: 5px; border: 1px solid #ddd;">
