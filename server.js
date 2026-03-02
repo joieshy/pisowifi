@@ -843,12 +843,7 @@ db.serialize(() => {
         ['wifi_isolation', 'false'],
         ['wifi_beacon_interval', '100'],
         ['wifi_rts_cts', '2347'],
-        ['wifi_dtIM', '1'],
-        // NEW: Bandwidth Advanced
-        ['burst_download', '0'],
-        ['burst_upload', '0'],
-        ['burst_threshold', '0'],
-        ['burst_time', '10']
+        ['wifi_dtIM', '1']
     ];
 
     defaultSettings.forEach(setting => {
@@ -2255,13 +2250,7 @@ app.post('/api/network/clear', isAuthenticated, (req, res) => {
         'wifi_isolation',
         'wifi_beacon_interval',
         'wifi_rts_cts',
-        'wifi_dtIM',
-
-        // Bandwidth advanced
-        'burst_download',
-        'burst_upload',
-        'burst_threshold',
-        'burst_time'
+        'wifi_dtIM'
     ];
 
     db.serialize(() => {

@@ -313,45 +313,6 @@ async function applyWirelessAdvanced(config) {
     }
 }
 
-// 6. Bandwidth Advanced - Configure traffic shaping with tc (traffic control)
-async function applyBandwidthAdvanced(config) {
-    const { burst_download, burst_threshold, download_limit, lan_interface_name } = config;
-
-    if (process.platform !== 'linux') {
-        console.log('[Simulated] Bandwidth advanced settings skipped on non-Linux platform.');
-        return { success: true, message: 'Bandwidth advanced settings saved (simulated).' };
-    }
-
-    try {
-        const lanInterface = lan_interface_name || 'eth1'; // LAN interface
-        
-        // Clear existing qdisc rules
-        await sudoExec(`tc qdisc del dev ${lanInterface} root 2>/dev/null || true`);
-
-        // Convert Mbps to kbit/s (1 Mbps = 1000 kbit/s)
-        const downloadRate = download_limit ? Math.round(download_limit * 1000) : 0;
-        
-        const burstDownload = burst_download ? Math.round(burst_download * 1000) : 0;
-        const cburstDownload = burst_threshold ? Math.round(burst_threshold * 1000) : burstDownload;
-
-        if (downloadRate > 0) {
-            // Apply download shaping (tc is applied on the interface connected to clients)
-            let tcCmd = `tc qdisc add dev ${lanInterface} root handle 1: htb default 10`;
-            if (burstDownload > 0 && burstDownload > downloadRate) {
-                tcCmd += ` && tc class add dev ${lanInterface} parent 1: classid 1:10 htb rate=${downloadRate}kbit burst=${burstDownload}kbit cburst=${cburstDownload}kbit`;
-            } else {
-                tcCmd += ` && tc class add dev ${lanInterface} parent 1: classid 1:10 htb rate=${downloadRate}kbit`;
-            }
-            await sudoExec(tcCmd);
-        }
-
-        console.log('Bandwidth advanced settings applied successfully.');
-        return { success: true, message: 'Bandwidth advanced settings applied successfully!' };
-    } catch (e) {
-        console.error('Failed to apply bandwidth advanced settings:', e.message);
-        throw new Error(`Failed to apply bandwidth settings: ${e.message}`);
-    }
-}
 
 // Main function to apply all network settings
 async function applyAllNetworkSettings(config) {
@@ -370,10 +331,6 @@ async function applyAllNetworkSettings(config) {
 
         if (config.wifi_isolation !== undefined || config.wifi_beacon_interval || config.wifi_rts_cts || config.wifi_dtIM) {
             results.push(await applyWirelessAdvanced(config));
-        }
-
-        if (config.burst_download || config.burst_upload || config.burst_threshold || config.burst_time) {
-            results.push(await applyBandwidthAdvanced(config));
         }
 
         return { success: true, message: 'All network settings applied successfully!', details: results };
