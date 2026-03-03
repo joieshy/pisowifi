@@ -487,9 +487,15 @@ async function applyLanBridgeApSettings(config) {
             await sudoExec('systemctl enable dnsmasq 2>/dev/null || true');
         }
 
-        // Bring interfaces up
+        // Bring interfaces up (force UP even if NO-CARRIER; required so hostapd can start/broadcast)
         await sudoExec(`ip link set dev ${lan_interface_name} up`);
-        await sudoExec(`ip link set dev ${wifiIface} up || true`);
+        await sudoExec(`ip link set dev ${wifiIface} up`);
+
+        // Some drivers need rfkill to be unblocked before AP can broadcast
+        await sudoExec('rfkill unblock all 2>/dev/null || true');
+
+        // Ensure WiFi is in managed mode before hostapd takes over (best-effort)
+        await sudoExec(`iw dev ${wifiIface} set type managed 2>/dev/null || true`);
 
         // Create bridge if needed
         await sudoExec(`ip link add name ${bridge} type bridge 2>/dev/null || true`);
