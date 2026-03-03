@@ -274,6 +274,38 @@ async function applyWifiSettings(config) {
     const wifiIface = wifi_interface_name || detectDefaultWifiInterface();
 
     try {
+        const hasSystemctl = async () => {
+            try {
+                await execPromise('command -v systemctl');
+                return true;
+            } catch (e) {
+                return false;
+            }
+        };
+
+        const hasHostapd = async () => {
+            try {
+                await execPromise('hostapd -v');
+                return true;
+            } catch (e1) {
+                try {
+                    await execPromise('/usr/sbin/hostapd -v');
+                    return true;
+                } catch (e2) {
+                    try {
+                        await execPromise('which hostapd');
+                        return true;
+                    } catch (e3) {
+                        return false;
+                    }
+                }
+            }
+        };
+
+        if (!(await hasHostapd())) {
+            throw new Error('hostapd is not installed or not found in PATH. Install it on Debian: sudo apt-get update && sudo apt-get install -y hostapd');
+        }
+
         // Generate hostapd configuration
         let hostapdConfig = `interface=${wifiIface}
 driver=nl80211
@@ -341,12 +373,25 @@ wpa=0
         await sudoExec(`mv /tmp/hostapd.conf ${hostapdPath}`);
         await sudoExec(`chmod 600 ${hostapdPath}`);
 
-        // Ensure service is enabled (Debian)
-        await sudoExec('systemctl unmask hostapd || true');
-        await sudoExec('systemctl enable hostapd || true');
+        const startHostapdFallback = async () => {
+            // Stop any existing hostapd instance, then start with config.
+            await sudoExec('pkill hostapd 2>/dev/null || true');
+            await sudoExec(`/usr/sbin/hostapd -B ${hostapdPath} || hostapd -B ${hostapdPath}`);
+        };
 
-        // Restart hostapd
-        await sudoExec('systemctl restart hostapd');
+        if (await hasSystemctl()) {
+            // Best effort enable/restart if unit exists
+            await sudoExec('systemctl unmask hostapd 2>/dev/null || true');
+            await sudoExec('systemctl enable hostapd 2>/dev/null || true');
+            try {
+                await sudoExec('systemctl restart hostapd');
+            } catch (e) {
+                // unit not found or access denied -> fallback run directly
+                await startHostapdFallback();
+            }
+        } else {
+            await startHostapdFallback();
+        }
 
         console.log('WiFi settings applied successfully.');
         return { success: true, message: 'WiFi settings applied successfully!' };
@@ -489,9 +534,9 @@ bogus-priv
         // hostapd: bridged mode (bridge=br0)
         await applyWifiSettings({ ...config, wifi_interface_name: wifiIface });
 
-        // Ensure hostapd is bridged
+        // Ensure hostapd is bridged. Restart is best-effort (if systemd unit not present we already started hostapd directly).
         await sudoExec(`grep -q "^bridge=${bridge}$" /etc/hostapd/hostapd.conf || echo "bridge=${bridge}" | tee -a /etc/hostapd/hostapd.conf > /dev/null`);
-        await sudoExec('systemctl restart hostapd');
+        await sudoExec('systemctl restart hostapd 2>/dev/null || true');
 
         return {
             success: true,
