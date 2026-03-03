@@ -12,7 +12,7 @@ const { exec, execSync } = require('child_process');
 const https = require('https');
 const axios = require('axios');
 const { SerialPort, ReadlineParser } = require('serialport'); // Import serialport
-const { applyNetworkConfig, sudoExec } = require('./services/networkService'); // Idinagdag ito
+const { applyNetworkConfig, applyLanBridgeApSettings, sudoExec } = require('./services/networkService'); // Idinagdag ito
 const app = express();
 app.set('trust proxy', true);
 
@@ -171,8 +171,8 @@ async function allowMac(mac, ip) {
         });
 
         const wan = settings.wan_interface_name || 'enp1s0';
-        const lan = settings.lan_interface_name || 'enx00e04c680013';
-        const lanIp = (settings.lan_ip_address || '10.0.0.1').split('/')[0];
+        const lan = 'br0';
+        const lanIp = (settings.lan_ip_address || '10.0.0.1/24').split('/')[0];
 
         // REMOVE existing rule first (important)
         await sudoExec(`iptables -D FORWARD -i ${lan} -o ${wan} -s ${ip} -j ACCEPT || true`);
@@ -235,13 +235,9 @@ async function applyBandwidthLimits(ip, downloadLimitMbps, uploadLimitMbps, tcCl
     }
 
     try {
-        const settings = await new Promise((resolve, reject) => {
-            db.get(`SELECT value FROM settings WHERE key = 'lan_interface_name'`, [], (err, row) => {
-                if (err) return reject(err);
-                resolve(row ? row.value : 'enx00e04c680013');
-            });
-        });
-        const lanInterface = settings || 'enx00e04c680013';
+        // When we run in bridge/AP mode, traffic shaping must be applied on br0 (not the raw LAN member interface).
+        // This ensures both wired LAN + WiFi clients are shaped consistently.
+        const lanInterface = 'br0';
 
         // --- ENSURE TRAFFIC CONTROL INFRASTRUCTURE ---
         // 1. LAN Interface (Download) - Ensure root qdisc exists
@@ -259,7 +255,7 @@ async function applyBandwidthLimits(ip, downloadLimitMbps, uploadLimitMbps, tcCl
             await sudoExec(`tc qdisc add dev ${lanInterface} handle ffff: ingress 2>/dev/null || true`);
             const currentFilters = await sudoExec(`tc filter show dev ${lanInterface} parent ffff:`);
             if (!currentFilters.stdout.includes('mirred')) {
-                 await sudoExec(`tc filter add dev ${lanInterface} parent ffff: protocol ip u32 match u32 0 0 action mirred egress redirect dev ifb0`);
+                await sudoExec(`tc filter add dev ${lanInterface} parent ffff: protocol ip u32 match u32 0 0 action mirred egress redirect dev ifb0`);
             }
         } catch (e) {}
         // ---------------------------------------------
@@ -321,8 +317,8 @@ async function blockMac(mac) {
         const globalSettings = settings; // Keep reference
 
         const wan = settings.wan_interface_name || 'enp1s0';
-        const lan = settings.lan_interface_name || 'enx00e04c680013';
-        const lanIp = (settings.lan_ip_address || '10.0.0.1').split('/')[0];
+        const lan = 'br0';
+        const lanIp = (settings.lan_ip_address || '10.0.0.1/24').split('/')[0];
 
         const user = await new Promise((resolve, reject) => {
             db.get(
@@ -370,14 +366,8 @@ async function removeBandwidthLimits(ip, tcClassId) {
         return;
     }
     try {
-        // Get LAN interface from DB
-        const settings = await new Promise((resolve, reject) => {
-            db.get(`SELECT value FROM settings WHERE key = 'lan_interface_name'`, [], (err, row) => {
-                if (err) return reject(err);
-                resolve(row ? row.value : 'enx00e04c680013');
-            });
-        });
-        const lanInterface = settings || 'enx00e04c680013';
+        // When we run in bridge/AP mode, traffic shaping must be removed from br0 (not the raw LAN member interface).
+        const lanInterface = 'br0';
         const classId = `1:${tcClassId}`;
         const prio = tcClassId + 100;
 
@@ -385,7 +375,7 @@ async function removeBandwidthLimits(ip, tcClassId) {
         try { await sudoExec(`tc class del dev ${lanInterface} parent 1: classid ${classId} 2>/dev/null || true`); } catch (e) {}
         try { await sudoExec(`tc filter del dev ifb0 parent 1: prio ${prio} 2>/dev/null || true`); } catch (e) {}
         try { await sudoExec(`tc class del dev ifb0 parent 1: classid ${classId} 2>/dev/null || true`); } catch (e) {}
-        
+
         console.log(`Bandwidth limits removed for IP ${ip} (Class: ${classId})`);
     } catch (e) {
         console.error(`Failed to remove bandwidth limits for IP ${ip}:`, e.message);
@@ -412,10 +402,10 @@ function restoreOnlineUsers() {
 async function initNetwork() {
     if (os.platform() !== 'linux') return;
     try {
-        console.log('Initializing Network for Orange Pi...');
+        console.log('Initializing Network for Debian (Bridge AP)...');
 
         const settings = await new Promise((resolve, reject) => {
-            db.all(`SELECT key, value FROM settings WHERE key IN ('wan_interface_name', 'lan_interface_name', 'lan_ip_address')`, [], (err, rows) => {
+            db.all(`SELECT key, value FROM settings WHERE key IN ('wan_interface_name', 'lan_interface_name', 'lan_ip_address', 'lan_dns_servers')`, [], (err, rows) => {
                 if (err) return reject(err);
                 const s = {};
                 rows.forEach(row => s[row.key] = row.value);
@@ -425,100 +415,75 @@ async function initNetwork() {
 
         const wanInterface = settings.wan_interface_name || 'enp1s0';
         const lanInterface = settings.lan_interface_name || 'enx00e04c680013';
-        const lanIpAddress = settings.lan_ip_address ? settings.lan_ip_address.split('/')[0] : '10.0.0.1';
+        const lanIpCidr = settings.lan_ip_address || '10.0.0.1/24';
+        const lanDnsServers = settings.lan_dns_servers ? settings.lan_dns_servers.split(',').map(s => s.trim()).filter(s => s) : [];
 
-        console.log(`[Network] Configuring: WAN=${wanInterface}, LAN=${lanInterface} (EAP110), Gateway IP=${lanIpAddress}`);
+        console.log(`[Network] Configuring: WAN=${wanInterface}, LAN=${lanInterface}, LAN CIDR=${lanIpCidr}, Bridge=br0`);
 
-        // --- OS CONFIGURATION: Set Static IP & Fix DNS Conflict ---
+        // --- Stop systemd-resolved to free up Port 53 for dnsmasq (common Debian conflict) ---
         try {
-            console.log(`[Network] Setting static IP ${lanIpAddress} on ${lanInterface}...`);
-            
-            // 1. Ensure interface is UP
-            await sudoExec(`ip link set dev ${lanInterface} up`);
-            
-            // 2. Flush existing IPs and set Static IP (10.0.0.1)
-            try { await sudoExec(`ip addr flush dev ${lanInterface}`); } catch (e) {}
-            await sudoExec(`ip addr add ${lanIpAddress}/24 dev ${lanInterface}`);
-            
-            // 3. Stop systemd-resolved to free up Port 53 for dnsmasq (Fix for DNS conflict)
-            try {
-                await sudoExec('systemctl stop systemd-resolved');
-                await sudoExec('systemctl disable systemd-resolved');
-                // Fix /etc/resolv.conf so the server still has internet
-                await sudoExec('rm -f /etc/resolv.conf');
-                await sudoExec('echo "nameserver 8.8.8.8" | tee /etc/resolv.conf > /dev/null');
-            } catch (e) {
-                console.log('[Network] Note: systemd-resolved handling skipped or failed.');
-            }
+            await sudoExec('systemctl stop systemd-resolved || true');
+            await sudoExec('systemctl disable systemd-resolved || true');
+            await sudoExec('rm -f /etc/resolv.conf || true');
+            await sudoExec('echo "nameserver 8.8.8.8" | tee /etc/resolv.conf > /dev/null');
         } catch (e) {
-            console.error('[Network] Failed to configure OS network settings:', e.message);
+            console.log('[Network] Note: systemd-resolved handling skipped or failed.');
         }
 
-        // --- Configure DHCP (dnsmasq) to ensure clients get IP addresses ---
-        try {
-            const dnsmasqConfig = `
-interface=${lanInterface}
-dhcp-range=10.0.0.10,10.0.0.254,255.255.255.0,12h
-dhcp-option=3,${lanIpAddress}
-dhcp-option=6,${lanIpAddress}
-address=/#/${lanIpAddress}
-server=8.8.8.8
-server=8.8.4.4
-bind-interfaces
-domain-needed
-bogus-priv
-`;
-            // Write config and restart dnsmasq
-            fs.writeFileSync('/tmp/pisowifi-dnsmasq.conf', dnsmasqConfig);
-            await sudoExec('mv /tmp/pisowifi-dnsmasq.conf /etc/dnsmasq.d/pisowifi.conf');
-            await sudoExec('systemctl unmask dnsmasq');
-            await sudoExec('systemctl enable dnsmasq');
-            await sudoExec('systemctl restart dnsmasq');
-            console.log('[Network] DHCP Server (dnsmasq) configured and restarted.');
-        } catch (e) {
-            console.error('[Network] Failed to configure DHCP:', e.message);
-            console.log('TIP: Ensure dnsmasq is installed: sudo apt install dnsmasq');
-        }
+        // --- Apply bridge + dnsmasq + hostapd bridge on LAN subnet ---
+        // NOTE: wifi_interface_name is set to wlp2s0 as per your Debian device.
+        await applyLanBridgeApSettings({
+            lan_interface_name: lanInterface,
+            lan_ip_address: lanIpCidr,
+            lan_dns_servers: lanDnsServers,
+            wifi_interface_name: 'wlp2s0'
+        });
 
         // Enable IP Forwarding
         await sudoExec('sysctl -w net.ipv4.ip_forward=1');
-        
-        // Clear existing rules to avoid duplicates
+
+        // NAT/captive portal rules will use br0 as LAN side
+        // (we keep lanInterface variable for saved setting; runtime uses br0)
+        const lanSide = 'br0';
+        const lanGatewayIp = lanIpCidr.split('/')[0];
+
         // Clear only captive rules (safer)
         await sudoExec('iptables -t nat -F PREROUTING || true');
         await sudoExec('iptables -t nat -F POSTROUTING || true');
 
-
-        // Allow all traffic from LAN interface (Fix for "Connection Refused" or blocked portal)
-        await sudoExec(`iptables -A INPUT -i ${lanInterface} -j ACCEPT`);
+        // Allow all traffic from LAN side
+        await sudoExec(`iptables -D INPUT -i ${lanSide} -j ACCEPT || true`);
+        await sudoExec(`iptables -A INPUT -i ${lanSide} -j ACCEPT`);
+        await sudoExec('iptables -D INPUT -i lo -j ACCEPT || true');
         await sudoExec('iptables -A INPUT -i lo -j ACCEPT');
-        
+
         // Setup NAT (MASQUERADE)
         await sudoExec(`iptables -t nat -A POSTROUTING -o ${wanInterface} -j MASQUERADE`);
-        
+
         // Allow DNS traffic (UDP 53) so users can resolve the portal domain
+        await sudoExec('iptables -D FORWARD -p udp --dport 53 -j ACCEPT || true');
+        await sudoExec('iptables -D FORWARD -p udp --sport 53 -j ACCEPT || true');
         await sudoExec('iptables -I FORWARD -p udp --dport 53 -j ACCEPT');
         await sudoExec('iptables -I FORWARD -p udp --sport 53 -j ACCEPT');
 
-        // Add general FORWARD rules for internet sharing
         // Allow established connections back
-        await sudoExec(`iptables -A FORWARD -i ${wanInterface} -o ${lanInterface} -m state --state RELATED,ESTABLISHED -j ACCEPT`);
+        await sudoExec(`iptables -D FORWARD -i ${wanInterface} -o ${lanSide} -m state --state RELATED,ESTABLISHED -j ACCEPT || true`);
+        await sudoExec(`iptables -A FORWARD -i ${wanInterface} -o ${lanSide} -m state --state RELATED,ESTABLISHED -j ACCEPT`);
 
         // BLOCK everything from LAN by default
-        await sudoExec(`iptables -A FORWARD -i ${lanInterface} -o ${wanInterface} -j DROP`);
-
+        await sudoExec(`iptables -D FORWARD -i ${lanSide} -o ${wanInterface} -j DROP || true`);
+        await sudoExec(`iptables -A FORWARD -i ${lanSide} -o ${wanInterface} -j DROP`);
 
         // --- Captive Portal Rules ---
-        // Log all traffic hitting PREROUTING from LAN for debugging
-        await sudoExec(`iptables -t nat -A PREROUTING -i ${lanInterface} -j LOG --log-prefix "PISOWIFI_PREROUTING: " --log-level 7`);
+        await sudoExec(`iptables -t nat -A PREROUTING -i ${lanSide} -j LOG --log-prefix "PISOWIFI_PREROUTING: " --log-level 7`);
 
         // REDIRECT: All HTTP traffic (port 80) from clients on LAN to Node.js portal (port 3000)
-        await sudoExec(`iptables -t nat -A PREROUTING -i ${lanInterface} -p tcp --dport 80 -j REDIRECT --to-port ${PORT}`);
+        await sudoExec(`iptables -t nat -A PREROUTING -i ${lanSide} -p tcp --dport 80 -j REDIRECT --to-port ${PORT}`);
 
-        // REDIRECT: All DNS traffic (UDP 53) from clients on LAN (excluding the server itself) to the PisoWiFi server's DNS (dnsmasq)
-        await sudoExec(`iptables -t nat -A PREROUTING -i ${lanInterface} -p udp --dport 53 ! -s ${lanIpAddress} -j DNAT --to-destination ${lanIpAddress}:53`);
+        // REDIRECT: All DNS traffic (UDP 53) from clients on LAN (excluding the server itself) to dnsmasq on gateway
+        await sudoExec(`iptables -t nat -A PREROUTING -i ${lanSide} -p udp --dport 53 ! -s ${lanGatewayIp} -j DNAT --to-destination ${lanGatewayIp}:53`);
 
-        console.log('Network initialization complete.');
+        console.log('Network initialization complete (Bridge AP).');
     } catch (e) {
         console.error('Network init failed:', e.message);
     }
@@ -534,13 +499,8 @@ async function initTrafficControl() {
     try {
         console.log('Initializing Traffic Control (TC)...');
 
-        const settings = await new Promise((resolve, reject) => {
-            db.get(`SELECT value FROM settings WHERE key = 'lan_interface_name'`, [], (err, row) => {
-                if (err) return reject(err);
-                resolve(row ? row.value : 'enx00e04c680013');
-            });
-        });
-        const lanInterface = settings || 'enx00e04c680013';
+        // In bridge/AP mode, shape traffic on br0.
+        const lanInterface = 'br0';
 
         // Load IFB module for ingress shaping (Upload limit)
         try { await sudoExec('modprobe ifb numifbs=1'); } catch (e) {}
@@ -2225,7 +2185,7 @@ async function reapplyNatRulesFromDb() {
     });
 
     const wanInterface = settings.wan_interface_name || 'enp1s0';
-    const lanInterface = settings.lan_interface_name || 'enx00e04c680013';
+    const lanInterface = 'br0';
     const lanIpAddress = (settings.lan_ip_address || '10.0.0.1/24').split('/')[0];
 
     // NAT + FORWARD baseline
@@ -2975,8 +2935,14 @@ io.on('connection', (socket) => {
 // Idinagdag na API endpoint para sa pag-save ng network configuration
 app.post('/api/save-network', async (req, res) => {
     try {
+        // 1) Apply netplan (WAN+LAN)
         await applyNetworkConfig(req.body);
-        res.json({ success: true, message: "Network Updated!" });
+
+        // 2) Apply bridge/AP + DHCP using LAN CIDR (Debian)
+        // Force wifi interface name as per your Debian device.
+        await applyLanBridgeApSettings({ ...req.body, wifi_interface_name: 'wlp2s0' });
+
+        res.json({ success: true, message: "Network Updated! (LAN bridge AP + WiFi AP on same subnet)" });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }

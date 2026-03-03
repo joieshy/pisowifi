@@ -1056,17 +1056,24 @@ n        <th>Date/Time</th>
                             <select id="lan_interface_name" name="lan_interface_name" class="form-control" required>
                                 <option value="">Loading interfaces...</option>
                             </select>
+                            <p style="font-size: 0.8rem; color: #858796; margin-top: 8px;">
+                                Selected LAN interface will be bridged into <strong>br0</strong> and used as the LAN side for the captive portal.
+                            </p>
                         </div>
                         <div class="form-group">
                             <label>LAN IP Address (e.g., 10.0.0.1/24)</label>
                             <input type="text" id="lan_ip_address" name="lan_ip_address" placeholder="e.g., 10.0.0.1/24" class="form-control" required>
+                            <p style="font-size: 0.8rem; color: #858796; margin-top: 8px;">
+                                This subnet will also be used by the built-in WiFi AP (same IP range for both wired LAN and WiFi clients).
+                            </p>
                         </div>
                         <div class="form-group">
                             <label>LAN DNS Servers (comma-separated)</label>
                             <input type="text" id="lan_dns_servers" name="lan_dns_servers" placeholder="e.g., 8.8.8.8,8.8.4.4" class="form-control">
                         </div>
+
                         <button type="submit" class="btn btn-warning" style="width: 100%; color: white;">
-                            <i class="fas fa-save"></i> Apply Network Configuration
+                            <i class="fas fa-save"></i> Apply Network Configuration (LAN as AP + WiFi AP)
                         </button>
                         <div id="networkConfigMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">Network configuration applied!</div>
                     </form>
@@ -2808,7 +2815,7 @@ n        <th>Date/Time</th>
             }
         }
 
-        // Event listener for network interfaces form submission
+            // Event listener for network interfaces form submission
         document.getElementById('networkInterfacesForm').addEventListener('submit', async (e) => {
             e.preventDefault();
 
@@ -2823,6 +2830,17 @@ n        <th>Date/Time</th>
                 lan_dns_servers: document.getElementById('lan_dns_servers').value.split(',').map(s => s.trim()).filter(s => s)
             };
 
+            // Basic front-end validation for LAN CIDR (10.0.0.1/24)
+            const cidr = (payload.lan_ip_address || '').trim();
+            if (!/^\d+\.\d+\.\d+\.\d+\/\d+$/.test(cidr)) {
+                const msg = document.getElementById('networkConfigMsg');
+                msg.style.display = 'block';
+                msg.style.color = 'var(--danger-color)';
+                msg.innerText = 'Invalid LAN CIDR format. Example: 10.0.0.1/24';
+                setTimeout(() => msg.style.display = 'none', 5000);
+                return;
+            }
+
             try {
                 const res = await fetch('/api/save-network', {
                     method: 'POST',
@@ -2835,20 +2853,19 @@ n        <th>Date/Time</th>
                 if (result.success) {
                     msg.style.color = 'var(--success-color)';
                     msg.innerText = result.message || "Network Updated!";
-                    // No need to call fetchNetworkInterfaces() here, as the server handles the actual application
                 } else {
                     msg.style.color = 'var(--danger-color)';
                     msg.innerText = result.error || "Failed to update network.";
                 }
                 msg.style.display = 'block';
-                setTimeout(() => msg.style.display = 'none', 5000);
+                setTimeout(() => msg.style.display = 'none', 7000);
 
             } catch (error) {
                 const msg = document.getElementById('networkConfigMsg');
                 msg.style.color = 'var(--danger-color)';
                 msg.innerText = 'An error occurred while applying network configuration.';
                 msg.style.display = 'block';
-                setTimeout(() => msg.style.display = 'none', 5000);
+                setTimeout(() => msg.style.display = 'none', 7000);
                 console.error('Error applying network configuration:', error);
             }
         });
