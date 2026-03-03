@@ -18,14 +18,13 @@ app.set('trust proxy', true);
 
 if (os.platform() === 'linux') {
     try {
-        // Use sudoExec for firewall reset
-        sudoExec('iptables -F');
-        sudoExec('iptables -P FORWARD DROP');
-        sudoExec('iptables -A FORWARD -i enp1s0 -o enx00e04c680013 -m state --state RELATED,ESTABLISHED -j ACCEPT');
-        sudoExec('iptables -A FORWARD -i enx00e04c680013 -o enp1s0 -j DROP');
-        console.log('Firewall reset on startup');
+        // IMPORTANT:
+        // Do NOT hardcode interface names here.
+        // This project runs in bridge/AP mode where LAN side is br0.
+        // We also avoid forcing a blanket FORWARD DROP on startup that can override later rules.
+        console.log('Firewall reset on startup: skipped hardcoded rules (bridge mode uses dynamic rules).');
     } catch (e) {
-        console.log('Firewall reset failed');
+        console.log('Firewall startup block failed');
     }
 }
 
@@ -2650,7 +2649,7 @@ app.post('/api/superadmin/internet/allow', isAuthenticated, async (req, res) => 
 
         const settings = await new Promise((resolve, reject) => {
             db.all(
-                `SELECT key, value FROM settings WHERE key IN ('wan_interface_name')`,
+                `SELECT key, value FROM settings WHERE key IN ('wan_interface_name','lan_ip_address')`,
                 [],
                 (err, rows) => {
                     if (err) return reject(err);
@@ -2663,10 +2662,32 @@ app.post('/api/superadmin/internet/allow', isAuthenticated, async (req, res) => 
 
         const wan = settings.wan_interface_name || 'enp1s0';
         const lan = 'br0';
+        const lanIp = (settings.lan_ip_address || '10.0.0.1/24').split('/')[0];
 
-        // Remove drop rule then add ACCEPT rule (top) to allow LAN->WAN globally
-        await sudoExec(`iptables -D FORWARD -i ${lan} -o ${wan} -j DROP || true`);
+        // Make sure forwarding + NAT baseline is present.
+        // (initNetwork normally does this; we re-apply the critical parts here for reliability.)
+        await sudoExec('sysctl -w net.ipv4.ip_forward=1');
+
+        // Ensure MASQUERADE exists (idempotent)
+        await sudoExec(`iptables -t nat -C POSTROUTING -o ${wan} -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -o ${wan} -j MASQUERADE`);
+
+        // IMPORTANT:
+        // Allowing internet is not enough if Captive Portal DNS/HTTP redirect keeps catching traffic.
+        // So we also add NAT PREROUTING bypass for ALL LAN clients (except portal IP),
+        // meaning: clients go directly to the internet, not forced to the portal.
+        await sudoExec(`while iptables -t nat -D PREROUTING -i ${lan} -j ACCEPT 2>/dev/null; do :; done`);
+        await sudoExec(`iptables -t nat -I PREROUTING 1 -i ${lan} ! -d ${lanIp} -j ACCEPT`);
+
+        // iptables is order-sensitive: remove older DROP/REJECT that may be above our ACCEPT
+        await sudoExec(`while iptables -D FORWARD -i ${lan} -o ${wan} -j DROP 2>/dev/null; do :; done`);
+        await sudoExec(`while iptables -D FORWARD -i ${lan} -o ${wan} -j REJECT 2>/dev/null; do :; done`);
+        await sudoExec(`while iptables -D FORWARD -i ${lan} -o ${wan} -j ACCEPT 2>/dev/null; do :; done`);
+
+        // Allow LAN->WAN globally at top
         await sudoExec(`iptables -I FORWARD 1 -i ${lan} -o ${wan} -j ACCEPT`);
+
+        // Keep established return traffic (idempotent)
+        await sudoExec(`iptables -C FORWARD -i ${wan} -o ${lan} -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || iptables -A FORWARD -i ${wan} -o ${lan} -m state --state RELATED,ESTABLISHED -j ACCEPT`);
 
         return res.json({ success: true, message: 'Internet allowed for all clients.' });
     } catch (e) {
