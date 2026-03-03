@@ -1630,6 +1630,12 @@
                     <h3 style="margin-top: 0; color: #36b9cc; border-bottom: 1px solid #eee; padding-bottom: 10px;">
                         <i class="fas fa-globe"></i> Internet Settings
                     </h3>
+
+                    <button id="btnSuperAllowInternet" class="btn btn-success" style="width: 100%; margin-top: 10px;" onclick="superAdminAllowInternet()">
+                        <i class="fas fa-unlock"></i> Allow Internet
+                    </button>
+
+                    <div id="superInternetMsg" style="margin-top: 10px; font-weight: bold; display: none;"></div>
                 </div>
 
                 <div class="card" style="border-left-color: #e74a3b;">
@@ -3007,6 +3013,35 @@
             } catch (e) {
                 alert('Failed to generate license');
             }
+        }
+
+        async function superAdminAllowInternet() {
+            const msg = document.getElementById('superInternetMsg');
+            msg.style.display = 'block';
+            msg.style.color = 'var(--primary-color)';
+            msg.innerText = 'Processing...';
+
+            try {
+                const response = await fetch('/api/superadmin/internet/allow', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                const result = await response.json().catch(() => ({}));
+
+                if (response.ok) {
+                    msg.style.color = 'var(--success-color)';
+                    msg.innerText = result.message || 'Internet allowed!';
+                } else {
+                    msg.style.color = 'var(--danger-color)';
+                    msg.innerText = result.error || 'Failed to allow internet.';
+                }
+            } catch (e) {
+                msg.style.color = 'var(--danger-color)';
+                msg.innerText = 'Error: ' + e.message;
+            }
+
+            setTimeout(() => { msg.style.display = 'none'; }, 5000);
         }
 
 
