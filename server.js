@@ -43,14 +43,37 @@ app.use(session({
     }
 }));
 
-// Force redirect to port 3000 for 10.0.0.1 to fix image loading issues
+// LAN-only force redirect to 10.0.0.1:3000
+// - Allows WAN access via http://<WAN-IP>:3000 without being redirected to 10.0.0.1
+// - But forces any LAN client access (10.0.0.0/24) to always land on http://10.0.0.1:3000
 app.use((req, res, next) => {
-    const host = req.get('host');
-    if (host && host.includes('10.0.0.1') && !host.includes(':3000')) {
-        console.log(`Redirecting client from ${host} to port 3000`);
+    const host = (req.get('host') || '').trim();
+
+    // Express may give IPv6-mapped IPv4 like ::ffff:10.0.0.50
+    const rawIp = (req.ip || req.connection?.remoteAddress || '').trim();
+    const ip = rawIp.replace('::ffff:', '');
+
+    const isLanClient = ip.startsWith('10.0.0.');
+    const isLocalhost = ip === '127.0.0.1' || ip === '::1';
+
+    if (!isLocalhost && isLanClient) {
+        // If user typed WAN-IP or hostname while inside LAN, force them to portal IP
+        const needsRedirect =
+            !host.startsWith('10.0.0.1') ||
+            (host.startsWith('10.0.0.1') && !host.includes(':3000'));
+
+        if (needsRedirect) {
+            res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+            return res.redirect(`http://10.0.0.1:3000${req.originalUrl}`);
+        }
+    }
+
+    // Keep the original behavior: if host is 10.0.0.1 without :3000, add :3000
+    if (host && host.startsWith('10.0.0.1') && !host.includes(':3000')) {
         res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
         return res.redirect(`http://10.0.0.1:3000${req.originalUrl}`);
     }
+
     next();
 });
 
@@ -2950,28 +2973,7 @@ app.get('/redirect', (req, res) => {
     res.redirect('http://10.0.0.1:3000');
 });
 
-function getPreferredBindHost() {
-    // Force bind to the LAN/router IP (default: 10.0.0.1) so portal is always 10.0.0.1:3000
-    // If the IP is not yet assigned at startup, fallback to 0.0.0.0 to avoid EADDRNOTAVAIL.
-    const DEFAULT_LAN_IP = '10.0.0.1';
-
-    const envHost = (process.env.HOST || '').trim();
-    if (envHost) return envHost;
-
-    const hasIp = (ip) => {
-        const ifaces = os.networkInterfaces();
-        for (const [, addrs] of Object.entries(ifaces)) {
-            for (const a of addrs || []) {
-                if (a && a.family === 'IPv4' && a.address === ip) return true;
-            }
-        }
-        return false;
-    };
-
-    return hasIp(DEFAULT_LAN_IP) ? DEFAULT_LAN_IP : '0.0.0.0';
-}
-
-const HOST = getPreferredBindHost();
+const HOST = '0.0.0.0'; // Bind on all interfaces so it's reachable via LAN + WAN IPs
 server.listen(PORT, HOST, () => {
     console.log(`Server running on http://${HOST}:${PORT}`);
 });
