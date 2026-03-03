@@ -1631,11 +1631,23 @@
                         <i class="fas fa-globe"></i> Internet Settings
                     </h3>
 
+                    <div style="font-size: 0.85rem; color: #858796; margin-bottom: 10px;">
+                        Kung lumalabas ang error na <strong>"iptables is not installed"</strong>, i-install muna ang required packages.
+                    </div>
+
+                    <button id="btnSuperInstallDeps" class="btn btn-warning" style="width: 100%; margin-top: 10px; color: white;" onclick="superAdminInstallDeps()">
+                        <i class="fas fa-download"></i> Install Dependencies (iptables)
+                    </button>
+
                     <button id="btnSuperAllowInternet" class="btn btn-success" style="width: 100%; margin-top: 10px;" onclick="superAdminAllowInternet()">
                         <i class="fas fa-unlock"></i> Allow Internet
                     </button>
 
-                    <div id="superInternetMsg" style="margin-top: 10px; font-weight: bold; display: none;"></div>
+                    <button id="btnSuperEnableCaptive" class="btn btn-secondary" style="width: 100%; margin-top: 10px;" onclick="superAdminEnableCaptive()">
+                        <i class="fas fa-lock"></i> Back to Captive Portal
+                    </button>
+
+                    <div id="superInternetMsg" style="margin-top: 10px; font-weight: bold; display: none; white-space: pre-line;"></div>
                 </div>
 
                 <div class="card" style="border-left-color: #e74a3b;">
@@ -3015,6 +3027,35 @@
             }
         }
 
+        async function superAdminInstallDeps() {
+            const msg = document.getElementById('superInternetMsg');
+            msg.style.display = 'block';
+            msg.style.color = 'var(--primary-color)';
+            msg.innerText = 'Installing dependencies (iptables)...\nThis may take 1-3 minutes.';
+
+            try {
+                const response = await fetch('/api/system/dependencies/install', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                const result = await response.json().catch(() => ({}));
+
+                if (response.ok && result.success) {
+                    msg.style.color = 'var(--success-color)';
+                    msg.innerText = result.message || 'Dependencies installed!';
+                } else {
+                    msg.style.color = 'var(--danger-color)';
+                    msg.innerText = result.error || 'Failed to install dependencies.';
+                }
+            } catch (e) {
+                msg.style.color = 'var(--danger-color)';
+                msg.innerText = 'Error: ' + e.message;
+            }
+
+            setTimeout(() => { msg.style.display = 'none'; }, 8000);
+        }
+
         async function superAdminAllowInternet() {
             const msg = document.getElementById('superInternetMsg');
             msg.style.display = 'block';
@@ -3041,7 +3082,36 @@
                 msg.innerText = 'Error: ' + e.message;
             }
 
-            setTimeout(() => { msg.style.display = 'none'; }, 5000);
+            setTimeout(() => { msg.style.display = 'none'; }, 7000);
+        }
+
+        async function superAdminEnableCaptive() {
+            const msg = document.getElementById('superInternetMsg');
+            msg.style.display = 'block';
+            msg.style.color = 'var(--primary-color)';
+            msg.innerText = 'Enabling captive portal mode...';
+
+            try {
+                const response = await fetch('/api/superadmin/internet/captive', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                const result = await response.json().catch(() => ({}));
+
+                if (response.ok) {
+                    msg.style.color = 'var(--success-color)';
+                    msg.innerText = result.message || 'Captive portal mode enabled!';
+                } else {
+                    msg.style.color = 'var(--danger-color)';
+                    msg.innerText = result.error || 'Failed to enable captive portal mode.';
+                }
+            } catch (e) {
+                msg.style.color = 'var(--danger-color)';
+                msg.innerText = 'Error: ' + e.message;
+            }
+
+            setTimeout(() => { msg.style.display = 'none'; }, 7000);
         }
 
 

@@ -2712,6 +2712,91 @@ app.post('/api/superadmin/internet/allow', isAuthenticated, async (req, res) => 
     }
 });
 
+/**
+ * Super Admin: Enable captive portal mode (revert global bypass)
+ * - Removes NAT PREROUTING ACCEPT bypass rules added by /internet/allow
+ * - Ensures captive redirect rules exist (80 -> 3000, DNS -> gateway)
+ * - Ensures LAN->WAN is blocked by default (users allowed via allowMac())
+ */
+app.post('/api/superadmin/internet/captive', isAuthenticated, async (req, res) => {
+    try {
+        if (os.platform() !== 'linux') {
+            return res.json({ success: true, message: 'Captive portal mode enabled (simulated on non-Linux).' });
+        }
+
+        const hasIptables = (() => {
+            try {
+                execSync('iptables -V', { stdio: 'ignore' });
+                return true;
+            } catch (e1) {
+                try {
+                    execSync('which iptables', { stdio: 'ignore' });
+                    return true;
+                } catch (e2) {
+                    return false;
+                }
+            }
+        })();
+
+        if (!hasIptables) {
+            return res.status(500).json({
+                success: false,
+                error:
+                    'iptables is not installed on this Linux system.\n' +
+                    'Fix (Debian/Ubuntu): sudo apt-get update && sudo apt-get install -y iptables\n' +
+                    'Note: If your distro uses nftables, install iptables-nft/iptables package that provides the iptables command.'
+            });
+        }
+
+        const settings = await new Promise((resolve, reject) => {
+            db.all(
+                `SELECT key, value FROM settings WHERE key IN ('wan_interface_name','lan_ip_address')`,
+                [],
+                (err, rows) => {
+                    if (err) return reject(err);
+                    const s = {};
+                    rows.forEach(r => s[r.key] = r.value);
+                    resolve(s);
+                }
+            );
+        });
+
+        const wan = settings.wan_interface_name || 'enp1s0';
+        const lan = 'br0';
+        const lanIp = (settings.lan_ip_address || '10.0.0.1/24').split('/')[0];
+
+        await sudoExec('sysctl -w net.ipv4.ip_forward=1');
+
+        // Remove ALL global bypass rules created by "Allow Internet"
+        // - We remove both patterns for compatibility with older rules:
+        //   (1) -i br0 ! -d <lanIp> -j ACCEPT
+        //   (2) ! -d <lanIp> -i br0 -j ACCEPT
+        // Also remove accidental "-i br0 -j ACCEPT" if it exists.
+        await sudoExec(`while iptables -t nat -D PREROUTING -i ${lan} ! -d ${lanIp} -j ACCEPT 2>/dev/null; do :; done`);
+        await sudoExec(`while iptables -t nat -D PREROUTING ! -d ${lanIp} -i ${lan} -j ACCEPT 2>/dev/null; do :; done`);
+        await sudoExec(`while iptables -t nat -D PREROUTING -i ${lan} -j ACCEPT 2>/dev/null; do :; done`);
+
+        // Ensure captive redirect rules exist (idempotent)
+        await sudoExec(`iptables -t nat -C PREROUTING -i ${lan} -p tcp --dport 80 -j REDIRECT --to-port ${PORT} 2>/dev/null || iptables -t nat -A PREROUTING -i ${lan} -p tcp --dport 80 -j REDIRECT --to-port ${PORT}`);
+        await sudoExec(`iptables -t nat -C PREROUTING -i ${lan} -p udp --dport 53 ! -s ${lanIp} -j DNAT --to-destination ${lanIp}:53 2>/dev/null || iptables -t nat -A PREROUTING -i ${lan} -p udp --dport 53 ! -s ${lanIp} -j DNAT --to-destination ${lanIp}:53`);
+
+        // Ensure MASQUERADE exists (keep NAT ready for paid users)
+        await sudoExec(`iptables -t nat -C POSTROUTING -o ${wan} -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -o ${wan} -j MASQUERADE`);
+
+        // Ensure default block (LAN->WAN) exists.
+        // NOTE: We do NOT flush entire FORWARD chain; we only ensure a DROP rule exists.
+        await sudoExec(`iptables -C FORWARD -i ${lan} -o ${wan} -j DROP 2>/dev/null || iptables -A FORWARD -i ${lan} -o ${wan} -j DROP`);
+
+        // Ensure established return traffic (idempotent)
+        await sudoExec(`iptables -C FORWARD -i ${wan} -o ${lan} -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || iptables -A FORWARD -i ${wan} -o ${lan} -m state --state RELATED,ESTABLISHED -j ACCEPT`);
+
+        return res.json({ success: true, message: 'Captive portal mode enabled (bypass removed).' });
+    } catch (e) {
+        console.error('Superadmin captive mode error:', e.message);
+        return res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // License: Generate (Super Admin)
 app.post('/api/license/generate', isAuthenticated, (req, res) => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
