@@ -2500,6 +2500,96 @@ app.post('/api/apply-wan-settings', isAuthenticated, async (req, res) => {
     }
 });
 
+/**
+ * System dependencies (Debian/Ubuntu):
+ * - iptables (NAT/captive portal rules)
+ * - dhclient (isc-dhcp-client) (WAN DHCP lease)
+ *
+ * These are OS-level packages, but we can auto-install them via apt if the admin is root/sudo.
+ */
+app.get('/api/system/dependencies/status', isAuthenticated, async (req, res) => {
+    try {
+        if (os.platform() !== 'linux') {
+            return res.json({
+                platform: os.platform(),
+                installed: {
+                    iptables: true,
+                    dhclient: true
+                },
+                missing: [],
+                note: 'Non-Linux platform: dependencies check is simulated.'
+            });
+        }
+
+        const hasBin = (bin) => {
+            try {
+                execSync(`command -v ${bin}`, { stdio: 'ignore' });
+                return true;
+            } catch (e) {
+                return false;
+            }
+        };
+
+        const installed = {
+            iptables: hasBin('iptables'),
+            dhclient: hasBin('dhclient')
+        };
+
+        const missing = Object.entries(installed)
+            .filter(([, ok]) => !ok)
+            .map(([k]) => k);
+
+        res.json({
+            platform: os.platform(),
+            installed,
+            missing
+        });
+    } catch (e) {
+        res.status(500).json({ error: `Failed to check dependencies: ${e.message}` });
+    }
+});
+
+app.post('/api/system/dependencies/install', isAuthenticated, async (req, res) => {
+    try {
+        if (os.platform() !== 'linux') {
+            return res.json({
+                success: true,
+                message: 'Non-Linux platform: dependencies install is simulated.'
+            });
+        }
+
+        // Minimal: iptables + dhclient (isc-dhcp-client)
+        // NOTE: dnsmasq is used in initNetwork(); user can still install it manually if missing.
+        const pkgs = ['iptables', 'isc-dhcp-client'];
+
+        const hasAptGet = (() => {
+            try {
+                execSync('command -v apt-get', { stdio: 'ignore' });
+                return true;
+            } catch (e) {
+                return false;
+            }
+        })();
+
+        if (!hasAptGet) {
+            return res.status(500).json({ error: 'apt-get not found. This installer currently supports Debian/Ubuntu (apt-based) only.' });
+        }
+
+        // Run apt-get update + install
+        // Using sudoExec so it works whether running as root or sudo-capable user.
+        await sudoExec('apt-get update');
+        await sudoExec(`DEBIAN_FRONTEND=noninteractive apt-get install -y ${pkgs.join(' ')}`);
+
+        res.json({
+            success: true,
+            message: `Installed: ${pkgs.join(', ')}`
+        });
+    } catch (e) {
+        console.error('Dependencies install failed:', e.message);
+        res.status(500).json({ error: `Failed to install dependencies: ${e.message}` });
+    }
+});
+
 // API to get WAN IP address
 app.get('/api/wan-ip', isAuthenticated, async (req, res) => {
     try {
