@@ -97,6 +97,20 @@ function computeDhcpRange(gatewayIp, prefix) {
     };
 }
 
+function hasIptables() {
+    try {
+        require('child_process').execSync('iptables -V', { stdio: 'ignore' });
+        return true;
+    } catch (e1) {
+        try {
+            require('child_process').execSync('which iptables', { stdio: 'ignore' });
+            return true;
+        } catch (e2) {
+            return false;
+        }
+    }
+}
+
 // Helper function to execute sudo commands with fallback
 async function sudoExec(command) {
     try {
@@ -603,13 +617,18 @@ address=/dns.msftncsi.com/${gatewayIp}
             // Prefer absolute path on Debian (often installed under /usr/sbin)
 await sudoExec('/usr/sbin/dnsmasq --conf-file=/etc/dnsmasq.conf --conf-dir=/etc/dnsmasq.d || dnsmasq --conf-file=/etc/dnsmasq.conf --conf-dir=/etc/dnsmasq.d');
 
-// Ensure firewall allows DHCP/DNS to the gateway on LAN bridge
-await sudoExec(`iptables -D INPUT -i ${bridge} -p udp --dport 67 -j ACCEPT || true`);
-await sudoExec(`iptables -D INPUT -i ${bridge} -p udp --dport 53 -j ACCEPT || true`);
-await sudoExec(`iptables -D INPUT -i ${bridge} -p tcp --dport 53 -j ACCEPT || true`);
-await sudoExec(`iptables -I INPUT 1 -i ${bridge} -p udp --dport 67 -j ACCEPT`);
-await sudoExec(`iptables -I INPUT 1 -i ${bridge} -p udp --dport 53 -j ACCEPT`);
-await sudoExec(`iptables -I INPUT 1 -i ${bridge} -p tcp --dport 53 -j ACCEPT`);
+            // Ensure firewall allows DHCP/DNS to the gateway on LAN bridge
+            // If iptables is missing (some minimal/nftables-only images), skip these rules and show an actionable note.
+            if (hasIptables()) {
+                await sudoExec(`iptables -D INPUT -i ${bridge} -p udp --dport 67 -j ACCEPT || true`);
+                await sudoExec(`iptables -D INPUT -i ${bridge} -p udp --dport 53 -j ACCEPT || true`);
+                await sudoExec(`iptables -D INPUT -i ${bridge} -p tcp --dport 53 -j ACCEPT || true`);
+                await sudoExec(`iptables -I INPUT 1 -i ${bridge} -p udp --dport 67 -j ACCEPT`);
+                await sudoExec(`iptables -I INPUT 1 -i ${bridge} -p udp --dport 53 -j ACCEPT`);
+                await sudoExec(`iptables -I INPUT 1 -i ${bridge} -p tcp --dport 53 -j ACCEPT`);
+            } else {
+                console.warn('[Network] iptables not found. Skipping INPUT allow rules for DHCP/DNS on br0. Install it: sudo apt-get update && sudo apt-get install -y iptables');
+            }
         };
 
         await restartDnsmasq();

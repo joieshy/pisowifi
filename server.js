@@ -2638,12 +2638,28 @@ app.post('/api/superadmin/internet/allow', isAuthenticated, async (req, res) => 
         }
 
         // If iptables is not installed, return a clear message (so button doesn't look "broken")
-        try {
-            execSync('command -v iptables', { stdio: 'ignore' });
-        } catch (e) {
+        // NOTE: "command -v" is not reliable under non-bash shells. Prefer "which".
+        const hasIptables = (() => {
+            try {
+                execSync('iptables -V', { stdio: 'ignore' });
+                return true;
+            } catch (e1) {
+                try {
+                    execSync('which iptables', { stdio: 'ignore' });
+                    return true;
+                } catch (e2) {
+                    return false;
+                }
+            }
+        })();
+
+        if (!hasIptables) {
             return res.status(500).json({
                 success: false,
-                error: 'iptables is not installed on this Linux system. Install it first (Debian/Ubuntu: apt-get install -y iptables).'
+                error:
+                    'iptables is not installed on this Linux system.\n' +
+                    'Fix (Debian/Ubuntu): sudo apt-get update && sudo apt-get install -y iptables\n' +
+                    'Note: If your distro uses nftables, install iptables-nft/iptables package that provides the iptables command.'
             });
         }
 
