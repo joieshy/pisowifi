@@ -123,7 +123,7 @@ async function applyNetworkConfig(config) {
 
 // 1. WiFi Settings - Configure hostapd for WiFi access point
 async function applyWifiSettings(config) {
-    const { wifi_password, wifi_security, wifi_max_users, wifi_transmit_power, wifi_hidden, wifi_channel } = config;
+    const { wifi_password, wifi_security, wifi_max_users, wifi_transmit_power, wifi_hidden } = config;
 
     if (process.platform !== 'linux') {
         console.log('[Simulated] WiFi settings skipped on non-Linux platform.');
@@ -137,13 +137,6 @@ driver=nl80211
 ssid=PisoWiFi
 country_code=PH
 `;
-
-        // Channel settings
-        if (wifi_channel && wifi_channel !== 'auto') {
-            hostapdConfig += `channel=${wifi_channel}\n`;
-        } else {
-            hostapdConfig += `channel=0\n`; // Auto channel
-        }
 
         // Security settings
         if (wifi_security === 'wpa2') {
@@ -224,7 +217,7 @@ async function applyAllNetworkSettings(config) {
 
     try {
         // Apply each setting category
-        if (config.wifi_password || config.wifi_security || config.wifi_max_users || config.wifi_transmit_power || config.wifi_hidden || config.wifi_channel) {
+        if (config.wifi_password || config.wifi_security || config.wifi_max_users || config.wifi_transmit_power || config.wifi_hidden) {
             results.push(await applyWifiSettings(config));
         }
 

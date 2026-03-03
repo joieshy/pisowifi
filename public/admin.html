@@ -1028,7 +1028,7 @@ n        <th>Date/Time</th>
                     <!-- WAN Apply Button and IP Display -->
                     <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px;">
                         <button type="button" onclick="applyWanSettings()" class="btn btn-primary" style="width: 100%; padding: 10px 20px; border-radius: 8px; font-size: 1rem;">
-                            <i class="fas fa-check-circle" style="margin-right: 8px;"></i> Apply WAN Settings
+                            <i class="fas fa-check-circle" style="margin-right: 8px;"></i> Select
                         </button>
                         <button type="button" onclick="fetchWanIp()" class="btn btn-secondary" style="width: 100%; padding: 10px 20px; border-radius: 8px; font-size: 1rem;">
                             <i class="fas fa-sync" style="margin-right: 8px;"></i> Refresh WAN IP
@@ -1136,8 +1136,6 @@ n        <th>Date/Time</th>
                     </form>
                     <div id="wifiSettingsMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">WiFi settings saved!</div>
                 </div>
-
-
                 <!-- Port Triggering -->
                 <div class="card">
                     <h3 style="margin-top: 0; color: #6f42c1; border-bottom: 1px solid #eee; padding-bottom: 10px;">
@@ -2763,13 +2761,6 @@ n        <th>Date/Time</th>
             if (document.getElementById('wifi_max_users')) document.getElementById('wifi_max_users').value = '';
             if (document.getElementById('wifi_transmit_power')) document.getElementById('wifi_transmit_power').value = '';
             if (document.getElementById('wifi_hidden')) document.getElementById('wifi_hidden').value = 'false';
-            if (document.getElementById('wifi_channel')) document.getElementById('wifi_channel').value = 'auto';
-
-
-            if (document.getElementById('burst_download')) document.getElementById('burst_download').value = '';
-            if (document.getElementById('burst_upload')) document.getElementById('burst_upload').value = '';
-            if (document.getElementById('burst_threshold')) document.getElementById('burst_threshold').value = '';
-            if (document.getElementById('burst_time')) document.getElementById('burst_time').value = '';
 
             toggleStaticWanFields();
 
@@ -3494,51 +3485,44 @@ n        <th>Date/Time</th>
             // WAN-specific functions
             async function applyWanSettings() {
                 const wanInterfaceName = document.getElementById('wan_interface_name').value;
-                const wanConfigType = document.getElementById('wan_config_type').value;
-                const wanIpAddress = document.getElementById('wan_ip_address').value;
-                const wanGateway = document.getElementById('wan_gateway').value;
-                const wanDnsServers = document.getElementById('wan_dns_servers').value.split(',').map(s => s.trim()).filter(s => s);
 
                 if (!wanInterfaceName) {
                     alert('Please select a WAN interface.');
                     return;
                 }
 
-                const payload = {
-                    wan_interface_name: wanInterfaceName,
-                    wan_config_type: wanConfigType,
-                    wan_ip_address: wanConfigType === 'static' ? wanIpAddress : '',
-                    wan_gateway: wanConfigType === 'static' ? wanGateway : '',
-                    wan_dns_servers: wanConfigType === 'static' ? wanDnsServers : []
-                };
+                // IMPORTANT:
+                // /api/network/wan/select expects ONLY { wan_interface_name }
+                // and will "activate" it as WAN ethernet (bring up + DHCP + re-apply NAT rules).
+                const payload = { wan_interface_name: wanInterfaceName };
 
                 const msg = document.getElementById('wanApplyMsg');
                 msg.style.display = 'block';
                 msg.style.color = 'var(--primary-color)';
-                msg.innerText = 'Applying WAN settings...';
+                msg.innerText = 'Selecting WAN interface...';
 
                 try {
-                    const response = await fetch('/api/apply-wan-settings', {
+                    const response = await fetch('/api/network/wan/select', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload)
                     });
 
                     const result = await response.json();
-                    
+
                     if (response.ok) {
                         msg.style.color = 'var(--success-color)';
-                        msg.innerText = result.message || 'WAN settings applied successfully!';
-                        
-                        // After applying WAN settings, fetch the WAN IP
-                        setTimeout(fetchWanIp, 2000);
+                        msg.innerText = result.message || 'WAN interface selected successfully!';
+
+                        // After selecting WAN interface, fetch the WAN IP
+                        setTimeout(fetchWanIp, 1500);
                     } else {
                         msg.style.color = 'var(--danger-color)';
-                        msg.innerText = result.error || 'Failed to apply WAN settings.';
+                        msg.innerText = result.error || 'Failed to select WAN interface.';
                     }
                 } catch (error) {
                     msg.style.color = 'var(--danger-color)';
-                    msg.innerText = 'Error applying WAN settings: ' + error.message;
+                    msg.innerText = 'Error selecting WAN interface: ' + error.message;
                 }
 
                 setTimeout(() => msg.style.display = 'none', 5000);

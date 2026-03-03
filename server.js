@@ -769,7 +769,6 @@ db.serialize(() => {
         ['merchant_id', ''],
         ['anti_tethering', 'false'],
         ['mac_filter_mode', 'disabled'], // disabled, allow, block
-        ['wifi_channel', 'auto'],
         ['qos_enabled', 'false'],
         ['qos_gaming_priority', 'high'],
         ['qos_streaming_priority', 'medium'],
@@ -797,11 +796,6 @@ db.serialize(() => {
         ['wifi_max_users', '50'],
         ['wifi_transmit_power', '100'],
         ['wifi_hidden', 'false'],
-        // NEW: Wireless Advanced
-        ['wifi_isolation', 'false'],
-        ['wifi_beacon_interval', '100'],
-        ['wifi_rts_cts', '2347'],
-        ['wifi_dtIM', '1']
     ];
 
     defaultSettings.forEach(setting => {
@@ -2174,13 +2168,7 @@ app.post('/api/network/clear', isAuthenticated, (req, res) => {
         'wifi_max_users',
         'wifi_transmit_power',
         'wifi_hidden',
-        'wifi_channel',
 
-        // Wireless advanced
-        'wifi_isolation',
-        'wifi_beacon_interval',
-        'wifi_rts_cts',
-        'wifi_dtIM'
     ];
 
     db.serialize(() => {
@@ -2196,6 +2184,70 @@ app.post('/api/network/clear', isAuthenticated, (req, res) => {
         });
     });
 });
+
+/**
+ * Re-apply NAT + core captive portal forwarding rules based on current DB settings.
+ * Debian-compatible (iptables + iproute2).
+ *
+ * NOTE: This does not change interface IPs; it only updates iptables rules.
+ */
+async function reapplyNatRulesFromDb() {
+    if (os.platform() !== 'linux') return;
+
+    const settings = await new Promise((resolve, reject) => {
+        db.all(
+            `SELECT key, value FROM settings 
+             WHERE key IN ('wan_interface_name','lan_interface_name','lan_ip_address')`,
+            [],
+            (err, rows) => {
+                if (err) return reject(err);
+                const s = {};
+                rows.forEach(r => s[r.key] = r.value);
+                resolve(s);
+            }
+        );
+    });
+
+    const wanInterface = settings.wan_interface_name || 'enp1s0';
+    const lanInterface = settings.lan_interface_name || 'enx00e04c680013';
+    const lanIpAddress = (settings.lan_ip_address || '10.0.0.1/24').split('/')[0];
+
+    // NAT + FORWARD baseline
+    await sudoExec('iptables -t nat -F PREROUTING || true');
+    await sudoExec('iptables -t nat -F POSTROUTING || true');
+
+    // Basic accept rules
+    await sudoExec(`iptables -D INPUT -i ${lanInterface} -j ACCEPT || true`);
+    await sudoExec(`iptables -A INPUT -i ${lanInterface} -j ACCEPT`);
+    await sudoExec('iptables -D INPUT -i lo -j ACCEPT || true');
+    await sudoExec('iptables -A INPUT -i lo -j ACCEPT');
+
+    // MASQUERADE on selected WAN
+    await sudoExec(`iptables -t nat -A POSTROUTING -o ${wanInterface} -j MASQUERADE`);
+
+    // DNS allow
+    await sudoExec('iptables -D FORWARD -p udp --dport 53 -j ACCEPT || true');
+    await sudoExec('iptables -D FORWARD -p udp --sport 53 -j ACCEPT || true');
+    await sudoExec('iptables -I FORWARD -p udp --dport 53 -j ACCEPT');
+    await sudoExec('iptables -I FORWARD -p udp --sport 53 -j ACCEPT');
+
+    // Established back to LAN
+    await sudoExec(`iptables -D FORWARD -i ${wanInterface} -o ${lanInterface} -m state --state RELATED,ESTABLISHED -j ACCEPT || true`);
+    await sudoExec(`iptables -A FORWARD -i ${wanInterface} -o ${lanInterface} -m state --state RELATED,ESTABLISHED -j ACCEPT`);
+
+    // Default drop LAN -> WAN (users are allowed via allowMac())
+    await sudoExec(`iptables -D FORWARD -i ${lanInterface} -o ${wanInterface} -j DROP || true`);
+    await sudoExec(`iptables -A FORWARD -i ${lanInterface} -o ${wanInterface} -j DROP`);
+
+    // Captive portal redirects
+    await sudoExec(`iptables -t nat -D PREROUTING -i ${lanInterface} -p tcp --dport 80 -j REDIRECT --to-port ${PORT} || true`);
+    await sudoExec(`iptables -t nat -A PREROUTING -i ${lanInterface} -p tcp --dport 80 -j REDIRECT --to-port ${PORT}`);
+
+    await sudoExec(`iptables -t nat -D PREROUTING -i ${lanInterface} -p udp --dport 53 ! -s ${lanIpAddress} -j DNAT --to-destination ${lanIpAddress}:53 || true`);
+    await sudoExec(`iptables -t nat -A PREROUTING -i ${lanInterface} -p udp --dport 53 ! -s ${lanIpAddress} -j DNAT --to-destination ${lanIpAddress}:53`);
+
+    console.log(`[Network] Re-applied NAT rules: WAN=${wanInterface}, LAN=${lanInterface}`);
+}
 
 // API to get network interface settings
 app.get('/api/network/interfaces', isAuthenticated, (req, res) => {
@@ -2268,6 +2320,99 @@ app.post('/api/network/interfaces', isAuthenticated, async (req, res) => {
     } catch (e) {
         console.error('Failed to apply Netplan configuration:', e.message);
         res.status(500).json({ error: `Failed to apply network configuration: ${e.message}` });
+    }
+});
+
+/**
+ * Debian-safe WAN selection:
+ * - bring interface up
+ * - request DHCP lease (dhclient)
+ * - save wan_interface_name to DB
+ * - re-apply NAT rules using the newly selected WAN
+ */
+app.post('/api/network/wan/select', isAuthenticated, async (req, res) => {
+    const { wan_interface_name } = req.body;
+
+    if (!wan_interface_name) {
+        return res.status(400).json({ error: 'WAN interface name is required.' });
+    }
+
+    // Save WAN settings to database (force DHCP for this "Select" action)
+    db.serialize(() => {
+        const stmt = db.prepare(`UPDATE settings SET value = ? WHERE key = ?`);
+        stmt.run(wan_interface_name, 'wan_interface_name');
+        stmt.run('dhcp', 'wan_config_type');
+        stmt.run('', 'wan_ip_address');
+        stmt.run('', 'wan_gateway');
+        stmt.run('', 'wan_dns_servers');
+        stmt.finalize();
+    });
+
+    if (os.platform() !== 'linux') {
+        return res.json({ success: true, message: `WAN interface selected (simulated): ${wan_interface_name}` });
+    }
+
+    try {
+        // Validate interface exists
+        if (!fs.existsSync(`/sys/class/net/${wan_interface_name}`)) {
+            return res.status(400).json({ error: `Interface not found: ${wan_interface_name}` });
+        }
+        if (wan_interface_name === 'lo') {
+            return res.status(400).json({ error: 'Loopback interface is not valid for WAN.' });
+        }
+
+        const which = (bin) => {
+            try {
+                execSync(`command -v ${bin}`, { stdio: 'ignore' });
+                return true;
+            } catch (e) {
+                return false;
+            }
+        };
+
+        const getInterfaceIpv4 = (iface) => {
+            try {
+                const output = execSync(`ip -4 addr show ${iface} 2>/dev/null`).toString();
+                const match = output.match(/inet\s+(\d+\.\d+\.\d+\.\d+)/);
+                return match ? match[1] : null;
+            } catch (e) {
+                return null;
+            }
+        };
+
+        // Bring interface up
+        await sudoExec(`ip link set dev ${wan_interface_name} up`);
+
+        // Debian-safe DHCP renew with fallbacks
+        if (which('dhclient')) {
+            await sudoExec(`dhclient -r ${wan_interface_name} || true`);
+            await sudoExec(`dhclient -v ${wan_interface_name}`);
+        } else if (which('dhcpcd')) {
+            await sudoExec(`dhcpcd -k ${wan_interface_name} || true`);
+            await sudoExec(`dhcpcd ${wan_interface_name}`);
+        } else if (which('udhcpc')) {
+            await sudoExec(`udhcpc -i ${wan_interface_name} -q -n`);
+        } else {
+            return res.status(500).json({
+                error: 'No DHCP client found on system. Install isc-dhcp-client (dhclient) or dhcpcd5, or provide udhcpc.'
+            });
+        }
+
+        // Verify we got an IPv4 address
+        const wanIp = getInterfaceIpv4(wan_interface_name);
+        if (!wanIp) {
+            return res.status(500).json({
+                error: `DHCP did not assign an IPv4 address to ${wan_interface_name}. Check cable/modem/router, or install a DHCP client.`,
+            });
+        }
+
+        // Re-apply NAT rules to use the new WAN
+        await reapplyNatRulesFromDb();
+
+        res.json({ success: true, message: `WAN interface selected: ${wan_interface_name}`, ip: wanIp });
+    } catch (e) {
+        console.error('Failed to select WAN interface:', e.message);
+        res.status(500).json({ error: `Failed to select WAN interface: ${e.message}` });
     }
 });
 
