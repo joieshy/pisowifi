@@ -384,9 +384,34 @@ async function applyLanBridgeApSettings(config) {
     const bridge = 'br0';
 
     try {
-        // deps (Debian)
-        await sudoExec('systemctl unmask dnsmasq || true');
-        await sudoExec('systemctl enable dnsmasq || true');
+        // deps (Debian): dnsmasq may not be installed and service name can differ.
+        // We do NOT auto-install packages here; we just configure if present.
+        const hasSystemctl = async () => {
+            try {
+                await execPromise('command -v systemctl');
+                return true;
+            } catch (e) {
+                return false;
+            }
+        };
+
+        const hasDnsmasq = async () => {
+            try {
+                await execPromise('command -v dnsmasq');
+                return true;
+            } catch (e) {
+                return false;
+            }
+        };
+
+        if (!(await hasDnsmasq())) {
+            throw new Error('dnsmasq is not installed. Install it on Debian: sudo apt-get update && sudo apt-get install -y dnsmasq');
+        }
+
+        if (await hasSystemctl()) {
+            await sudoExec('systemctl unmask dnsmasq 2>/dev/null || true');
+            await sudoExec('systemctl enable dnsmasq 2>/dev/null || true');
+        }
 
         // Bring interfaces up
         await sudoExec(`ip link set dev ${lan_interface_name} up`);
@@ -429,7 +454,25 @@ bogus-priv
         fs.writeFileSync('/tmp/pisowifi-dnsmasq.conf', dnsmasqConfig);
         await sudoExec('mkdir -p /etc/dnsmasq.d');
         await sudoExec('mv /tmp/pisowifi-dnsmasq.conf /etc/dnsmasq.d/pisowifi.conf');
-        await sudoExec('systemctl restart dnsmasq');
+
+        // Restart dnsmasq if managed by systemd, otherwise try to start a standalone instance.
+        const restartDnsmasq = async () => {
+            if (await hasSystemctl()) {
+                // If the unit doesn't exist, systemctl will fail; handle below.
+                try {
+                    await sudoExec('systemctl restart dnsmasq');
+                    return;
+                } catch (e) {
+                    // fallback below
+                }
+            }
+
+            // Non-systemd / no unit: kill existing dnsmasq then start it with our config directory.
+            await sudoExec('pkill dnsmasq 2>/dev/null || true');
+            await sudoExec('dnsmasq --conf-file=/etc/dnsmasq.conf --conf-dir=/etc/dnsmasq.d');
+        };
+
+        await restartDnsmasq();
 
         // hostapd: bridged mode (bridge=br0)
         await applyWifiSettings({ ...config, wifi_interface_name: wifiIface });
