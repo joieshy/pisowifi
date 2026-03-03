@@ -2194,6 +2194,22 @@ app.post('/api/network/clear', isAuthenticated, (req, res) => {
 async function reapplyNatRulesFromDb() {
     if (os.platform() !== 'linux') return;
 
+    // If iptables isn't installed (common on some minimal images), skip firewall/NAT apply.
+    // We still allow selecting the WAN interface and saving it to DB.
+    const hasIptables = (() => {
+        try {
+            execSync('command -v iptables', { stdio: 'ignore' });
+            return true;
+        } catch (e) {
+            return false;
+        }
+    })();
+
+    if (!hasIptables) {
+        console.warn('[Network] iptables not found. Skipping NAT/firewall apply. Install iptables to enable captive portal + NAT.');
+        return;
+    }
+
     const settings = await new Promise((resolve, reject) => {
         db.all(
             `SELECT key, value FROM settings 
