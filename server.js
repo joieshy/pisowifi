@@ -2638,6 +2638,16 @@ app.post('/api/superadmin/internet/allow', isAuthenticated, async (req, res) => 
             return res.json({ success: true, message: 'Allow Internet applied (simulated on non-Linux).' });
         }
 
+        // If iptables is not installed, return a clear message (so button doesn't look "broken")
+        try {
+            execSync('command -v iptables', { stdio: 'ignore' });
+        } catch (e) {
+            return res.status(500).json({
+                success: false,
+                error: 'iptables is not installed on this Linux system. Install it first (Debian/Ubuntu: apt-get install -y iptables).'
+            });
+        }
+
         const settings = await new Promise((resolve, reject) => {
             db.all(
                 `SELECT key, value FROM settings WHERE key IN ('wan_interface_name')`,
