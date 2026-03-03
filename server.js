@@ -2950,8 +2950,28 @@ app.get('/redirect', (req, res) => {
     res.redirect('http://10.0.0.1:3000');
 });
 
-const HOST = '0.0.0.0'; // Temporarily hardcoded to 0.0.0.0 to resolve EADDRNOTAVAIL on server startup.
-                        // This will be reverted to process.env.HOST || '0.0.0.0' once network setup is stable.
+function getPreferredBindHost() {
+    // Force bind to the LAN/router IP (default: 10.0.0.1) so portal is always 10.0.0.1:3000
+    // If the IP is not yet assigned at startup, fallback to 0.0.0.0 to avoid EADDRNOTAVAIL.
+    const DEFAULT_LAN_IP = '10.0.0.1';
+
+    const envHost = (process.env.HOST || '').trim();
+    if (envHost) return envHost;
+
+    const hasIp = (ip) => {
+        const ifaces = os.networkInterfaces();
+        for (const [, addrs] of Object.entries(ifaces)) {
+            for (const a of addrs || []) {
+                if (a && a.family === 'IPv4' && a.address === ip) return true;
+            }
+        }
+        return false;
+    };
+
+    return hasIp(DEFAULT_LAN_IP) ? DEFAULT_LAN_IP : '0.0.0.0';
+}
+
+const HOST = getPreferredBindHost();
 server.listen(PORT, HOST, () => {
     console.log(`Server running on http://${HOST}:${PORT}`);
 });
