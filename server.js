@@ -228,40 +228,6 @@ async function allowMac(mac, ip) {
     }
 }
 
-
-
-function applyGroupSettings(type, vlanId) {
-    if (os.platform() !== 'linux') {
-        console.log(`[Simulated] Applying Group Settings: Type=${type}, VLAN ID=${vlanId}`);
-        return;
-    }
-
-    try {
-        console.log(`Applying Group Settings: Type=${type}, VLAN ID=${vlanId}`);
-        
-        // Clear existing VLAN configuration (simplified example)
-        // In a real scenario, you might need to be more specific to avoid disrupting other VLANs
-        // execSync('sudo ip link delete eth1.10 || true'); 
-
-        if (type === 'vlan' && vlanId) {
-            // Example: Create VLAN interface on eth1
-            // execSync(`sudo ip link add link eth1 name eth1.${vlanId} type vlan id ${vlanId}`);
-            // execSync(`sudo ip link set dev eth1.${vlanId} up`);
-            // execSync(`sudo ip addr add 10.0.${vlanId}.1/24 dev eth1.${vlanId}`);
-            
-            // Setup DHCP for VLAN (would require dnsmasq config update)
-            // ...
-            
-            console.log(`VLAN ${vlanId} configured on eth1`);
-        } else {
-            // Direct mode (default)
-            console.log('Direct mode configured (no VLAN)');
-        }
-    } catch (e) {
-        console.error('Failed to apply group settings:', e.message);
-    }
-}
-
 async function applyBandwidthLimits(ip, downloadLimitMbps, uploadLimitMbps, tcClassId) {
     if (os.platform() !== 'linux') {
         console.log(`[Simulated] Applying bandwidth limits for IP: ${ip}, DL: ${downloadLimitMbps}Mbps, UL: ${uploadLimitMbps}Mbps, ClassID: ${tcClassId}`);
@@ -803,10 +769,6 @@ db.serialize(() => {
         ['merchant_id', ''],
         ['anti_tethering', 'false'],
         ['mac_filter_mode', 'disabled'], // disabled, allow, block
-        ['dns_primary', '8.8.8.8'],
-        ['dns_secondary', '8.8.4.4'],
-        ['ip_range_start', '192.168.1.100'],
-        ['ip_range_end', '192.168.1.200'],
         ['wifi_channel', 'auto'],
         ['qos_enabled', 'false'],
         ['qos_gaming_priority', 'high'],
@@ -821,8 +783,6 @@ db.serialize(() => {
         ['coin_drop_audio', '/media/coins.wav'],
         ['salamat_audio', '/media/Salamat .mp3'],
         ['countdown_tick_audio', ''],
-        ['group_type', 'direct'],
-        ['vlan_id', ''],
         ['wan_interface_name', 'enp1s0'],
         ['wan_config_type', 'dhcp'],
         ['wan_ip_address', ''],
@@ -837,8 +797,6 @@ db.serialize(() => {
         ['wifi_max_users', '50'],
         ['wifi_transmit_power', '100'],
         ['wifi_hidden', 'false'],
-        // NEW: DHCP Advanced
-        ['dhcp_lease_time', '1440'], // minutes (default 24 hours)
         // NEW: Wireless Advanced
         ['wifi_isolation', 'false'],
         ['wifi_beacon_interval', '100'],
@@ -1591,23 +1549,6 @@ app.post('/api/settings', isAuthenticated, async (req, res) => {
         stmt.finalize();
     });
 
-    // If group settings are updated, apply them
-    if (settings.group_type !== undefined || settings.vlan_id !== undefined) {
-        // We need to fetch the latest values because the request might only contain one of them
-        db.all(`SELECT key, value FROM settings WHERE key IN ('group_type', 'vlan_id')`, [], (err, rows) => {
-            if (!err) {
-                const currentSettings = {};
-                rows.forEach(row => currentSettings[row.key] = row.value);
-                
-                // Override with new values from request if present
-                const type = settings.group_type !== undefined ? settings.group_type : (currentSettings.group_type || 'direct');
-                const vlanId = settings.vlan_id !== undefined ? settings.vlan_id : (currentSettings.vlan_id || '');
-                
-                applyGroupSettings(type, vlanId);
-            }
-        });
-    }
-
     // If bandwidth limits are updated, re-apply to all active users
     if (settings.download_limit !== undefined || settings.upload_limit !== undefined) {
         const downloadLimit = parseFloat(settings.download_limit || '0');
@@ -2211,17 +2152,6 @@ function generateNetplanConfig(wanInterface, wanConfigType, wanIp, wanGateway, w
  */
 app.post('/api/network/clear', isAuthenticated, (req, res) => {
     const keysToBlank = [
-        // DNS + DHCP
-        'dns_primary',
-        'dns_secondary',
-        'ip_range_start',
-        'ip_range_end',
-        'dhcp_lease_time',
-
-        // VLAN / Grouping
-        'group_type',
-        'vlan_id',
-
         // QoS
         'qos_enabled',
         'qos_gaming_priority',

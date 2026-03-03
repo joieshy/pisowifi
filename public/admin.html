@@ -738,37 +738,6 @@
                 </button>
             </div>
             <div class="stats-grid">
-                <div class="card">
-                    <div class="card-title">Total Sales (All Time)</div>
-                    <div class="card-value" id="totalSales">₱ 0.00</div>
-                </div>
-                <div class="card success">
-                    <div class="card-title">Coin Sales</div>
-                    <div class="card-value" id="coinSales">₱ 0.00</div>
-                </div>
-                <div class="card info">
-                    <div class="card-title">Voucher Sales</div>
-                    <div class="card-value" id="voucherSales">₱ 0.00</div>
-                </div>
-            </div>
-
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; align-items: start;">
-                <div class="card">
-                    <h3 style="margin-top: 0; color: var(--primary-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
-                        <i class="fas fa-chart-line"></i> Sales Trend (Last 7 Days)
-                    </h3>
-                    <div style="height: 200px; position: relative;">
-                        <canvas id="salesTrendChart"></canvas>
-                    </div>
-                </div>
-                <div class="card">
-                    <h3 style="margin-top: 0; color: var(--info-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
-                        <i class="fas fa-chart-pie"></i> Sales by Type
-                    </h3>
-                    <div style="height: 200px; position: relative; display: flex; justify-content: center; align-items: center;">
-                        <canvas id="salesTypeChart"></canvas>
-                    </div>
-                </div>
             </div>
 
             <div class="data-table">
@@ -1018,60 +987,6 @@ n        <th>Date/Time</th>
                 <h2>Network Settings</h2>
             </div>
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
-                <!-- DNS, VLAN & DHCP Settings -->
-                <div class="card">
-                    <h3 style="margin-top: 0; color: var(--primary-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
-                        <i class="fas fa-globe"></i> DNS, VLAN & DHCP Settings
-                    </h3>
-                    <form id="dnsForm">
-                        <h4 style="margin-top: 15px; color: var(--primary-color);">DNS Settings</h4>
-                        <div class="form-group">
-                            <label>Primary DNS</label>
-                            <input type="text" id="dns_primary" name="dns_primary" placeholder="8.8.8.8">
-                        </div>
-                        <div class="form-group">
-                            <label>Secondary DNS</label>
-                            <input type="text" id="dns_secondary" name="dns_secondary" placeholder="8.8.4.4">
-                        </div>
-                        <button type="submit" class="btn btn-primary" style="width: 100%;">Save DNS Settings</button>
-                    </form>
-
-                    <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-
-                    <form id="groupSettingsForm">
-                        <h4 style="margin-top: 15px; color: #6f42c1;">VLAN Settings</h4>
-                        <div class="form-group">
-                            <label>VLAN</label>
-                            <select id="group_type" name="group_type" onchange="toggleVlanInput()">
-                                <option value="direct">Direct</option>
-                                <option value="vlan">VLAN</option>
-                            </select>
-                        </div>
-                        <div class="form-group" id="vlanIdGroup" style="display: none;">
-                            <label>VLAN ID</label>
-                            <input type="number" id="vlan_id" name="vlan_id" placeholder="Enter VLAN ID (e.g. 10)" min="1" max="4094">
-                        </div>
-                        <button type="submit" class="btn btn-primary" style="width: 100%; background-color: #6f42c1; border-color: #6f42c1;">Save Group Settings</button>
-                    </form>
-                    <div id="groupMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">Group settings updated!</div>
-
-                    <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-
-                    <form id="ipRangeForm">
-                        <h4 style="margin-top: 15px; color: var(--warning-color);">IP Range (DHCP)</h4>
-                        <div class="form-group">
-                            <label>Start IP Address</label>
-                            <input type="text" id="ip_range_start" name="ip_range_start" placeholder="192.168.1.100">
-                        </div>
-                        <div class="form-group">
-                            <label>End IP Address</label>
-                            <input type="text" id="ip_range_end" name="ip_range_end" placeholder="192.168.1.200">
-                        </div>
-                        <button type="submit" class="btn btn-warning" style="width: 100%; color: white;">Save IP Range</button>
-                    </form>
-                    <div id="ipRangeMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">IP range updated!</div>
-                </div>
-
                 <!-- Network Interfaces Configuration -->
                 <div class="card">
                     <h3 style="margin-top: 0; color: var(--warning-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
@@ -1222,56 +1137,6 @@ n        <th>Date/Time</th>
                     <div id="wifiSettingsMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">WiFi settings saved!</div>
                 </div>
 
-                <!-- DHCP Advanced -->
-                <div class="card">
-                    <h3 style="margin-top: 0; color: #20c997; border-bottom: 1px solid #eee; padding-bottom: 10px;">
-                        <i class="fas fa-server"></i> DHCP Advanced
-                    </h3>
-                    <form id="dhcpAdvancedForm">
-                        <div class="form-group">
-                            <label>DHCP Lease Time (minutes)</label>
-                            <input type="number" id="dhcp_lease_time" name="dhcp_lease_time" min="1" max="10080" placeholder="1440 (24 hours)">
-                            <p style="font-size: 0.8rem; color: #858796;">Default: 1440 minutes (24 hours)</p>
-                        </div>
-                        <button type="submit" class="btn btn-info" style="width: 100%;">
-                            <i class="fas fa-save"></i> Save DHCP Settings
-                        </button>
-                    </form>
-                    <div id="dhcpAdvancedMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">DHCP settings saved!</div>
-                </div>
-
-
-                <!-- Wireless Advanced -->
-                <div class="card">
-                    <h3 style="margin-top: 0; color: #17a2b8; border-bottom: 1px solid #eee; padding-bottom: 10px;">
-                        <i class="fas fa-cogs"></i> Wireless Advanced
-                    </h3>
-                    <form id="wirelessAdvancedForm">
-                        <div class="form-group">
-                            <label>Client Isolation</label>
-                            <select id="wifi_isolation" name="wifi_isolation">
-                                <option value="false">Disabled</option>
-                                <option value="true">Enabled (Prevent client-to-client communication)</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>Beacon Interval (ms)</label>
-                            <input type="number" id="wifi_beacon_interval" name="wifi_beacon_interval" min="20" max="1000" placeholder="100">
-                        </div>
-                        <div class="form-group">
-                            <label>RTS/CTS Threshold</label>
-                            <input type="number" id="wifi_rts_cts" name="wifi_rts_cts" min="0" max="2347" placeholder="2347">
-                        </div>
-                        <div class="form-group">
-                            <label>DTIM Interval</label>
-                            <input type="number" id="wifi_dtIM" name="wifi_dtIM" min="1" max="255" placeholder="1">
-                        </div>
-                        <button type="submit" class="btn btn-info" style="width: 100%;">
-                            <i class="fas fa-save"></i> Save Wireless Settings
-                        </button>
-                    </form>
-                    <div id="wirelessAdvancedMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">Wireless advanced settings saved!</div>
-                </div>
 
                 <!-- Port Triggering -->
                 <div class="card">
@@ -2878,17 +2743,8 @@ n        <th>Date/Time</th>
             }
 
             // BLANK all fields in Network tab (per request)
-            document.getElementById('dns_primary').value = '';
-            document.getElementById('dns_secondary').value = '';
-            if (document.getElementById('ip_range_start')) document.getElementById('ip_range_start').value = '';
-            if (document.getElementById('ip_range_end')) document.getElementById('ip_range_end').value = '';
-
             document.getElementById('qos_enabled').value = 'false';
             document.getElementById('qos_gaming_priority').value = 'high';
-
-            document.getElementById('group_type').value = 'direct';
-            document.getElementById('vlan_id').value = '';
-            toggleVlanInput();
 
             // Also blank ALL network interface inputs
             if (document.getElementById('wan_interface_name')) document.getElementById('wan_interface_name').value = '';
@@ -2909,12 +2765,6 @@ n        <th>Date/Time</th>
             if (document.getElementById('wifi_hidden')) document.getElementById('wifi_hidden').value = 'false';
             if (document.getElementById('wifi_channel')) document.getElementById('wifi_channel').value = 'auto';
 
-            if (document.getElementById('dhcp_lease_time')) document.getElementById('dhcp_lease_time').value = '';
-
-            if (document.getElementById('wifi_isolation')) document.getElementById('wifi_isolation').value = 'false';
-            if (document.getElementById('wifi_beacon_interval')) document.getElementById('wifi_beacon_interval').value = '';
-            if (document.getElementById('wifi_rts_cts')) document.getElementById('wifi_rts_cts').value = '';
-            if (document.getElementById('wifi_dtIM')) document.getElementById('wifi_dtIM').value = '';
 
             if (document.getElementById('burst_download')) document.getElementById('burst_download').value = '';
             if (document.getElementById('burst_upload')) document.getElementById('burst_upload').value = '';
@@ -3012,33 +2862,6 @@ n        <th>Date/Time</th>
             }
         });
 
-        function toggleVlanInput() {
-            const type = document.getElementById('group_type').value;
-            const vlanGroup = document.getElementById('vlanIdGroup');
-            if (type === 'vlan') {
-                vlanGroup.style.display = 'block';
-                document.getElementById('vlan_id').required = true;
-            } else {
-                vlanGroup.style.display = 'none';
-                document.getElementById('vlan_id').required = false;
-            }
-        }
-
-        document.getElementById('groupSettingsForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const data = Object.fromEntries(new FormData(e.target).entries());
-            const response = await fetch('/api/settings', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            });
-            if (response.ok) {
-                const msg = document.getElementById('groupMsg');
-                msg.style.display = 'block';
-                setTimeout(() => msg.style.display = 'none', 3000);
-            }
-        });
-
         async function fetchPortTriggers() {
             const response = await fetch('/api/network/port-triggers');
             const triggers = await response.json();
@@ -3089,10 +2912,6 @@ n        <th>Date/Time</th>
             }
         }
 
-        document.getElementById('dnsForm').addEventListener('submit', saveNetworkSettings);
-        document.getElementById('groupSettingsForm').addEventListener('submit', saveNetworkSettings);
-        document.getElementById('ipRangeForm').addEventListener('submit', saveNetworkSettings);
-
         // New network settings form handlers
         document.getElementById('wifiSettingsForm').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -3109,36 +2928,6 @@ n        <th>Date/Time</th>
             }
         });
 
-        document.getElementById('dhcpAdvancedForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const data = Object.fromEntries(new FormData(e.target).entries());
-            const response = await fetch('/api/settings', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            });
-            const msg = document.getElementById('dhcpAdvancedMsg');
-            if (response.ok) {
-                msg.style.display = 'block';
-                setTimeout(() => msg.style.display = 'none', 3000);
-            }
-        });
-
-
-        document.getElementById('wirelessAdvancedForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const data = Object.fromEntries(new FormData(e.target).entries());
-            const response = await fetch('/api/settings', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            });
-            const msg = document.getElementById('wirelessAdvancedMsg');
-            if (response.ok) {
-                msg.style.display = 'block';
-                setTimeout(() => msg.style.display = 'none', 3000);
-            }
-        });
 
         
         async function generateLicense() {
