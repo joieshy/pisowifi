@@ -2590,13 +2590,14 @@ app.post('/api/system/dependencies/install', isAuthenticated, async (req, res) =
     }
 });
 
-// API to get WAN IP address
+/**
+ * API to get WAN IPv4 address (interface IP ONLY)
+ * - Returns the IPv4 of the currently selected WAN interface from DB.
+ * - Does NOT fallback to default route or external IP services (to avoid misleading output).
+ */
 app.get('/api/wan-ip', isAuthenticated, async (req, res) => {
     try {
-        let wanIp = null;
-        let source = 'unknown';
-
-        // First, try to get WAN interface from database
+        // Get WAN interface from database
         const wanInterface = await new Promise((resolve, reject) => {
             db.get(`SELECT value FROM settings WHERE key = 'wan_interface_name'`, [], (err, row) => {
                 if (err) return reject(err);
@@ -2604,67 +2605,37 @@ app.get('/api/wan-ip', isAuthenticated, async (req, res) => {
             });
         });
 
+        if (!wanInterface) {
+            return res.status(400).json({ error: 'WAN interface is not set.' });
+        }
+
+        // Linux: read interface IPv4 using ip(8)
         if (os.platform() === 'linux') {
-            // Method 1: Try to get IP from the WAN interface using ip command
             try {
-                const output = execSync(`ip -4 addr show ${wanInterface} 2>/dev/null || ip addr show ${wanInterface} 2>/dev/null`).toString();
+                const output = execSync(`ip -4 addr show ${wanInterface} 2>/dev/null`).toString();
                 const match = output.match(/inet\s+(\d+\.\d+\.\d+\.\d+)/);
                 if (match) {
-                    wanIp = match[1];
-                    source = `Interface ${wanInterface}`;
+                    return res.json({ ip: match[1], source: `Interface ${wanInterface}`, interface: wanInterface });
                 }
-            } catch (e) {}
-
-            // Method 2: If interface IP not found, try to get default route IP
-            if (!wanIp) {
-                try {
-                    const output = execSync('ip route get 8.8.8.8 2>/dev/null').toString();
-                    const match = output.match(/src\s+(\d+\.\d+\.\d+\.\d+)/);
-                    if (match) {
-                        wanIp = match[1];
-                        source = 'Default route';
-                    }
-                } catch (e) {}
-            }
-        } else {
-            // For Windows, use ipconfig
-            try {
-                const output = execSync('ipconfig').toString();
-                const lines = output.split('\n');
-                for (let i = 0; i < lines.length; i++) {
-                    if (lines[i].includes('IPv4 Address') || lines[i].includes('IP Address')) {
-                        const match = lines[i].match(/\d+\.\d+\.\d+\.\d+/);
-                        if (match) {
-                            wanIp = match[0];
-                            source = 'Windows ipconfig';
-                            break;
-                        }
-                    }
-                }
-            } catch (e) {}
-        }
-
-        // Method 3: If still not found, try external service
-        if (!wanIp) {
-            try {
-                const response = await axios.get('https://api.ipify.org?format=json', { timeout: 5000 });
-                wanIp = response.data.ip;
-                source = 'External API (ipify.org)';
+                return res.status(404).json({
+                    error: 'No IPv4 on selected WAN interface',
+                    interface: wanInterface
+                });
             } catch (e) {
-                // Fallback to another service
-                try {
-                    const response = await axios.get('https://ifconfig.me/ip', { timeout: 5000 });
-                    wanIp = response.data.trim();
-                    source = 'External API (ifconfig.me)';
-                } catch (e2) {}
+                return res.status(500).json({
+                    error: `Failed to read WAN interface IP: ${e.message}`,
+                    interface: wanInterface
+                });
             }
         }
 
-        if (wanIp) {
-            res.json({ ip: wanIp, source: source });
-        } else {
-            res.status(404).json({ error: 'Unable to detect WAN IP address' });
-        }
+        // Windows / other platforms: best-effort, but still do NOT use external IP.
+        // We only return an error to keep semantics consistent.
+        return res.status(404).json({
+            error: 'WAN interface IP detection is supported on Linux only in this build.',
+            interface: wanInterface,
+            platform: os.platform()
+        });
     } catch (error) {
         console.error('Error fetching WAN IP:', error.message);
         res.status(500).json({ error: 'Failed to fetch WAN IP: ' + error.message });
