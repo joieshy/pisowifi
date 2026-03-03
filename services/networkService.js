@@ -397,6 +397,10 @@ wpa=0
             await sudoExec(`/usr/sbin/hostapd -B ${hostapdPath} || hostapd -B ${hostapdPath}`);
         };
 
+        // Ensure systemd unit points to our config so hostapd doesn't exit immediately.
+        // Debian typically uses /etc/default/hostapd with DAEMON_CONF="/etc/hostapd/hostapd.conf"
+        await sudoExec(`bash -lc 'mkdir -p /etc/default && (test -f /etc/default/hostapd || true) && (grep -q \"^DAEMON_CONF=\" /etc/default/hostapd 2>/dev/null && sed -i \"s|^DAEMON_CONF=.*|DAEMON_CONF=\\\"${hostapdPath}\\\"|\" /etc/default/hostapd || echo \"DAEMON_CONF=\\\"${hostapdPath}\\\"\" >> /etc/default/hostapd)'`);
+
         if (await hasSystemctl()) {
             // Best effort enable/restart if unit exists
             await sudoExec('systemctl unmask hostapd 2>/dev/null || true');
@@ -491,8 +495,15 @@ async function applyLanBridgeApSettings(config) {
         await sudoExec(`ip link set dev ${lan_interface_name} up`);
         await sudoExec(`ip link set dev ${wifiIface} up`);
 
-        // Some drivers need rfkill to be unblocked before AP can broadcast
+        // Some drivers need rfkill to be unblocked before AP can broadcast.
+        // Your Debian showed `rfkill: command not found`, so this is best-effort.
         await sudoExec('rfkill unblock all 2>/dev/null || true');
+
+        // Prevent conflicts: NetworkManager/wpa_supplicant often blocks AP/bridge operation.
+        // Best-effort stop wpa_supplicant and unmanage the interface in NM (if present).
+        await sudoExec(`systemctl stop wpa_supplicant 2>/dev/null || true`);
+        await sudoExec(`nmcli dev set ${wifiIface} managed no 2>/dev/null || true`);
+        await sudoExec(`nmcli dev disconnect ${wifiIface} 2>/dev/null || true`);
 
         // Ensure WiFi is in managed mode before hostapd takes over (best-effort)
         await sudoExec(`iw dev ${wifiIface} set type managed 2>/dev/null || true`);
@@ -585,7 +596,8 @@ async function applyAllNetworkSettings(config) {
 
     try {
         // WiFi/hostapd
-        if (config.wifi_password || config.wifi_security || config.wifi_max_users || config.wifi_transmit_power || config.wifi_hidden || config.wifi_interface_name) {
+        // IMPORTANT: include wifi_ssid so changing SSID alone still triggers apply
+        if (config.wifi_ssid || config.wifi_password || config.wifi_security || config.wifi_max_users || config.wifi_transmit_power || config.wifi_hidden || config.wifi_interface_name) {
             results.push(await applyWifiSettings(config));
         }
 

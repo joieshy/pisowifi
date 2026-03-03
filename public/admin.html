@@ -2744,40 +2744,46 @@ n        <th>Date/Time</th>
         });
 
         async function fetchNetwork() {
-            // Clear values stored in DB + dynamic lists (server-side)
+            // NOTE:
+            // Huwag i-clear ang DB values dito, kasi kailangan natin ma-load yung saved SSID/password/etc.
+            // (Old behavior: /api/network/clear wipes everything every time you open Network tab)
             try {
-                await fetch('/api/network/clear', { method: 'POST' });
+                // Load saved settings from DB and populate fields
+                const settingsRes = await fetch('/api/settings');
+                const settings = await settingsRes.json();
+
+                // QoS
+                if (document.getElementById('qos_enabled')) document.getElementById('qos_enabled').value = settings.qos_enabled || 'false';
+                if (document.getElementById('qos_gaming_priority')) document.getElementById('qos_gaming_priority').value = settings.qos_gaming_priority || 'high';
+
+                // WAN/LAN
+                if (document.getElementById('wan_interface_name')) document.getElementById('wan_interface_name').value = settings.wan_interface_name || '';
+                if (document.getElementById('wan_config_type')) document.getElementById('wan_config_type').value = settings.wan_config_type || 'dhcp';
+                if (document.getElementById('wan_ip_address')) document.getElementById('wan_ip_address').value = settings.wan_ip_address || '';
+                if (document.getElementById('wan_gateway')) document.getElementById('wan_gateway').value = settings.wan_gateway || '';
+                if (document.getElementById('wan_dns_servers')) document.getElementById('wan_dns_servers').value = settings.wan_dns_servers || '';
+
+                if (document.getElementById('lan_interface_name')) document.getElementById('lan_interface_name').value = settings.lan_interface_name || '';
+                if (document.getElementById('lan_ip_address')) document.getElementById('lan_ip_address').value = settings.lan_ip_address || '';
+                if (document.getElementById('lan_dns_servers')) document.getElementById('lan_dns_servers').value = settings.lan_dns_servers || '';
+
+                // WiFi
+                if (document.getElementById('wifi_ssid')) document.getElementById('wifi_ssid').value = settings.wifi_ssid || '';
+                if (document.getElementById('wifi_password')) document.getElementById('wifi_password').value = settings.wifi_password || '';
+                if (document.getElementById('wifi_security')) document.getElementById('wifi_security').value = settings.wifi_security || 'wpa2';
+                if (document.getElementById('wifi_max_users')) document.getElementById('wifi_max_users').value = settings.wifi_max_users || '50';
+                if (document.getElementById('wifi_transmit_power')) document.getElementById('wifi_transmit_power').value = settings.wifi_transmit_power || '100';
+                if (document.getElementById('wifi_hidden')) document.getElementById('wifi_hidden').value = settings.wifi_hidden || 'false';
+
+                toggleStaticWanFields();
+
+                // Reload dynamic tables
+                fetchPortTriggers();
             } catch (e) {
-                console.error('Failed to clear network settings on server:', e);
+                console.error('Failed to load network settings:', e);
+                // fallback: still load port triggers so UI isn't empty
+                try { fetchPortTriggers(); } catch (_) {}
             }
-
-            // BLANK all fields in Network tab (per request)
-            document.getElementById('qos_enabled').value = 'false';
-            document.getElementById('qos_gaming_priority').value = 'high';
-
-            // Also blank ALL network interface inputs
-            if (document.getElementById('wan_interface_name')) document.getElementById('wan_interface_name').value = '';
-            if (document.getElementById('wan_config_type')) document.getElementById('wan_config_type').value = 'dhcp';
-            if (document.getElementById('wan_ip_address')) document.getElementById('wan_ip_address').value = '';
-            if (document.getElementById('wan_gateway')) document.getElementById('wan_gateway').value = '';
-            if (document.getElementById('wan_dns_servers')) document.getElementById('wan_dns_servers').value = '';
-
-            if (document.getElementById('lan_interface_name')) document.getElementById('lan_interface_name').value = '';
-            if (document.getElementById('lan_ip_address')) document.getElementById('lan_ip_address').value = '';
-            if (document.getElementById('lan_dns_servers')) document.getElementById('lan_dns_servers').value = '';
-
-            // Also blank WiFi + advanced settings
-            if (document.getElementById('wifi_ssid')) document.getElementById('wifi_ssid').value = '';
-            if (document.getElementById('wifi_password')) document.getElementById('wifi_password').value = '';
-            if (document.getElementById('wifi_security')) document.getElementById('wifi_security').value = 'wpa2';
-            if (document.getElementById('wifi_max_users')) document.getElementById('wifi_max_users').value = '';
-            if (document.getElementById('wifi_transmit_power')) document.getElementById('wifi_transmit_power').value = '';
-            if (document.getElementById('wifi_hidden')) document.getElementById('wifi_hidden').value = 'false';
-
-            toggleStaticWanFields();
-
-            // Reload dynamic tables after clearing
-            fetchPortTriggers();
         }
 
         // Function to toggle static WAN fields visibility
