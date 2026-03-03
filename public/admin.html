@@ -2998,6 +2998,7 @@
 
 
         
+
         async function generateLicense() {
             try {
                 const response = await fetch('/api/license/generate', { method: 'POST' });
@@ -3007,6 +3008,7 @@
                 alert('Failed to generate license');
             }
         }
+
 
         async function clearSalesData() {
             if (!confirm("Sigurado ka bang gusto mong burahin ang LAHAT ng sales data at natitirang oras ng mga user? Hindi na ito mababawi.")) return;

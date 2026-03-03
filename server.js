@@ -2627,6 +2627,44 @@ app.get('/api/wan-ip', isAuthenticated, async (req, res) => {
     }
 });
 
+/**
+ * Super Admin: Allow internet (global)
+ * - Purpose: allow ALL LAN clients to forward to WAN (removes captive restriction)
+ * - Linux only; non-linux returns simulated success
+ */
+app.post('/api/superadmin/internet/allow', isAuthenticated, async (req, res) => {
+    try {
+        if (os.platform() !== 'linux') {
+            return res.json({ success: true, message: 'Allow Internet applied (simulated on non-Linux).' });
+        }
+
+        const settings = await new Promise((resolve, reject) => {
+            db.all(
+                `SELECT key, value FROM settings WHERE key IN ('wan_interface_name')`,
+                [],
+                (err, rows) => {
+                    if (err) return reject(err);
+                    const s = {};
+                    rows.forEach(r => s[r.key] = r.value);
+                    resolve(s);
+                }
+            );
+        });
+
+        const wan = settings.wan_interface_name || 'enp1s0';
+        const lan = 'br0';
+
+        // Remove drop rule then add ACCEPT rule (top) to allow LAN->WAN globally
+        await sudoExec(`iptables -D FORWARD -i ${lan} -o ${wan} -j DROP || true`);
+        await sudoExec(`iptables -I FORWARD 1 -i ${lan} -o ${wan} -j ACCEPT`);
+
+        return res.json({ success: true, message: 'Internet allowed for all clients.' });
+    } catch (e) {
+        console.error('Superadmin allow internet error:', e.message);
+        return res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // License: Generate (Super Admin)
 app.post('/api/license/generate', isAuthenticated, (req, res) => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
