@@ -548,17 +548,38 @@ async function applyLanBridgeApSettings(config) {
             ? lan_dns_servers
             : ['8.8.8.8', '8.8.4.4'];
 
-        const dnsmasqConfig = `
+const dnsmasqConfig = `
+# PisoWiFi captive portal DNS/DHCP on bridge
 interface=${bridge}
+bind-interfaces
+port=53
+
+# DHCP
 dhcp-range=${dhcp.start},${dhcp.end},${dhcp.netmask},12h
 dhcp-option=3,${gatewayIp}
 dhcp-option=6,${gatewayIp}
+
+# Captive portal DNS hijack (force all domains to gateway)
 address=/#/${gatewayIp}
+
+# Upstream DNS (used after user is allowed)
 server=${dnsList[0]}
 ${dnsList[1] ? `server=${dnsList[1]}` : ''}
-bind-interfaces
+
 domain-needed
 bogus-priv
+
+# IMPORTANT: Captive Portal auto-popup compatibility
+# Apple
+address=/captive.apple.com/${gatewayIp}
+address=/apple.com/${gatewayIp}
+address=/gsp1.apple.com/${gatewayIp}
+# Android
+address=/connectivitycheck.gstatic.com/${gatewayIp}
+address=/clients3.google.com/${gatewayIp}
+# Windows
+address=/www.msftconnecttest.com/${gatewayIp}
+address=/dns.msftncsi.com/${gatewayIp}
 `.trim() + '\n';
 
         fs.writeFileSync('/tmp/pisowifi-dnsmasq.conf', dnsmasqConfig);
@@ -580,7 +601,15 @@ bogus-priv
             // Non-systemd / no unit: kill existing dnsmasq then start it with our config directory.
             await sudoExec('pkill dnsmasq 2>/dev/null || true');
             // Prefer absolute path on Debian (often installed under /usr/sbin)
-            await sudoExec('/usr/sbin/dnsmasq --conf-file=/etc/dnsmasq.conf --conf-dir=/etc/dnsmasq.d || dnsmasq --conf-file=/etc/dnsmasq.conf --conf-dir=/etc/dnsmasq.d');
+await sudoExec('/usr/sbin/dnsmasq --conf-file=/etc/dnsmasq.conf --conf-dir=/etc/dnsmasq.d || dnsmasq --conf-file=/etc/dnsmasq.conf --conf-dir=/etc/dnsmasq.d');
+
+// Ensure firewall allows DHCP/DNS to the gateway on LAN bridge
+await sudoExec(`iptables -D INPUT -i ${bridge} -p udp --dport 67 -j ACCEPT || true`);
+await sudoExec(`iptables -D INPUT -i ${bridge} -p udp --dport 53 -j ACCEPT || true`);
+await sudoExec(`iptables -D INPUT -i ${bridge} -p tcp --dport 53 -j ACCEPT || true`);
+await sudoExec(`iptables -I INPUT 1 -i ${bridge} -p udp --dport 67 -j ACCEPT`);
+await sudoExec(`iptables -I INPUT 1 -i ${bridge} -p udp --dport 53 -j ACCEPT`);
+await sudoExec(`iptables -I INPUT 1 -i ${bridge} -p tcp --dport 53 -j ACCEPT`);
         };
 
         await restartDnsmasq();
