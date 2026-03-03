@@ -258,6 +258,7 @@ async function applyNetworkConfig(config) {
 // 1. WiFi Settings - Configure hostapd for WiFi access point
 async function applyWifiSettings(config) {
     const {
+        wifi_ssid,
         wifi_password,
         wifi_security,
         wifi_max_users,
@@ -312,9 +313,11 @@ async function applyWifiSettings(config) {
         }
 
         // Generate hostapd configuration
+        const ssid = (wifi_ssid || config.wifi_name || config.wifi_ssid || 'PisoWiFi').toString().trim() || 'PisoWiFi';
+
         let hostapdConfig = `interface=${wifiIface}
 driver=nl80211
-ssid=PisoWiFi
+ssid=${ssid}
 country_code=PH
 `;
 
@@ -356,8 +359,18 @@ wpa=0
         }
 
         // Transmit power
-        if (wifi_transmit_power) {
-            hostapdConfig += `txpower=${wifi_transmit_power}\n`;
+        // NOTE: hostapd doesn't support "txpower=" in a portable way.
+        // We apply power via `iw` (if available): percent -> mBm where 100% ~= 2000 mBm (20 dBm).
+        if (wifi_transmit_power !== undefined && wifi_transmit_power !== null && wifi_transmit_power !== '') {
+            const percent = Math.max(1, Math.min(100, parseInt(wifi_transmit_power, 10) || 100));
+            const maxMb = 2000; // 20 dBm typical max; hardware-specific
+            const txMb = Math.round((percent / 100) * maxMb);
+
+            try {
+                await sudoExec(`iw dev ${wifiIface} set txpower fixed ${txMb}`);
+            } catch (e) {
+                // ignore if iw isn't installed or driver doesn't support it
+            }
         }
 
         // Hidden SSID

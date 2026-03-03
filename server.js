@@ -12,7 +12,7 @@ const { exec, execSync } = require('child_process');
 const https = require('https');
 const axios = require('axios');
 const { SerialPort, ReadlineParser } = require('serialport'); // Import serialport
-const { applyNetworkConfig, applyLanBridgeApSettings, sudoExec } = require('./services/networkService'); // Idinagdag ito
+const { applyNetworkConfig, applyAllNetworkSettings, applyLanBridgeApSettings, sudoExec } = require('./services/networkService'); // Idinagdag ito
 const app = express();
 app.set('trust proxy', true);
 
@@ -751,6 +751,7 @@ db.serialize(() => {
         ['lan_ip_address', '10.0.0.1/24'],
         ['lan_dns_servers', '8.8.8.8,8.8.4.4'],
         // NEW: WiFi Settings
+        ['wifi_ssid', 'PisoWiFi'],
         ['wifi_password', ''],
         ['wifi_security', 'wpa2'], // none, wpa2, wpa3
         ['wifi_max_users', '50'],
@@ -2123,6 +2124,7 @@ app.post('/api/network/clear', isAuthenticated, (req, res) => {
         'lan_dns_servers',
 
         // WiFi
+        'wifi_ssid',
         'wifi_password',
         'wifi_security',
         'wifi_max_users',
@@ -2935,13 +2937,8 @@ io.on('connection', (socket) => {
 // Idinagdag na API endpoint para sa pag-save ng network configuration
 app.post('/api/save-network', async (req, res) => {
     try {
-        // 1) Apply netplan (WAN+LAN)
-        await applyNetworkConfig(req.body);
-
-        // 2) Apply bridge/AP + DHCP using LAN CIDR (Debian)
-        // Force wifi interface name as per your Debian device.
-        await applyLanBridgeApSettings({ ...req.body, wifi_interface_name: 'wlp2s0' });
-
+        // Apply EVERYTHING including WiFi AP settings (ssid/password/security/max users/tx power/hide ssid)
+        await applyAllNetworkSettings({ ...req.body, wifi_interface_name: 'wlp2s0' });
         res.json({ success: true, message: "Network Updated! (LAN bridge AP + WiFi AP on same subnet)" });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });

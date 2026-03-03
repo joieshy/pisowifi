@@ -1110,6 +1110,10 @@ n        <th>Date/Time</th>
                     </h3>
                     <form id="wifiSettingsForm">
                         <div class="form-group">
+                            <label>WiFi Name</label>
+                            <input type="text" id="wifi_ssid" name="wifi_ssid" placeholder="Enter WiFi name (SSID)">
+                        </div>
+                        <div class="form-group">
                             <label>WiFi Password</label>
                             <input type="password" id="wifi_password" name="wifi_password" placeholder="Enter WiFi password">
                         </div>
@@ -2763,6 +2767,7 @@ n        <th>Date/Time</th>
             if (document.getElementById('lan_dns_servers')) document.getElementById('lan_dns_servers').value = '';
 
             // Also blank WiFi + advanced settings
+            if (document.getElementById('wifi_ssid')) document.getElementById('wifi_ssid').value = '';
             if (document.getElementById('wifi_password')) document.getElementById('wifi_password').value = '';
             if (document.getElementById('wifi_security')) document.getElementById('wifi_security').value = 'wpa2';
             if (document.getElementById('wifi_max_users')) document.getElementById('wifi_max_users').value = '';
@@ -2923,16 +2928,56 @@ n        <th>Date/Time</th>
         // New network settings form handlers
         document.getElementById('wifiSettingsForm').addEventListener('submit', async (e) => {
             e.preventDefault();
+
+            // Save WiFi settings to DB AND apply immediately on Debian (AP mode)
             const data = Object.fromEntries(new FormData(e.target).entries());
-            const response = await fetch('/api/settings', {
+
+            // 1) Save to DB
+            const saveRes = await fetch('/api/settings', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data)
             });
+
+            // 2) Apply network config (this triggers hostapd + bridge on Debian)
+            // Use current LAN/WAN fields as well, because AP needs LAN CIDR for bridge/dhcp.
+            const payload = {
+                wan_interface_name: document.getElementById('wan_interface_name')?.value || '',
+                wan_config_type: document.getElementById('wan_config_type')?.value || 'dhcp',
+                wan_ip_address: document.getElementById('wan_ip_address')?.value || '',
+                wan_gateway: document.getElementById('wan_gateway')?.value || '',
+                wan_dns_servers: (document.getElementById('wan_dns_servers')?.value || '').split(',').map(s => s.trim()).filter(Boolean),
+                lan_interface_name: document.getElementById('lan_interface_name')?.value || '',
+                lan_ip_address: document.getElementById('lan_ip_address')?.value || '',
+                lan_dns_servers: (document.getElementById('lan_dns_servers')?.value || '').split(',').map(s => s.trim()).filter(Boolean),
+
+                wifi_ssid: data.wifi_ssid || '',
+                wifi_password: data.wifi_password || '',
+                wifi_security: data.wifi_security || 'wpa2',
+                wifi_max_users: data.wifi_max_users || '50',
+                wifi_transmit_power: data.wifi_transmit_power || '100',
+                wifi_hidden: data.wifi_hidden || 'false'
+            };
+
+            const applyRes = await fetch('/api/save-network', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
             const msg = document.getElementById('wifiSettingsMsg');
-            if (response.ok) {
+            const applyResult = await applyRes.json().catch(() => ({}));
+
+            if (saveRes.ok && applyRes.ok && applyResult.success) {
                 msg.style.display = 'block';
-                setTimeout(() => msg.style.display = 'none', 3000);
+                msg.style.color = 'var(--success-color)';
+                msg.innerText = applyResult.message || 'WiFi settings saved & applied!';
+                setTimeout(() => msg.style.display = 'none', 4000);
+            } else {
+                msg.style.display = 'block';
+                msg.style.color = 'var(--danger-color)';
+                msg.innerText = applyResult.error || 'Failed to apply WiFi settings.';
+                setTimeout(() => msg.style.display = 'none', 7000);
             }
         });
 
