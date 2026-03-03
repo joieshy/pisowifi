@@ -2383,31 +2383,44 @@ app.post('/api/network/wan/select', isAuthenticated, async (req, res) => {
         // Bring interface up
         await sudoExec(`ip link set dev ${wan_interface_name} up`);
 
-        // Debian-safe DHCP renew with fallbacks
+        // Debian-safe DHCP renew with fallbacks.
+        // NOTE: Some minimal images don't ship with a DHCP client. If none is found,
+        // we still switch the WAN interface in DB + iptables (NAT), but we warn the user.
+        // User can then install isc-dhcp-client/dhcpcd/udhcpc or set a static IP outside this UI.
+        let dhcpAttempted = false;
+
         if (which('dhclient')) {
+            dhcpAttempted = true;
             await sudoExec(`dhclient -r ${wan_interface_name} || true`);
             await sudoExec(`dhclient -v ${wan_interface_name}`);
         } else if (which('dhcpcd')) {
+            dhcpAttempted = true;
             await sudoExec(`dhcpcd -k ${wan_interface_name} || true`);
             await sudoExec(`dhcpcd ${wan_interface_name}`);
         } else if (which('udhcpc')) {
+            dhcpAttempted = true;
             await sudoExec(`udhcpc -i ${wan_interface_name} -q -n`);
-        } else {
-            return res.status(500).json({
-                error: 'No DHCP client found on system. Install isc-dhcp-client (dhclient) or dhcpcd5, or provide udhcpc.'
+        }
+
+        const wanIp = getInterfaceIpv4(wan_interface_name);
+
+        // Re-apply NAT rules to use the new WAN (even if it currently has no IP yet)
+        await reapplyNatRulesFromDb();
+
+        if (!dhcpAttempted) {
+            return res.json({
+                success: true,
+                message: `WAN interface selected: ${wan_interface_name} (WARNING: No DHCP client found; interface was selected and NAT rules updated, but WAN IP may not be acquired until you install dhclient/dhcpcd/udhcpc).`,
+                ip: wanIp || null,
+                warning: 'NO_DHCP_CLIENT'
             });
         }
 
-        // Verify we got an IPv4 address
-        const wanIp = getInterfaceIpv4(wan_interface_name);
         if (!wanIp) {
             return res.status(500).json({
-                error: `DHCP did not assign an IPv4 address to ${wan_interface_name}. Check cable/modem/router, or install a DHCP client.`,
+                error: `DHCP did not assign an IPv4 address to ${wan_interface_name}. Check cable/modem/router.`,
             });
         }
-
-        // Re-apply NAT rules to use the new WAN
-        await reapplyNatRulesFromDb();
 
         res.json({ success: true, message: `WAN interface selected: ${wan_interface_name}`, ip: wanIp });
     } catch (e) {
