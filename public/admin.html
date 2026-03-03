@@ -744,8 +744,8 @@
                 <h3>Transaction History</h3>
                 <table>
                     <thead>
-                        <tr>
-n        <th>Date/Time</th>
+        <tr>
+                            <th>Date/Time</th>
                             <th>Type</th>
                             <th>Description</th>
                             <th>Amount</th>
@@ -1624,6 +1624,25 @@ n        <th>Date/Time</th>
                         <i class="fas fa-magic"></i> Generate New License
                     </button>
                 </div>
+
+                <!-- Internet Settings (Super Admin) -->
+                <div class="card" style="border-left-color: #36b9cc;">
+                    <h3 style="margin-top: 0; color: #36b9cc; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-globe"></i> Internet Settings
+                    </h3>
+                    <p style="font-size: 0.8rem; color: #858796;">
+                        Quick access to WAN/LAN/WiFi configuration and internet diagnostics.
+                    </p>
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <button class="btn btn-info" onclick="showSection('network')" style="width: 100%; color: white;">
+                            <i class="fas fa-network-wired"></i> Open Network Settings
+                        </button>
+                        <button class="btn btn-secondary" onclick="showSection('diagnostics')" style="width: 100%;">
+                            <i class="fas fa-tools"></i> Open Diagnostics
+                        </button>
+                    </div>
+                </div>
+
                 <div class="card" style="border-left-color: #e74a3b;">
                     <h3 style="margin-top: 0; color: #e74a3b; border-bottom: 1px solid #eee; padding-bottom: 10px;">
                         <i class="fas fa-user-slash"></i> Session Control
@@ -1633,6 +1652,7 @@ n        <th>Date/Time</th>
                         <i class="fas fa-eye-slash"></i> Hide Super Admin Tab
                     </button>
                 </div>
+
                 <div class="card" style="border-left-color: #f6c23e;">
                     <h3 style="margin-top: 0; color: #f6c23e; border-bottom: 1px solid #eee; padding-bottom: 10px;">
                         <i class="fas fa-database"></i> Data Management
