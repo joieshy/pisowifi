@@ -397,15 +397,26 @@ async function applyLanBridgeApSettings(config) {
 
         const hasDnsmasq = async () => {
             try {
-                await execPromise('command -v dnsmasq');
+                // Try multiple checks because `command -v` may fail depending on shell/env.
+                await execPromise('dnsmasq --version');
                 return true;
-            } catch (e) {
-                return false;
+            } catch (e1) {
+                try {
+                    await execPromise('/usr/sbin/dnsmasq --version');
+                    return true;
+                } catch (e2) {
+                    try {
+                        await execPromise('which dnsmasq');
+                        return true;
+                    } catch (e3) {
+                        return false;
+                    }
+                }
             }
         };
 
         if (!(await hasDnsmasq())) {
-            throw new Error('dnsmasq is not installed. Install it on Debian: sudo apt-get update && sudo apt-get install -y dnsmasq');
+            throw new Error('dnsmasq is not installed or not found in PATH. Install it on Debian: sudo apt-get update && sudo apt-get install -y dnsmasq');
         }
 
         if (await hasSystemctl()) {
@@ -469,7 +480,8 @@ bogus-priv
 
             // Non-systemd / no unit: kill existing dnsmasq then start it with our config directory.
             await sudoExec('pkill dnsmasq 2>/dev/null || true');
-            await sudoExec('dnsmasq --conf-file=/etc/dnsmasq.conf --conf-dir=/etc/dnsmasq.d');
+            // Prefer absolute path on Debian (often installed under /usr/sbin)
+            await sudoExec('/usr/sbin/dnsmasq --conf-file=/etc/dnsmasq.conf --conf-dir=/etc/dnsmasq.d || dnsmasq --conf-file=/etc/dnsmasq.conf --conf-dir=/etc/dnsmasq.d');
         };
 
         await restartDnsmasq();
