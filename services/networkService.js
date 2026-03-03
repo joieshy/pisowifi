@@ -315,41 +315,60 @@ async function applyWifiSettings(config) {
         // Generate hostapd configuration
         const ssid = (wifi_ssid || config.wifi_name || config.wifi_ssid || 'PisoWiFi').toString().trim() || 'PisoWiFi';
 
+        // IMPORTANT:
+        // Your hostapd debug shows: "ACS: Unable to collect survey data" then "Interface initialization failed".
+        // That happens when hostapd is doing ACS (automatic channel selection) but the driver doesn't provide survey data.
+        // Fix: force a static channel and disable ACS.
+        // Also add ctrl_interface so hostapd doesn't complain "ctrl_iface not configured!".
+        // Add WMM/HT (802.11n) for better compatibility.
         let hostapdConfig = `interface=${wifiIface}
 driver=nl80211
 ssid=${ssid}
 country_code=PH
+
+# Disable ACS - force channel (prevents: "Unable to collect survey data")
+hw_mode=g
+channel=6
+
+# Management interface (prevents: "ctrl_iface not configured!")
+ctrl_interface=/var/run/hostapd
+ctrl_interface_group=0
+
+# Basic performance/compatibility
+wmm_enabled=1
+ieee80211n=1
+ht_capab=[HT40+][SHORT-GI-20][SHORT-GI-40]
+
+# Broadcast SSID by default (overridden below)
+ignore_broadcast_ssid=0
 `;
 
         // Security settings
+        // NOTE: hw_mode/channel already set above.
         if (wifi_security === 'wpa2') {
-            hostapdConfig += `hw_mode=g
-wpa=2
+            hostapdConfig += `wpa=2
 wpa_passphrase=${wifi_password || 'password'}
 wpa_key_mgmt=WPA-PSK
 wpa_pairwise=CCMP
 rsn_pairwise=CCMP
 `;
         } else if (wifi_security === 'wpa3') {
-            hostapdConfig += `hw_mode=g
-wpa=3
+            hostapdConfig += `wpa=2
 wpa_passphrase=${wifi_password || 'password'}
 wpa_key_mgmt=SAE
-wpa_pairwise=CCMP
 rsn_pairwise=CCMP
+ieee80211w=2
 `;
         } else if (wifi_security === 'wpa2+wpa3') {
-            hostapdConfig += `hw_mode=g
-wpa=3
+            hostapdConfig += `wpa=2
 wpa_passphrase=${wifi_password || 'password'}
 wpa_key_mgmt=SAE WPA-PSK
-wpa_pairwise=CCMP
 rsn_pairwise=CCMP
+ieee80211w=1
 `;
         } else {
             // Open network
-            hostapdConfig += `hw_mode=g
-wpa=0
+            hostapdConfig += `wpa=0
 `;
         }
 
