@@ -302,8 +302,13 @@ async function applyWifiSettings(config) {
             }
         };
 
+        // If hostapd isn't installed, we can still configure the file, but we can't start AP.
+        // Return a clear warning so the UI can show it, instead of failing the whole LAN bridge apply.
         if (!(await hasHostapd())) {
-            throw new Error('hostapd is not installed or not found in PATH. Install it on Debian: sudo apt-get update && sudo apt-get install -y hostapd');
+            return {
+                success: false,
+                message: 'hostapd is not installed. WiFi AP cannot be started. Install it on Debian: sudo apt-get update && sudo apt-get install -y hostapd'
+            };
         }
 
         // Generate hostapd configuration
@@ -532,7 +537,14 @@ bogus-priv
         await restartDnsmasq();
 
         // hostapd: bridged mode (bridge=br0)
-        await applyWifiSettings({ ...config, wifi_interface_name: wifiIface });
+        // If hostapd isn't installed, don't fail the whole bridge (wired clients can still work).
+        const wifiResult = await applyWifiSettings({ ...config, wifi_interface_name: wifiIface });
+        if (wifiResult && wifiResult.success === false) {
+            return {
+                success: true,
+                message: `LAN bridge configured (wired OK). WiFi AP skipped: ${wifiResult.message}`
+            };
+        }
 
         // Ensure hostapd is bridged. Restart is best-effort (if systemd unit not present we already started hostapd directly).
         await sudoExec(`grep -q "^bridge=${bridge}$" /etc/hostapd/hostapd.conf || echo "bridge=${bridge}" | tee -a /etc/hostapd/hostapd.conf > /dev/null`);
