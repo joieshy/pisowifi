@@ -442,7 +442,7 @@ async function initNetwork() {
 
         console.log(`[Network] Configuring: WAN=${wanInterface}, LAN=${lanInterface}, LAN CIDR=${lanIpCidr}, Bridge=br0`);
 
-        // --- Stop systemd-resolved to free up Port 53 for dnsmasq (common Debian conflict) ---
+        // --- Stop systemd-resolved and lock /etc/resolv.conf to prevent overwrites ---
         try {
             await sudoExec('systemctl stop systemd-resolved || true');
             await sudoExec('systemctl disable systemd-resolved || true');
@@ -462,10 +462,20 @@ async function initNetwork() {
 
             // Create resolv.conf with database DNS settings
             const dnsConfig = dnsList.map(dns => `nameserver ${dns}`).join('\n');
-            await sudoExec(`rm -f /etc/resolv.conf || true`);
+            
+            // Remove existing resolv.conf and create new one
+            await sudoExec('rm -f /etc/resolv.conf || true');
             await sudoExec(`echo "${dnsConfig}" | tee /etc/resolv.conf > /dev/null`);
             
-            console.log(`[Network] DNS configured: ${dnsList.join(', ')}`);
+            // Make /etc/resolv.conf immutable to prevent any service from overwriting it
+            await sudoExec('chattr +i /etc/resolv.conf || true');
+            
+            // Also prevent systemd-resolved from creating its own resolv.conf
+            await sudoExec('mkdir -p /run/systemd/resolve || true');
+            await sudoExec('touch /run/systemd/resolve/resolv.conf || true');
+            await sudoExec('chattr +i /run/systemd/resolve/resolv.conf || true');
+            
+            console.log(`[Network] DNS configured: ${dnsList.join(', ')} (locked against overwrites)`);
         } catch (e) {
             console.log('[Network] Note: systemd-resolved handling or DNS configuration failed:', e.message);
         }
