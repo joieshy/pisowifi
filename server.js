@@ -446,10 +446,28 @@ async function initNetwork() {
         try {
             await sudoExec('systemctl stop systemd-resolved || true');
             await sudoExec('systemctl disable systemd-resolved || true');
-            await sudoExec('rm -f /etc/resolv.conf || true');
-            await sudoExec('echo "nameserver 8.8.8.8" | tee /etc/resolv.conf > /dev/null');
+            
+            // Use DNS settings from database instead of hardcoded Google DNS
+            const dnsSettings = await new Promise((resolve, reject) => {
+                db.all(`SELECT key, value FROM settings WHERE key IN ('wan_dns_servers', 'lan_dns_servers')`, [], (err, rows) => {
+                    if (err) return reject(err);
+                    const s = {};
+                    rows.forEach(row => s[row.key] = row.value);
+                    resolve(s);
+                });
+            });
+
+            const dnsServers = dnsSettings.wan_dns_servers || dnsSettings.lan_dns_servers || '8.8.8.8,8.8.4.4';
+            const dnsList = dnsServers.split(',').map(s => s.trim()).filter(s => s);
+
+            // Create resolv.conf with database DNS settings
+            const dnsConfig = dnsList.map(dns => `nameserver ${dns}`).join('\n');
+            await sudoExec(`rm -f /etc/resolv.conf || true`);
+            await sudoExec(`echo "${dnsConfig}" | tee /etc/resolv.conf > /dev/null`);
+            
+            console.log(`[Network] DNS configured: ${dnsList.join(', ')}`);
         } catch (e) {
-            console.log('[Network] Note: systemd-resolved handling skipped or failed.');
+            console.log('[Network] Note: systemd-resolved handling or DNS configuration failed:', e.message);
         }
 
         // --- Apply bridge + dnsmasq + hostapd bridge on LAN subnet ---
