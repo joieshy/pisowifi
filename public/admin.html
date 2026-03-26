@@ -926,6 +926,70 @@
                 <h2>Diagnostics & Tools</h2>
             </div>
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
+                <!-- Terminal -->
+                <div class="card" style="grid-column: 1 / -1;">
+                    <h3 style="margin-top: 0; color: var(--info-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                        <i class="fas fa-terminal"></i> System Terminal
+                    </h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                        <!-- Command Input -->
+                        <div>
+                            <div class="form-group">
+                                <label>Command</label>
+                                <div style="display: flex; gap: 10px;">
+                                    <input type="text" id="terminalCommand" placeholder="Enter command (e.g., ls, df -h, ps aux)" style="flex: 2;">
+                                    <button class="btn btn-primary" onclick="executeTerminalCommand()" style="flex: 1;">
+                                        <i class="fas fa-play"></i> Execute
+                                    </button>
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 5px; flex-wrap: wrap; margin-top: 10px;">
+                                <button class="btn btn-info btn-sm" onclick="setTerminalCommand('df -h')" title="Disk usage">df -h</button>
+                                <button class="btn btn-info btn-sm" onclick="setTerminalCommand('free -m')" title="Memory usage">free -m</button>
+                                <button class="btn btn-info btn-sm" onclick="setTerminalCommand('uptime')" title="System uptime">uptime</button>
+                                <button class="btn btn-info btn-sm" onclick="setTerminalCommand('ps aux')" title="Running processes">ps aux</button>
+                                <button class="btn btn-info btn-sm" onclick="setTerminalCommand('netstat -tuln')" title="Network connections">netstat -tuln</button>
+                                <button class="btn btn-info btn-sm" onclick="setTerminalCommand('iptables -L')" title="Firewall rules">iptables -L</button>
+                                <button class="btn btn-info btn-sm" onclick="setTerminalCommand('ls /var/log')" title="Log files">ls /var/log</button>
+                                <button class="btn btn-info btn-sm" onclick="setTerminalCommand('tail -n 20 /var/log/syslog')" title="Recent logs">tail syslog</button>
+                                <button class="btn btn-info btn-sm" onclick="setTerminalCommand('uname -a')" title="System info">uname -a</button>
+                                <button class="btn btn-info btn-sm" onclick="setTerminalCommand('lscpu')" title="CPU info">lscpu</button>
+                            </div>
+                        </div>
+                        
+                        <!-- Command History -->
+                        <div>
+                            <div class="form-group">
+                                <label>Command History</label>
+                                <div id="terminalHistory" style="background: #f8f9fc; border: 1px solid #ddd; border-radius: 5px; padding: 10px; font-size: 0.8rem; max-height: 120px; overflow-y: auto;">
+                                    <div style="color: #858796; font-style: italic;">No commands executed yet</div>
+                                </div>
+                                <div style="display: flex; gap: 5px; margin-top: 5px;">
+                                    <button class="btn btn-secondary btn-sm" onclick="clearTerminalHistory()" title="Clear history">Clear</button>
+                                    <button class="btn btn-secondary btn-sm" onclick="copyTerminalOutput()" title="Copy output">Copy</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Terminal Output -->
+                    <div class="form-group">
+                        <label>Output</label>
+                        <div id="terminalOutput" style="background: #1a1a1a; color: #00ff00; border: 1px solid #444; border-radius: 5px; padding: 15px; font-family: 'Courier New', monospace; font-size: 0.9rem; min-height: 200px; max-height: 400px; overflow-y: auto; white-space: pre-wrap;">
+                            <div style="color: #888; font-style: italic;">Terminal ready. Type a command and click Execute.</div>
+                            <div style="color: #888; font-size: 0.8rem; margin-top: 10px;">Available commands: ls, ps, df, free, uptime, who, w, netstat, ss, ifconfig, ip, route, iptables, cat, tail, head, grep, find, du, iotop, ping, traceroute, nslookup, dig, hostname, date, cal, uname, lscpu, lsblk, mount, systemctl, journalctl, service, crontab</div>
+                        </div>
+                        <div style="display: flex; gap: 10px; margin-top: 10px;">
+                            <button class="btn btn-warning" onclick="clearTerminalOutput()" style="color: white;">
+                                <i class="fas fa-broom"></i> Clear Output
+                            </button>
+                            <button class="btn btn-secondary" onclick="scrollToBottom()">
+                                <i class="fas fa-arrow-down"></i> Scroll to Bottom
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Ping Test -->
                 <div class="card">
                     <h3 style="margin-top: 0; color: var(--primary-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
@@ -3770,6 +3834,109 @@
                     setTimeout(fetchWanIp, 1000);
                 }
             };
+
+            // Terminal Functions
+            let terminalHistory = [];
+            let terminalOutputBuffer = '';
+
+            function executeTerminalCommand() {
+                const commandInput = document.getElementById('terminalCommand');
+                const command = commandInput.value.trim();
+                const outputDiv = document.getElementById('terminalOutput');
+                const historyDiv = document.getElementById('terminalHistory');
+
+                if (!command) {
+                    addTerminalOutput('Please enter a command.');
+                    return;
+                }
+
+                // Add command to history
+                terminalHistory.push(command);
+                updateTerminalHistory();
+
+                // Add command to output with timestamp
+                const timestamp = new Date().toLocaleTimeString();
+                addTerminalOutput(`[${timestamp}] $ ${command}`);
+
+                // Clear input
+                commandInput.value = '';
+
+                // Execute command via API
+                fetch('/api/diagnostics/terminal', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ command })
+                })
+                .then(response => response.json())
+                .then(result => {
+                    if (result.error) {
+                        addTerminalOutput(`Error: ${result.error}`, true);
+                    } else {
+                        addTerminalOutput(result.output || 'Command executed successfully.');
+                    }
+                })
+                .catch(error => {
+                    addTerminalOutput(`Network Error: ${error.message}`, true);
+                });
+            }
+
+            function setTerminalCommand(command) {
+                document.getElementById('terminalCommand').value = command;
+            }
+
+            function addTerminalOutput(text, isError = false) {
+                const outputDiv = document.getElementById('terminalOutput');
+                const timestamp = new Date().toLocaleTimeString();
+                const color = isError ? '#ff6b6b' : '#00ff00';
+                
+                outputDiv.innerHTML += `<div style="color: ${color}; margin-bottom: 5px;">${text}</div>`;
+                outputDiv.scrollTop = outputDiv.scrollHeight;
+            }
+
+            function updateTerminalHistory() {
+                const historyDiv = document.getElementById('terminalHistory');
+                if (terminalHistory.length === 0) {
+                    historyDiv.innerHTML = '<div style="color: #858796; font-style: italic;">No commands executed yet</div>';
+                } else {
+                    historyDiv.innerHTML = terminalHistory
+                        .map(cmd => `<div style="color: #5a5c69; font-size: 0.8rem; padding: 2px 0; border-bottom: 1px solid #eee;">${cmd}</div>`)
+                        .join('');
+                }
+            }
+
+            function clearTerminalOutput() {
+                const outputDiv = document.getElementById('terminalOutput');
+                outputDiv.innerHTML = '<div style="color: #888; font-style: italic;">Terminal ready. Type a command and click Execute.</div><div style="color: #888; font-size: 0.8rem; margin-top: 10px;">Available commands: ls, ps, df, free, uptime, who, w, netstat, ss, ifconfig, ip, route, iptables, cat, tail, head, grep, find, du, iotop, ping, traceroute, nslookup, dig, hostname, date, cal, uname, lscpu, lsblk, mount, systemctl, journalctl, service, crontab</div>';
+            }
+
+            function clearTerminalHistory() {
+                terminalHistory = [];
+                updateTerminalHistory();
+            }
+
+            function copyTerminalOutput() {
+                const outputDiv = document.getElementById('terminalOutput');
+                const text = outputDiv.innerText;
+                navigator.clipboard.writeText(text).then(() => {
+                    const msg = document.getElementById('uploadMsg');
+                    msg.style.display = 'block';
+                    msg.style.color = 'var(--success-color)';
+                    msg.innerText = 'Terminal output copied to clipboard!';
+                    setTimeout(() => msg.style.display = 'none', 3000);
+                });
+            }
+
+            function scrollToBottom() {
+                const outputDiv = document.getElementById('terminalOutput');
+                outputDiv.scrollTop = outputDiv.scrollHeight;
+            }
+
+            // Add Enter key support for terminal command input
+            document.getElementById('terminalCommand').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    executeTerminalCommand();
+                }
+            });
         </script>
     </body>
 </html>

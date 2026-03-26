@@ -2017,6 +2017,58 @@ app.get('/api/diagnostics/logs', isAuthenticated, (req, res) => {
     res.json({ logs });
 });
 
+// Diagnostics: Terminal Command Execution
+app.post('/api/diagnostics/terminal', isAuthenticated, (req, res) => {
+    const { command } = req.body;
+    
+    if (!command) {
+        return res.status(400).json({ error: 'Command is required' });
+    }
+    
+    // Security: Validate and sanitize commands
+    const allowedCommands = [
+        'ls', 'ps', 'top', 'df', 'free', 'uptime', 'who', 'w',
+        'netstat', 'ss', 'ifconfig', 'ip', 'route', 'iptables',
+        'cat', 'tail', 'head', 'grep', 'find', 'du', 'iotop',
+        'ping', 'traceroute', 'nslookup', 'dig', 'hostname',
+        'date', 'cal', 'uname', 'lscpu', 'lsblk', 'mount',
+        'systemctl', 'journalctl', 'service', 'crontab'
+    ];
+    
+    // Basic validation - check if command starts with allowed prefix
+    const commandPrefix = command.trim().split(' ')[0];
+    if (!allowedCommands.includes(commandPrefix)) {
+        return res.status(400).json({ 
+            error: `Command '${commandPrefix}' not allowed. Use: ${allowedCommands.slice(0, 10).join(', ')}...` 
+        });
+    }
+    
+    // Additional security: Block potentially dangerous patterns
+    const dangerousPatterns = [
+        /rm\s+/, /sudo\s+/, /passwd\s+/, /useradd\s+/, /userdel\s+/,
+        /chmod\s+/, /chown\s+/, /mount\s+-o\s+/, /umount\s+/, /reboot\s*/,
+        /shutdown\s*/, /halt\s*/, /poweroff\s*/, /dd\s+/, /fdisk\s+/
+    ];
+    
+    for (const pattern of dangerousPatterns) {
+        if (pattern.test(command)) {
+            return res.status(400).json({ 
+                error: 'Command contains potentially dangerous operations and is not allowed.' 
+            });
+        }
+    }
+    
+    // Execute command with timeout
+    exec(command, { timeout: 30000, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+        res.json({
+            command: command,
+            output: stdout || stderr || '',
+            error: error ? error.message : null,
+            timestamp: new Date().toISOString()
+        });
+    });
+});
+
 // Security: Website Blocker
 app.get('/api/security/websites', isAuthenticated, (req, res) => {
     db.all(`SELECT * FROM blocked_websites ORDER BY created_at DESC`, [], (err, rows) => {
