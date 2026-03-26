@@ -2032,7 +2032,8 @@ app.post('/api/diagnostics/terminal', isAuthenticated, (req, res) => {
         'cat', 'tail', 'head', 'grep', 'find', 'du', 'iotop',
         'ping', 'traceroute', 'nslookup', 'dig', 'hostname',
         'date', 'cal', 'uname', 'lscpu', 'lsblk', 'mount',
-        'systemctl', 'journalctl', 'service', 'crontab'
+        'systemctl', 'journalctl', 'service', 'crontab',
+        'whoami', 'reboot', 'shutdown'
     ];
     
     // Basic validation - check if command starts with allowed prefix
