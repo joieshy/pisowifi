@@ -2025,36 +2025,45 @@ app.post('/api/diagnostics/terminal', isAuthenticated, (req, res) => {
         return res.status(400).json({ error: 'Command is required' });
     }
     
-    // Security: Validate and sanitize commands
-    const allowedCommands = [
-        'ls', 'ps', 'top', 'df', 'free', 'uptime', 'who', 'w',
-        'netstat', 'ss', 'ifconfig', 'ip', 'route', 'iptables',
-        'cat', 'tail', 'head', 'grep', 'find', 'du', 'iotop',
-        'ping', 'traceroute', 'nslookup', 'dig', 'hostname',
-        'date', 'cal', 'uname', 'lscpu', 'lsblk', 'mount',
-        'systemctl', 'journalctl', 'service', 'crontab',
-        'whoami', 'reboot', 'shutdown'
-    ];
-    
-    // Basic validation - check if command starts with allowed prefix
-    const commandPrefix = command.trim().split(' ')[0];
-    if (!allowedCommands.includes(commandPrefix)) {
-        return res.status(400).json({ 
-            error: `Command '${commandPrefix}' not allowed. Use: ${allowedCommands.slice(0, 10).join(', ')}...` 
-        });
-    }
-    
-    // Additional security: Block potentially dangerous patterns
+    // Security: Allow most commands but block dangerous operations
+    // We'll be more permissive but still block truly dangerous commands
     const dangerousPatterns = [
-        /rm\s+/, /sudo\s+/, /passwd\s+/, /useradd\s+/, /userdel\s+/,
-        /chmod\s+/, /chown\s+/, /mount\s+-o\s+/, /umount\s+/, /reboot\s*/,
-        /shutdown\s*/, /halt\s*/, /poweroff\s*/, /dd\s+/, /fdisk\s+/
+        // File system destruction
+        /rm\s+.*-rf/, /rm\s+.*\//, /rm\s+.*\.\./,
+        /dd\s+/, /fdisk\s+/, /mkfs\s+/, /format\s+/,
+        
+        // System modification
+        /sudo\s+/, /su\s+/, /passwd\s+/, /useradd\s+/, /userdel\s+/, /usermod\s+/,
+        /groupadd\s+/, /groupdel\s+/, /groupmod\s+/,
+        /chmod\s+.*777/, /chmod\s+.*\//, /chown\s+.*\//,
+        
+        // Network disruption
+        /iptables\s+.*-F/, /iptables\s+.*-X/, /iptables\s+.*-Z/,
+        /route\s+del/, /ip\s+route\s+del/, /ifconfig\s+.*down/,
+        
+        // System shutdown/reboot
+        /reboot\s*/, /shutdown\s*/, /halt\s*/, /poweroff\s*/,
+        
+        // Package management (can be dangerous)
+        /apt\s+.*install/, /apt\s+.*remove/, /apt\s+.*purge/,
+        /yum\s+.*install/, /yum\s+.*remove/,
+        /dnf\s+.*install/, /dnf\s+.*remove/,
+        /pacman\s+.*-S/, /pacman\s+.*-R/,
+        
+        // Script execution
+        /bash\s+/, /sh\s+/, /zsh\s+/, /fish\s+/, /python\s+/, /perl\s+/, /ruby\s+/,
+        /\.\/.*\.sh/, /\.\/.*\.py/, /\.\/.*\.pl/, /\.\/.*\.rb/,
+        
+        // Configuration modification
+        /echo\s+.*>>\s+\/etc\//, /echo\s+.*>\s+\/etc\//,
+        /cat\s+.*>\s+\/etc\//, /cat\s+.*>>\s+\/etc\//
     ];
     
+    // Check for dangerous patterns
     for (const pattern of dangerousPatterns) {
         if (pattern.test(command)) {
             return res.status(400).json({ 
-                error: 'Command contains potentially dangerous operations and is not allowed.' 
+                error: `Command contains potentially dangerous operations and is not allowed: ${pattern}` 
             });
         }
     }
