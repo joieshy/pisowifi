@@ -11,6 +11,9 @@ const DEFAULT_LAN_BRIDGE = 'br0';
 const DEFAULT_PORTAL_PORT = 3000;
 const DEFAULT_FALLBACK_DNS = ['8.8.8.8', '8.8.4.4'];
 
+let cachedDb = null;
+let cachedSettingsStore = null;
+
 function ipToInt(ip) {
     return ip.split('.').reduce((acc, oct) => (acc << 8) + parseInt(oct, 10), 0) >>> 0;
 }
@@ -44,6 +47,9 @@ function parseCidr(cidr) {
 }
 
 function normalizeDnsList(dnsServers) {
+    if (typeof dnsServers === 'string') {
+        dnsServers = dnsServers.split(',');
+    }
     if (!Array.isArray(dnsServers) || dnsServers.length === 0) {
         return DEFAULT_FALLBACK_DNS;
     }
@@ -58,7 +64,7 @@ function getInterfaceName(value, fallback) {
 }
 
 function getBridgeInterfaceName(config = {}) {
-    return getInterfaceName(config.bridge_interface_name || config.bridge_name || config.lan_bridge_name, DEFAULT_LAN_BRIDGE);
+    return getInterfaceName(config.bridge_interface_name || config.bridge_name || config.lan_bridge_name || config.lan_interface_name, DEFAULT_LAN_BRIDGE);
 }
 
 function getPortalPort(config = {}) {
@@ -199,6 +205,115 @@ async function ensureIptablesRule(args, checkArgs) {
     }
 }
 
+function normalizeSettingsSource(source = {}) {
+    const settings = source.settings && typeof source.settings === 'object' ? source.settings : source;
+    const rows = source.rows || source.data || [];
+    return { settings, rows };
+}
+
+function normalizeDbRowsToSettings(rows) {
+    const settings = {};
+    if (!Array.isArray(rows)) return settings;
+
+    for (const row of rows) {
+        if (!row || typeof row !== 'object') continue;
+        const key = row.setting_key || row.key || row.name;
+        if (!key) continue;
+        const value = Object.prototype.hasOwnProperty.call(row, 'setting_value')
+            ? row.setting_value
+            : Object.prototype.hasOwnProperty.call(row, 'value')
+                ? row.value
+                : row.data;
+        settings[key] = value;
+    }
+
+    return settings;
+}
+
+function parseStoredDns(value) {
+    if (Array.isArray(value)) return normalizeDnsList(value);
+    if (typeof value === 'string') {
+        return normalizeDnsList(value.split(','));
+    }
+    return [];
+}
+
+function resolveNetworkSettings(input = {}) {
+    const { settings, rows } = normalizeSettingsSource(input);
+    const rowSettings = normalizeDbRowsToSettings(rows);
+    const merged = { ...rowSettings, ...settings };
+
+    const wan_interface_name = getInterfaceName(
+        merged.wan_interface_name || merged.wan_interface || merged.wan_ifname || merged.wanInterface,
+        ''
+    );
+    const lan_interface_name = getInterfaceName(
+        merged.lan_interface_name || merged.lan_interface || merged.lan_ifname || merged.lanInterface || merged.bridge_interface_name,
+        DEFAULT_LAN_BRIDGE
+    );
+    const lan_ip_address = merged.lan_ip_address || merged.lan_ip || merged.gateway_ip || '';
+    const wan_dns_servers = parseStoredDns(merged.wan_dns_servers || merged.wan_dns || merged.dns_servers);
+    const lan_dns_servers = parseStoredDns(merged.lan_dns_servers || merged.lan_dns || merged.dns_servers);
+    const wan_config_type = merged.wan_config_type || merged.wan_mode || 'dhcp';
+    const wan_ip_address = merged.wan_ip_address || merged.wan_ip || '';
+    const wan_gateway = merged.wan_gateway || merged.gateway || '';
+    const desired_subnet = merged.desired_subnet || merged.lan_subnet || '';
+    const bridge_interface_name = getBridgeInterfaceName(merged);
+    const portal_port = getPortalPort(merged);
+
+    return {
+        ...merged,
+        wan_interface_name,
+        lan_interface_name,
+        lan_ip_address,
+        wan_dns_servers,
+        lan_dns_servers,
+        wan_config_type,
+        wan_ip_address,
+        wan_gateway,
+        desired_subnet,
+        bridge_interface_name,
+        portal_port
+    };
+}
+
+function setNetworkDataSource(source) {
+    if (source && typeof source === 'object') {
+        if (source.db || source.sqliteDb) {
+            cachedDb = source.db || source.sqliteDb;
+        }
+        if (source.settingsStore) {
+            cachedSettingsStore = source.settingsStore;
+        }
+    }
+}
+
+async function loadNetworkSettings(source = {}) {
+    setNetworkDataSource(source);
+
+    const direct = resolveNetworkSettings(source);
+    if (direct.wan_interface_name || direct.lan_interface_name || direct.lan_ip_address) {
+        return direct;
+    }
+
+    if (cachedSettingsStore && typeof cachedSettingsStore.getAll === 'function') {
+        const storeSettings = await cachedSettingsStore.getAll();
+        return resolveNetworkSettings({ settings: storeSettings });
+    }
+
+    if (cachedDb && typeof cachedDb.all === 'function') {
+        const rows = await new Promise((resolve, reject) => {
+            cachedDb.all('SELECT setting_key, setting_value FROM settings', [], (err, result) => {
+                if (err) return reject(err);
+                resolve(result || []);
+            });
+        });
+        return resolveNetworkSettings({ rows });
+    }
+
+    return direct;
+}
+
 async function applyIptablesRules(wanInterface, lanCidr, options = {}) {
     if (!wanInterface || !lanCidr) {
         throw new Error('WAN interface and LAN CIDR are required for iptables rules.');
@@ -279,10 +394,11 @@ function generateNetplanConfig(wanInterface, wanConfigType, wanIp, wanGateway, w
 }
 
 async function applyNetworkConfig(config) {
+    const resolved = await loadNetworkSettings(config);
     const {
         wan_interface_name, wan_config_type, wan_ip_address, wan_gateway, wan_dns_servers,
         lan_interface_name, lan_ip_address, lan_dns_servers
-    } = config;
+    } = resolved;
 
     if (!wan_interface_name || !lan_interface_name || !lan_ip_address) {
         throw new Error('Missing required network interface parameters.');
@@ -305,8 +421,8 @@ async function applyNetworkConfig(config) {
     try {
         if (await hasNetplan()) {
             const netplanConfig = generateNetplanConfig(
-                wan_interface_name, wan_config_type, wan_ip_address, wan_gateway, wan_dns_servers,
-                lan_interface_name, lan_ip_address, lan_dns_servers
+                wan_interface_name, wan_config_type, wan_ip_address, wan_gateway, normalizeDnsList(wan_dns_servers),
+                lan_interface_name, lan_ip_address, normalizeDnsList(lan_dns_servers)
             );
 
             const netplanFilePath = `/etc/netplan/01-pisowifi-config.yaml`;
@@ -391,12 +507,13 @@ async function writeResolvConf(dnsServers) {
 }
 
 async function applyLanBridgeApSettings(config) {
+    const resolved = await loadNetworkSettings(config);
     const {
         lan_interface_name,
         lan_ip_address,
         lan_dns_servers,
         wan_interface_name
-    } = config;
+    } = resolved;
 
     if (!lan_interface_name || !lan_ip_address) {
         throw new Error('Missing required LAN interface parameters.');
@@ -409,12 +526,12 @@ async function applyLanBridgeApSettings(config) {
 
     try {
         const bridgeInterface = getBridgeInterfaceName({
-            ...config,
-            bridge_interface_name: config.bridge_interface_name || lan_interface_name
+            ...resolved,
+            bridge_interface_name: resolved.bridge_interface_name || lan_interface_name
         });
         const wanInterface = getInterfaceName(wan_interface_name, '');
         const lanDnsList = normalizeDnsList(lan_dns_servers);
-        const portalPort = getPortalPort(config);
+        const portalPort = getPortalPort(resolved);
         const lanCidr = lan_ip_address;
         const { ip: lanIp, prefix } = parseCidr(lan_ip_address);
 
@@ -510,7 +627,8 @@ async function getCurrentLanSettings() {
 }
 
 async function applyDynamicLanIp(config) {
-    const { lan_interface_name, desired_subnet, lan_dns_servers } = config;
+    const resolved = await loadNetworkSettings(config);
+    const { lan_interface_name, desired_subnet, lan_dns_servers } = resolved;
 
     if (!lan_interface_name || !desired_subnet) {
         throw new Error('Missing required parameters for dynamic LAN IP configuration.');
@@ -542,12 +660,13 @@ async function applyDynamicLanIp(config) {
         console.log(`[Dynamic LAN] Found available IP: ${availableIp} in subnet ${desired_subnet}`);
 
         await applyLanBridgeApSettings({
+            ...resolved,
             lan_interface_name,
             lan_ip_address: gatewayIp,
             lan_dns_servers,
-            bridge_interface_name: getBridgeInterfaceName(config),
-            wan_interface_name: config.wan_interface_name,
-            portal_port: getPortalPort(config)
+            bridge_interface_name: getBridgeInterfaceName(resolved),
+            wan_interface_name: resolved.wan_interface_name,
+            portal_port: getPortalPort(resolved)
         });
 
         return {
@@ -589,7 +708,7 @@ async function autoConfigureNetwork() {
             throw new Error(`Configuration validation failed: ${validation.errors.join(', ')}`);
         }
 
-        const networkConfig = {
+        const networkConfig = resolveNetworkSettings({
             wan_interface_name: config.wan.name,
             wan_config_type: 'dhcp',
             wan_ip_address: '',
@@ -597,8 +716,10 @@ async function autoConfigureNetwork() {
             wan_dns_servers: DEFAULT_FALLBACK_DNS,
             lan_interface_name: config.lan.name,
             lan_ip_address: '10.0.0.1/24',
-            lan_dns_servers: DEFAULT_FALLBACK_DNS
-        };
+            lan_dns_servers: DEFAULT_FALLBACK_DNS,
+            bridge_interface_name: DEFAULT_LAN_BRIDGE,
+            portal_port: DEFAULT_PORTAL_PORT
+        });
 
         await applyNetworkConfig(networkConfig);
         await applyLanBridgeApSettings({
@@ -658,5 +779,8 @@ module.exports = {
     applyDynamicLanIp,
     applyIptablesRules,
     getBridgeInterfaceName,
-    getPortalPort
+    getPortalPort,
+    loadNetworkSettings,
+    resolveNetworkSettings,
+    setNetworkDataSource
 };

@@ -12,7 +12,7 @@ const { exec, execSync } = require('child_process');
 const https = require('https');
 const axios = require('axios');
 const { SerialPort, ReadlineParser } = require('serialport'); // Import serialport
-const { applyNetworkConfig, applyAllNetworkSettings, applyLanBridgeApSettings, sudoExec, autoConfigureNetwork, getNetworkStatus, getCurrentLanSettings, applyDynamicLanIp } = require('./services/networkService'); // Idinagdag ito
+const { applyNetworkConfig, applyAllNetworkSettings, applyLanBridgeApSettings, sudoExec, autoConfigureNetwork, getNetworkStatus, getCurrentLanSettings, applyDynamicLanIp, loadNetworkSettings, resolveNetworkSettings } = require('./services/networkService'); // Idinagdag ito
 const app = express();
 app.set('trust proxy', true);
 
@@ -441,75 +441,26 @@ async function initNetwork() {
     try {
         console.log('Initializing Network for Debian (Bridge AP)...');
 
-        const settings = await new Promise((resolve, reject) => {
-            db.all(`SELECT key, value FROM settings WHERE key IN ('wan_interface_name', 'lan_interface_name', 'lan_ip_address', 'lan_dns_servers')`, [], (err, rows) => {
-                if (err) return reject(err);
-                const s = {};
-                rows.forEach(row => s[row.key] = row.value);
-                resolve(s);
-            });
-        });
+        const settings = await loadNetworkSettings(db);
+        const resolved = resolveNetworkSettings(settings, { bridge_interface_name: 'br0', portal_port: PORT });
 
-        const wanInterface = settings.wan_interface_name || 'enp1s0';
-        const lanInterface = settings.lan_interface_name || 'enx00e04c680013';
-        const lanIpCidr = settings.lan_ip_address || '10.0.0.1/24';
-        const lanDnsServers = settings.lan_dns_servers ? settings.lan_dns_servers.split(',').map(s => s.trim()).filter(s => s) : [];
+        console.log(`[Network] Configuring: WAN=${resolved.wan_interface_name}, LAN=${resolved.lan_interface_name}, LAN CIDR=${resolved.lan_ip_address}, Bridge=${resolved.bridge_interface_name}`);
 
-        console.log(`[Network] Configuring: WAN=${wanInterface}, LAN=${lanInterface}, LAN CIDR=${lanIpCidr}, Bridge=br0`);
+        await sudoExec('systemctl stop systemd-resolved || true');
+        await sudoExec('systemctl disable systemd-resolved || true');
 
-        // --- Stop systemd-resolved and lock /etc/resolv.conf to prevent overwrites ---
-        try {
-            await sudoExec('systemctl stop systemd-resolved || true');
-            await sudoExec('systemctl disable systemd-resolved || true');
-            
-            // Use DNS settings from database instead of hardcoded Google DNS
-            const dnsSettings = await new Promise((resolve, reject) => {
-                db.all(`SELECT key, value FROM settings WHERE key IN ('wan_dns_servers', 'lan_dns_servers')`, [], (err, rows) => {
-                    if (err) return reject(err);
-                    const s = {};
-                    rows.forEach(row => s[row.key] = row.value);
-                    resolve(s);
-                });
-            });
-
-            const dnsServers = dnsSettings.wan_dns_servers || dnsSettings.lan_dns_servers || '8.8.8.8,8.8.4.4';
-            const dnsList = dnsServers.split(',').map(s => s.trim()).filter(s => s);
-
-            // Create resolv.conf with database DNS settings
-            const dnsConfig = dnsList.map(dns => `nameserver ${dns}`).join('\n');
-            
-            // Remove existing resolv.conf and create new one
-            await sudoExec('rm -f /etc/resolv.conf || true');
-            await sudoExec(`echo "${dnsConfig}" | tee /etc/resolv.conf > /dev/null`);
-            
-            // Make /etc/resolv.conf immutable to prevent any service from overwriting it
-            await sudoExec('chattr +i /etc/resolv.conf || true');
-            
-            // Also prevent systemd-resolved from creating its own resolv.conf
-            await sudoExec('mkdir -p /run/systemd/resolve || true');
-            await sudoExec('touch /run/systemd/resolve/resolv.conf || true');
-            await sudoExec('chattr +i /run/systemd/resolve/resolv.conf || true');
-            
-            console.log(`[Network] DNS configured: ${dnsList.join(', ')} (locked against overwrites)`);
-        } catch (e) {
-            console.log('[Network] Note: systemd-resolved handling or DNS configuration failed:', e.message);
-        }
-
-        // --- Apply bridge + dnsmasq bridge on LAN subnet ---
         await applyLanBridgeApSettings({
-            lan_interface_name: lanInterface,
-            lan_ip_address: lanIpCidr,
-            lan_dns_servers: lanDnsServers,
-            wan_interface_name: wanInterface
+            ...resolved,
+            wan_interface_name: resolved.wan_interface_name,
+            lan_interface_name: resolved.lan_interface_name,
+            lan_ip_address: resolved.lan_ip_address,
+            lan_dns_servers: resolved.lan_dns_servers,
+            wan_dns_servers: resolved.wan_dns_servers,
+            bridge_interface_name: resolved.bridge_interface_name,
+            portal_port: resolved.portal_port
         });
-        
-        if (os.platform() === 'linux') {
-            try {
-                await reapplyNatRulesFromDb();
-            } catch (natErr) {
-                console.error('[Network] Failed to reapply NAT rules after network init:', natErr.message);
-            }
-        }
+
+        await reapplyNatRulesFromDb(resolved);
 
         console.log('Network initialization complete (Bridge AP).');
     } catch (e) {
@@ -838,10 +789,7 @@ db.serialize(() => {
         db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)`, setting);
     });
 
-    // Auto-fix: Ensure the database uses the correct detected interfaces from 'ip a'
-    // Force update these keys to match the hardware found
-    db.run(`UPDATE settings SET value = 'enp1s0' WHERE key = 'wan_interface_name'`);
-    db.run(`UPDATE settings SET value = 'enx00e04c680013' WHERE key = 'lan_interface_name'`);
+    // Auto-fix removed: preserve saved network settings instead of overwriting them on every startup
 
     // Ensure new audio settings exist for existing databases
     const newAudioSettings = [
@@ -2321,11 +2269,9 @@ app.post('/api/network/clear', isAuthenticated, (req, res) => {
  *
  * NOTE: This does not change interface IPs; it only updates iptables rules.
  */
-async function reapplyNatRulesFromDb() {
+async function reapplyNatRulesFromDb(runtimeSettings = null) {
     if (os.platform() !== 'linux') return;
 
-    // If iptables isn't installed (common on some minimal images), skip firewall/NAT apply.
-    // We still allow selecting the WAN interface and saving it to DB.
     const hasIptables = (() => {
         try {
             execSync('command -v iptables', { stdio: 'ignore' });
@@ -2340,54 +2286,36 @@ async function reapplyNatRulesFromDb() {
         return;
     }
 
-    const settings = await new Promise((resolve, reject) => {
-        db.all(
-            `SELECT key, value FROM settings 
-             WHERE key IN ('wan_interface_name','lan_interface_name','lan_ip_address')`,
-            [],
-            (err, rows) => {
-                if (err) return reject(err);
-                const s = {};
-                rows.forEach(r => s[r.key] = r.value);
-                resolve(s);
-            }
-        );
-    });
+    const settings = runtimeSettings || await loadNetworkSettings(db);
+    const resolved = resolveNetworkSettings(settings, { bridge_interface_name: 'br0', portal_port: PORT });
 
-    const wanInterface = settings.wan_interface_name || 'enp1s0';
-    const lanInterface = 'br0';
-    const lanIpAddress = (settings.lan_ip_address || '10.0.0.1/24').split('/')[0];
+    const wanInterface = resolved.wan_interface_name;
+    const lanInterface = resolved.bridge_interface_name;
+    const lanIpAddress = resolved.lan_ip_address.split('/')[0];
 
-    // NAT + FORWARD baseline
     await sudoExec('iptables -t nat -F PREROUTING || true');
     await sudoExec('iptables -t nat -F POSTROUTING || true');
 
-    // Basic accept rules
     await sudoExec(`iptables -D INPUT -i ${lanInterface} -j ACCEPT || true`);
     await sudoExec(`iptables -A INPUT -i ${lanInterface} -j ACCEPT`);
     await sudoExec('iptables -D INPUT -i lo -j ACCEPT || true');
     await sudoExec('iptables -A INPUT -i lo -j ACCEPT');
 
-    // MASQUERADE on selected WAN
     await sudoExec(`iptables -t nat -A POSTROUTING -o ${wanInterface} -j MASQUERADE`);
 
-    // DNS allow
     await sudoExec('iptables -D FORWARD -p udp --dport 53 -j ACCEPT || true');
     await sudoExec('iptables -D FORWARD -p udp --sport 53 -j ACCEPT || true');
     await sudoExec('iptables -I FORWARD -p udp --dport 53 -j ACCEPT');
     await sudoExec('iptables -I FORWARD -p udp --sport 53 -j ACCEPT');
 
-    // Established back to LAN
     await sudoExec(`iptables -D FORWARD -i ${wanInterface} -o ${lanInterface} -m state --state RELATED,ESTABLISHED -j ACCEPT || true`);
     await sudoExec(`iptables -A FORWARD -i ${wanInterface} -o ${lanInterface} -m state --state RELATED,ESTABLISHED -j ACCEPT`);
 
-    // Default drop LAN -> WAN (users are allowed via allowMac())
     await sudoExec(`iptables -D FORWARD -i ${lanInterface} -o ${wanInterface} -j DROP || true`);
     await sudoExec(`iptables -A FORWARD -i ${lanInterface} -o ${wanInterface} -j DROP`);
 
-    // Captive portal redirects
-    await sudoExec(`iptables -t nat -D PREROUTING -i ${lanInterface} -p tcp --dport 80 -j REDIRECT --to-port ${PORT} || true`);
-    await sudoExec(`iptables -t nat -A PREROUTING -i ${lanInterface} -p tcp --dport 80 -j REDIRECT --to-port ${PORT}`);
+    await sudoExec(`iptables -t nat -D PREROUTING -i ${lanInterface} -p tcp --dport 80 -j REDIRECT --to-port ${resolved.portal_port} || true`);
+    await sudoExec(`iptables -t nat -A PREROUTING -i ${lanInterface} -p tcp --dport 80 -j REDIRECT --to-port ${resolved.portal_port}`);
 
     await sudoExec(`iptables -t nat -D PREROUTING -i ${lanInterface} -p udp --dport 53 ! -s ${lanIpAddress} -j DNAT --to-destination ${lanIpAddress}:53 || true`);
     await sudoExec(`iptables -t nat -A PREROUTING -i ${lanInterface} -p udp --dport 53 ! -s ${lanIpAddress} -j DNAT --to-destination ${lanIpAddress}:53`);
@@ -3373,13 +3301,13 @@ app.post('/api/network/lan/configure', async (req, res) => {
         }
 
         // Save to database
-        const settings = {
-            lan_interface_name,
-            lan_ip_address,
-            lan_dns_servers: lan_dns_servers || []
-        };
-
-        await db.run('UPDATE settings SET value = ? WHERE key = ?', [JSON.stringify(settings), 'network_config']);
+        db.serialize(() => {
+            const stmt = db.prepare(`UPDATE settings SET value = ? WHERE key = ?`);
+            stmt.run(lan_interface_name, 'lan_interface_name');
+            stmt.run(lan_ip_address, 'lan_ip_address');
+            stmt.run(lan_dns_servers ? lan_dns_servers.join(',') : '', 'lan_dns_servers');
+            stmt.finalize();
+        });
 
         // Apply LAN configuration
         if (os.platform() !== 'linux') {
@@ -3390,13 +3318,13 @@ app.post('/api/network/lan/configure', async (req, res) => {
         }
 
         try {
-            const networkConfig = {
-                lan_interface_name,
-                lan_ip_address,
-                lan_dns_servers,
-                bridge_interface_name: 'br0',
-                portal_port: PORT
-            };
+        const networkConfig = {
+            lan_interface_name,
+            lan_ip_address,
+            lan_dns_servers,
+            bridge_interface_name: 'br0',
+            portal_port: PORT
+        };
 
             await applyLanBridgeApSettings(networkConfig);
             await reapplyNatRulesFromDb();
