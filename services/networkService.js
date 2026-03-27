@@ -190,6 +190,19 @@ async function commandExists(command) {
     }
 }
 
+async function sudoExec(command) {
+    try {
+        return await execPromise(`echo "${SUDO_PASSWORD}" | sudo -S ${command}`);
+    } catch (sudoError) {
+        console.warn(`sudo command failed with password for: ${command}, trying without sudo...`);
+        try {
+            return await execPromise(command);
+        } catch (error) {
+            throw new Error(`Failed to execute command: ${error.message}. Original sudo error: ${sudoError.message}`);
+        }
+    }
+}
+
 async function iptablesRuleExists(args) {
     try {
         await sudoExec(`iptables ${args}`);
@@ -346,19 +359,6 @@ async function applyIptablesRules(wanInterface, lanCidr, options = {}) {
     await ensureIptablesRule(dnsTcpRedirectAdd, dnsTcpRedirectCheck);
 
     return { lanInterface, lanIp, portalPort };
-}
-
-async function sudoExec(command) {
-    try {
-        return await execPromise(`echo "${SUDO_PASSWORD}" | sudo -S ${command}`);
-    } catch (sudoError) {
-        console.warn(`sudo command failed with password for: ${command}, trying without sudo...`);
-        try {
-            return await execPromise(command);
-        } catch (error) {
-            throw new Error(`Failed to execute command: ${error.message}. Original sudo error: ${sudoError.message}`);
-        }
-    }
 }
 
 function generateNetplanConfig(wanInterface, wanConfigType, wanIp, wanGateway, wanDns, lanInterface, lanIp, lanDns) {
@@ -550,25 +550,23 @@ async function applyLanBridgeApSettings(config) {
         await sudoExec(`ip link set ${lan_interface_name} up`);
         await sudoExec(`ip addr flush dev ${lan_interface_name} 2>/dev/null || true`);
         await sudoExec(`ip addr flush dev ${bridgeInterface} 2>/dev/null || true`);
-        await sudoExec(`ip addr add ${lan_ip_address} dev ${bridgeInterface} 2>/dev/null || ip addr replace ${lan_ip_address} dev ${bridgeInterface}`);
+        await sudoExec(`ip addr add ${lan_ip_address} dev ${bridgeInterface}`);
 
         await sudoExec('sysctl -w net.ipv4.ip_forward=1');
         await sudoExec(`sysctl -w net.ipv4.conf.${bridgeInterface}.proxy_arp=1 || true`);
 
         const dhcpRange = computeDhcpRange(lanIp, prefix);
         const dnsmasqConfig = buildDnsmasqConfig(bridgeInterface, lanIp, dhcpRange, lanDnsList);
+
         const dnsmasqPath = '/etc/dnsmasq.conf';
-
-        const existingDnsmasq = readDnsmasqConfig(dnsmasqPath);
-        if (existingDnsmasq !== dnsmasqConfig) {
-            fs.writeFileSync('/tmp/pisowifi-dnsmasq.conf', dnsmasqConfig);
-            await sudoExec(`cp /tmp/pisowifi-dnsmasq.conf ${dnsmasqPath}`);
-        }
-
+        const dnsmasqUpdated = writeIfChanged(dnsmasqPath, dnsmasqConfig);
         await sudoExec('systemctl enable dnsmasq || true');
         await sudoExec('systemctl restart dnsmasq || true');
+        if (!dnsmasqUpdated) {
+            console.log('[Network] dnsmasq configuration already up to date.');
+        }
 
-        if (wanInterface && (await commandExists('iptables'))) {
+        if (await commandExists('iptables')) {
             await applyIptablesRules(wanInterface, lanCidr, {
                 lanInterface: bridgeInterface,
                 bridge_interface_name: bridgeInterface,
