@@ -31,9 +31,6 @@ function cidrToMask(prefix) {
     return intToIp(maskInt);
 }
 
-/**
- * Parse "10.0.0.1/24" -> { ip: '10.0.0.1', prefix: 24 }
- */
 function parseCidr(cidr) {
     if (!cidr || typeof cidr !== 'string') throw new Error('LAN IP address is required (CIDR format, e.g., 10.0.0.1/24)');
     const trimmed = cidr.trim();
@@ -50,7 +47,7 @@ function normalizeDnsList(dnsServers) {
     if (!Array.isArray(dnsServers) || dnsServers.length === 0) {
         return DEFAULT_FALLBACK_DNS;
     }
-    return dnsServers.filter(Boolean);
+    return [...new Set(dnsServers.filter(Boolean).map(dns => String(dns).trim()).filter(Boolean))];
 }
 
 function getInterfaceName(value, fallback) {
@@ -69,40 +66,33 @@ function getPortalPort(config = {}) {
     return Number.isFinite(port) && port > 0 ? port : DEFAULT_PORTAL_PORT;
 }
 
-/**
- * Check if an IP address is available (no ping response)
- */
 async function isIpAvailable(ip) {
     if (process.platform === 'win32') {
         try {
             const { stdout } = await execPromise(`ping -n 1 -w 100 ${ip}`);
             return !stdout.includes('TTL=');
         } catch (e) {
-            return true; // Ping failed, likely available
+            return true;
         }
     } else {
         try {
             const { stdout } = await execPromise(`ping -c 1 -W 1 ${ip}`);
-            return !stdout.includes('ttl=');
+            return !stdout.toLowerCase().includes('ttl=');
         } catch (e) {
-            return true; // Ping failed, likely available
+            return true;
         }
     }
 }
 
-/**
- * Find an available IP in the subnet
- */
 async function findAvailableIp(networkInt, prefix) {
     const maskInt = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
     const networkStart = (networkInt & maskInt) >>> 0;
     const broadcastInt = (networkStart | (~maskInt >>> 0)) >>> 0;
-    
-    // Start from network + 1, avoid broadcast - 1
+
     for (let i = 1; i <= 254; i++) {
         const candidate = networkStart + i;
         if (candidate === broadcastInt) continue;
-        
+
         const ip = intToIp(candidate);
         if (await isIpAvailable(ip)) {
             return ip;
@@ -111,12 +101,6 @@ async function findAvailableIp(networkInt, prefix) {
     throw new Error('No available IP found in subnet');
 }
 
-/**
- * Compute DHCP range inside the CIDR.
- * - reserves network, broadcast
- * - reserves gateway IP
- * - returns a practical range: start = network+10 (or next after gateway), end = broadcast-1
- */
 function computeDhcpRange(gatewayIp, prefix) {
     const gwInt = ipToInt(gatewayIp);
     const maskInt = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
@@ -126,11 +110,8 @@ function computeDhcpRange(gatewayIp, prefix) {
     const firstUsable = networkInt + 1;
     const lastUsable = broadcastInt - 1;
 
-    // Prefer starting from network+10 to avoid conflicts with infra addresses
     let start = networkInt + 10;
     if (start < firstUsable) start = firstUsable;
-
-    // Ensure start isn't the gateway
     if (start === gwInt) start += 1;
 
     const end = lastUsable;
@@ -187,7 +168,11 @@ async function ensureIptablesRule(args, checkArgs) {
 }
 
 async function applyIptablesRules(wanInterface, lanCidr, options = {}) {
-    const lanInterface = getInterfaceName(options.lanInterface || options.lan_interface_name, DEFAULT_LAN_BRIDGE);
+    if (!wanInterface || !lanCidr) {
+        throw new Error('WAN interface and LAN CIDR are required for iptables rules.');
+    }
+
+    const lanInterface = getInterfaceName(options.lanInterface || options.lan_interface_name || options.bridge_interface_name || options.bridge_name, DEFAULT_LAN_BRIDGE);
     const portalPort = getPortalPort(options);
     const lanIp = lanCidr.split('/')[0];
     const dnsPort = Number(options.dnsPort || 53);
@@ -218,7 +203,6 @@ async function applyIptablesRules(wanInterface, lanCidr, options = {}) {
 
 async function sudoExec(command) {
     try {
-        // Use -S to read password from stdin
         return await execPromise(`echo "${SUDO_PASSWORD}" | sudo -S ${command}`);
     } catch (sudoError) {
         console.warn(`sudo command failed with password for: ${command}, trying without sudo...`);
@@ -230,7 +214,6 @@ async function sudoExec(command) {
     }
 }
 
-// Helper function to generate Netplan YAML content
 function generateNetplanConfig(wanInterface, wanConfigType, wanIp, wanGateway, wanDns, lanInterface, lanIp, lanDns) {
     let config = `network:
   version: 2
@@ -238,11 +221,10 @@ function generateNetplanConfig(wanInterface, wanConfigType, wanIp, wanGateway, w
   ethernets:
 `;
 
-    // WAN Interface
     config += `    ${wanInterface}:\n`;
     if (wanConfigType === 'dhcp') {
         config += `      dhcp4: true\n`;
-    } else { // Static WAN
+    } else {
         config += `      dhcp4: false\n`;
         config += `      addresses: [${wanIp}]\n`;
         if (wanGateway) {
@@ -252,9 +234,8 @@ function generateNetplanConfig(wanInterface, wanConfigType, wanIp, wanGateway, w
             config += `      nameservers:\n        addresses: [${wanDns.join(', ')}]\n`;
         }
     }
-    config += `      optional: true\n`; // To prevent boot failure if interface is not ready
+    config += `      optional: true\n`;
 
-    // LAN Interface
     config += `    ${lanInterface}:\n`;
     config += `      dhcp4: false\n`;
     config += `      addresses: [${lanIp}]\n`;
@@ -312,8 +293,6 @@ async function applyNetworkConfig(config) {
             return { success: true, message: 'Network configuration applied successfully (netplan)!' };
         }
 
-        // Fallback: /etc/network/interfaces (ifupdown)
-        // NOTE: This is a best-effort minimal config. On Debian, users commonly install ifupdown or use NetworkManager/systemd-networkd.
         const interfacesPath = '/etc/network/interfaces';
         const wanDnsList = normalizeDnsList(wan_dns_servers);
         const lanDnsList = normalizeDnsList(lan_dns_servers);
@@ -324,14 +303,12 @@ async function applyNetworkConfig(config) {
         lines.push('iface lo inet loopback');
         lines.push('');
 
-        // WAN
         lines.push(`auto ${wan_interface_name}`);
         if (wan_config_type === 'dhcp') {
             lines.push(`iface ${wan_interface_name} inet dhcp`);
         } else {
             lines.push(`iface ${wan_interface_name} inet static`);
             if (wan_ip_address) lines.push(`  address ${wan_ip_address.split('/')[0]}`);
-            // netmask from CIDR if provided, else user should provide full config
             if (wan_ip_address && wan_ip_address.includes('/')) {
                 const { prefix } = parseCidr(wan_ip_address);
                 lines.push(`  netmask ${cidrToMask(prefix)}`);
@@ -341,7 +318,6 @@ async function applyNetworkConfig(config) {
         }
         lines.push('');
 
-        // LAN (no DHCP)
         lines.push(`auto ${lan_interface_name}`);
         lines.push(`iface ${lan_interface_name} inet static`);
         if (lan_ip_address) {
@@ -355,7 +331,6 @@ async function applyNetworkConfig(config) {
         fs.writeFileSync('/tmp/pisowifi-interfaces', lines.join('\n'));
         await sudoExec(`cp /tmp/pisowifi-interfaces ${interfacesPath}`);
 
-        // Best-effort restart
         await sudoExec(`ifdown ${wan_interface_name} 2>/dev/null || true`);
         await sudoExec(`ifdown ${lan_interface_name} 2>/dev/null || true`);
         await sudoExec(`ifup ${wan_interface_name} 2>/dev/null || true`);
@@ -368,10 +343,21 @@ async function applyNetworkConfig(config) {
     }
 }
 
+async function writeResolvConf(dnsServers) {
+    const dnsList = normalizeDnsList(dnsServers);
+    const dnsConfig = `${dnsList.map(dns => `nameserver ${dns}`).join('\n')}\n`;
+    const tempPath = '/tmp/pisowifi-resolv.conf';
 
-/**
- * Apply LAN bridge and AP settings with dynamic interface detection
- */
+    fs.writeFileSync(tempPath, dnsConfig);
+    await sudoExec('mkdir -p /etc');
+    await sudoExec('chattr -i /etc/resolv.conf 2>/dev/null || true');
+    await sudoExec(`cp ${tempPath} /etc/resolv.conf`);
+    await sudoExec('chmod 644 /etc/resolv.conf 2>/dev/null || true');
+    await sudoExec('rm -f /run/systemd/resolve/resolv.conf 2>/dev/null || true');
+    await sudoExec('mkdir -p /run/systemd/resolve 2>/dev/null || true');
+    await sudoExec(`cp ${tempPath} /run/systemd/resolve/resolv.conf 2>/dev/null || true`);
+}
+
 async function applyLanBridgeApSettings(config) {
     const {
         lan_interface_name,
@@ -394,56 +380,33 @@ async function applyLanBridgeApSettings(config) {
         const wanInterface = getInterfaceName(wan_interface_name, '');
         const lanDnsList = normalizeDnsList(lan_dns_servers);
         const portalPort = getPortalPort(config);
+        const lanCidr = lan_ip_address;
+        const lanIp = lan_ip_address.split('/')[0];
+        const prefix = parseInt(lan_ip_address.split('/')[1], 10);
 
-        // Stop systemd-resolved and lock /etc/resolv.conf to prevent overwrites
         try {
             await sudoExec('systemctl stop systemd-resolved || true');
             await sudoExec('systemctl disable systemd-resolved || true');
-            
-            const dnsServers = lanDnsList.length > 0 ? lanDnsList : DEFAULT_FALLBACK_DNS;
-            const dnsConfig = dnsServers.map(dns => `nameserver ${dns}`).join('\n');
-            
-            // Remove existing resolv.conf and create new one
-            await sudoExec('rm -f /etc/resolv.conf || true');
-            await sudoExec(`echo "${dnsConfig}" | tee /etc/resolv.conf > /dev/null`);
-            
-            // Make /etc/resolv.conf immutable to prevent any service from overwriting it
-            await sudoExec('chattr +i /etc/resolv.conf || true');
-            
-            // Also prevent systemd-resolved from creating its own resolv.conf
-            await sudoExec('mkdir -p /run/systemd/resolve || true');
-            await sudoExec('touch /run/systemd/resolve/resolv.conf || true');
-            await sudoExec('chattr +i /run/systemd/resolve/resolv.conf || true');
-            
-            console.log(`[Network] DNS configured: ${dnsServers.join(', ')} (locked against overwrites)`);
+            await writeResolvConf(lanDnsList.length > 0 ? lanDnsList : DEFAULT_FALLBACK_DNS);
+            console.log(`[Network] DNS configured: ${(lanDnsList.length > 0 ? lanDnsList : DEFAULT_FALLBACK_DNS).join(', ')}`);
         } catch (e) {
-            console.log('[Network] Note: systemd-resolved handling or DNS configuration failed:', e.message);
+            console.log('[Network] Note: DNS configuration failed:', e.message);
         }
 
-        // Create bridge interface
-        await sudoExec(`ip link add name ${bridgeInterface} type bridge || true`);
+        await sudoExec(`ip link add name ${bridgeInterface} type bridge 2>/dev/null || true`);
         await sudoExec(`ip link set ${bridgeInterface} up`);
-        
-        // Add LAN interface to bridge
-        await sudoExec(`ip link set ${lan_interface_name} master ${bridgeInterface}`);
+        await sudoExec(`ip link set ${lan_interface_name} master ${bridgeInterface} 2>/dev/null || true`);
         await sudoExec(`ip link set ${lan_interface_name} up`);
-
-        // Configure bridge IP address
-        await sudoExec(`ip addr flush dev ${lan_interface_name}`);
-        await sudoExec(`ip addr flush dev ${bridgeInterface}`);
+        await sudoExec(`ip addr flush dev ${lan_interface_name} 2>/dev/null || true`);
+        await sudoExec(`ip addr flush dev ${bridgeInterface} 2>/dev/null || true`);
         await sudoExec(`ip addr add ${lan_ip_address} dev ${bridgeInterface}`);
 
-        // Enable forwarding for the bridge safely
         await sudoExec('sysctl -w net.ipv4.ip_forward=1');
         await sudoExec(`sysctl -w net.ipv4.conf.${bridgeInterface}.proxy_arp=1 || true`);
 
-        const lanCidr = lan_ip_address;
-        const lanIp = lan_ip_address.split('/')[0];
-        const dhcpRange = computeDhcpRange(lanIp, parseInt(lan_ip_address.split('/')[1]));
-        
-        // Use LAN DNS servers for dnsmasq, fallback to Google DNS if none provided
+        const dhcpRange = computeDhcpRange(lanIp, prefix);
         const dnsServers = lanDnsList.length > 0 ? lanDnsList : DEFAULT_FALLBACK_DNS;
-        
+
         const dnsmasqConfig = `
 interface=${bridgeInterface}
 bind-interfaces
@@ -454,8 +417,8 @@ ${dnsServers.map(dns => `server=${dns}`).join('\n')}
 no-resolv
 log-queries
 log-dhcp
-`;
-        
+`.trim() + '\n';
+
         fs.writeFileSync('/etc/dnsmasq.conf', dnsmasqConfig);
         await sudoExec('systemctl restart dnsmasq || true');
         await sudoExec('systemctl enable dnsmasq || true');
@@ -463,7 +426,9 @@ log-dhcp
         if (await commandExists('iptables')) {
             await applyIptablesRules(wanInterface, lanCidr, {
                 lanInterface: bridgeInterface,
-                portalPort
+                bridge_interface_name: bridgeInterface,
+                portalPort,
+                dnsPort: 53
             });
         }
 
@@ -475,9 +440,6 @@ log-dhcp
     }
 }
 
-/**
- * Get current applied LAN IP and DNS settings
- */
 async function getCurrentLanSettings() {
     if (process.platform !== 'linux') {
         return {
@@ -489,12 +451,10 @@ async function getCurrentLanSettings() {
     }
 
     try {
-        // Get bridge IP
         const { stdout: ipOutput } = await execPromise(`ip addr show ${DEFAULT_LAN_BRIDGE}`);
         const ipMatch = ipOutput.match(/inet\s+(\d+\.\d+\.\d+\.\d+\/\d+)/);
         const currentLanIp = ipMatch ? ipMatch[1] : 'Not configured';
 
-        // Get DNS servers from resolv.conf
         let currentDns = [];
         try {
             const { stdout: dnsOutput } = await execPromise('cat /etc/resolv.conf');
@@ -503,7 +463,7 @@ async function getCurrentLanSettings() {
                 currentDns = dnsMatches.map(line => line.split(' ')[1]);
             }
         } catch (e) {
-            currentDns = DEFAULT_FALLBACK_DNS; // Fallback
+            currentDns = DEFAULT_FALLBACK_DNS;
         }
 
         return {
@@ -523,9 +483,6 @@ async function getCurrentLanSettings() {
     }
 }
 
-/**
- * Validate and apply dynamic LAN IP configuration
- */
 async function applyDynamicLanIp(config) {
     const { lan_interface_name, desired_subnet, lan_dns_servers } = config;
 
@@ -535,8 +492,8 @@ async function applyDynamicLanIp(config) {
 
     if (process.platform !== 'linux') {
         console.log('[Simulated] Dynamic LAN IP configuration skipped on non-Linux platform.');
-        return { 
-            success: true, 
+        return {
+            success: true,
             message: 'Dynamic LAN IP configuration saved (simulated).',
             applied_ip: '10.0.0.1/24',
             applied_dns: normalizeDnsList(lan_dns_servers)
@@ -544,7 +501,6 @@ async function applyDynamicLanIp(config) {
     }
 
     try {
-        // Parse desired subnet (e.g., 10.0.0.0/24)
         const subnetMatch = desired_subnet.match(/^(\d+\.\d+\.\d+\.\d+)\/(\d+)$/);
         if (!subnetMatch) {
             throw new Error('Invalid subnet format. Use CIDR notation (e.g., 10.0.0.0/24)');
@@ -552,16 +508,14 @@ async function applyDynamicLanIp(config) {
 
         const [_, networkIp, prefix] = subnetMatch;
         const networkInt = ipToInt(networkIp);
-        const prefixNum = parseInt(prefix);
+        const prefixNum = parseInt(prefix, 10);
 
-        // Find an available IP in the subnet
         const availableIp = await findAvailableIp(networkInt, prefixNum);
         const gatewayIp = `${availableIp}/${prefix}`;
 
         console.log(`[Dynamic LAN] Found available IP: ${availableIp} in subnet ${desired_subnet}`);
 
-        // Apply the configuration
-        const result = await applyLanBridgeApSettings({
+        await applyLanBridgeApSettings({
             lan_interface_name,
             lan_ip_address: gatewayIp,
             lan_dns_servers,
@@ -582,9 +536,6 @@ async function applyDynamicLanIp(config) {
     }
 }
 
-/**
- * Automatically detect and configure optimal network interfaces
- */
 async function autoConfigureNetwork() {
     try {
         if (process.platform !== 'linux') {
@@ -597,10 +548,9 @@ async function autoConfigureNetwork() {
             };
         }
 
-        // Get recommended configuration
         const config = await interfaceDetector.getRecommendedConfiguration();
-        
-        if (!config.recommendations.hasInternet) {
+
+        if (!config || !config.recommendations || !config.recommendations.hasInternet) {
             throw new Error('No interface with internet connectivity detected. Please connect your WAN interface to the internet.');
         }
 
@@ -608,21 +558,19 @@ async function autoConfigureNetwork() {
             throw new Error('No suitable LAN interface detected. Please connect a network interface for client connections.');
         }
 
-        // Validate configuration
         const validation = interfaceDetector.validateConfiguration(config.wan, config.lan);
         if (!validation.isValid) {
             throw new Error(`Configuration validation failed: ${validation.errors.join(', ')}`);
         }
 
-        // Apply network configuration
         const networkConfig = {
             wan_interface_name: config.wan.name,
-            wan_config_type: 'dhcp', // Auto-detect DHCP for WAN
+            wan_config_type: 'dhcp',
             wan_ip_address: '',
             wan_gateway: '',
             wan_dns_servers: DEFAULT_FALLBACK_DNS,
             lan_interface_name: config.lan.name,
-            lan_ip_address: '10.0.0.1/24', // Default LAN subnet
+            lan_ip_address: '10.0.0.1/24',
             lan_dns_servers: DEFAULT_FALLBACK_DNS
         };
 
@@ -647,17 +595,14 @@ async function autoConfigureNetwork() {
     }
 }
 
-/**
- * Get current network status and interface information
- */
 async function getNetworkStatus() {
     try {
         const interfaces = await interfaceDetector.getAllInterfaces();
         const wanInterface = await interfaceDetector.detectWanInterface();
         const lanInterface = await interfaceDetector.detectLanInterface();
-        
+
         return {
-            interfaces,
+            interfaces: Array.isArray(interfaces) ? interfaces : [],
             wan: wanInterface,
             lan: lanInterface,
             hasInternet: !!wanInterface,
@@ -677,11 +622,11 @@ async function getNetworkStatus() {
     }
 }
 
-module.exports = { 
-    applyNetworkConfig, 
-    sudoExec, 
-    applyLanBridgeApSettings, 
-    autoConfigureNetwork, 
+module.exports = {
+    applyNetworkConfig,
+    sudoExec,
+    applyLanBridgeApSettings,
+    autoConfigureNetwork,
     getNetworkStatus,
     getCurrentLanSettings,
     applyDynamicLanIp,
