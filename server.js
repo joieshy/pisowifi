@@ -602,6 +602,45 @@ function getMachineId() {
 }
 
 let serverStartTime = new Date(); // Store the server start time
+function formatDuration(totalMinutes) {
+    const mins = Math.max(0, Math.floor(Number(totalMinutes) || 0));
+    const days = Math.floor(mins / 1440);
+    const hours = Math.floor((mins % 1440) / 60);
+    const minutes = mins % 60;
+    const parts = [];
+    if (days) parts.push(`${days} day${days !== 1 ? 's' : ''}`);
+    if (hours) parts.push(`${hours} hour${hours !== 1 ? 's' : ''}`);
+    if (minutes || parts.length === 0) parts.push(`${minutes} minute${minutes !== 1 ? 's' : ''}`);
+    return parts.join(', ');
+}
+
+function getSystemUptimeSeconds() {
+    if (os.platform() === 'linux') {
+        try {
+            const uptimeRaw = fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0];
+            const uptimeSeconds = parseFloat(uptimeRaw);
+            if (!Number.isNaN(uptimeSeconds) && uptimeSeconds >= 0) {
+                return Math.floor(uptimeSeconds);
+            }
+        } catch (e) {
+            // fall back below
+        }
+    }
+
+    return Math.max(0, Math.floor((Date.now() - serverStartTime.getTime()) / 1000));
+}
+
+function formatUptime(seconds) {
+    const totalSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const parts = [];
+    if (days) parts.push(`${days} day${days !== 1 ? 's' : ''}`);
+    if (hours) parts.push(`${hours} hour${hours !== 1 ? 's' : ''}`);
+    if (minutes || parts.length === 0) parts.push(`${minutes} minute${minutes !== 1 ? 's' : ''}`);
+    return parts.join(', ');
+}
 let startMeasure = getCpuStats();
 setInterval(() => {
     const endMeasure = getCpuStats();
@@ -1847,13 +1886,11 @@ app.get('/api/stats', isAuthenticated, (req, res) => {
     // Mock CPU Temp (since it's hard to get cross-platform without extra tools)
     stats.cpuTemp = (40 + Math.random() * 20).toFixed(1);
 
-    // Application Uptime
-    const now = new Date();
-    const appUptimeSeconds = Math.floor((now.getTime() - serverStartTime.getTime()) / 1000);
-    const appDays = Math.floor((appUptimeSeconds % (3600 * 24)) / 3600);
-    const appHours = Math.floor((appUptimeSeconds % 3600) / 60);
-    const appMinutes = Math.floor((appUptimeSeconds % 3600) / 60);
-    stats.systemUptime = `${appDays} days, ${appHours} hours, ${appMinutes} minutes`;
+    // System Uptime
+    const uptimeSeconds = getSystemUptimeSeconds();
+    stats.systemUptimeSeconds = uptimeSeconds;
+    stats.systemUptime = formatUptime(uptimeSeconds);
+    stats.systemUptimeHuman = formatUptime(uptimeSeconds);
 
     db.get(`SELECT SUM(amount) as total FROM sales WHERE date(created_at) = date('now')`, (err, row) => {
         stats.todayEarnings = row ? (row.total || 0) : 0;
@@ -1871,17 +1908,38 @@ app.get('/api/stats', isAuthenticated, (req, res) => {
 app.post('/api/system/reboot', isAuthenticated, (req, res) => {
     console.log('System reboot requested');
     res.json({ success: true, message: 'Rebooting system...' });
-    // Execute reboot command after a short delay to allow response to be sent
     setTimeout(() => {
-        const scriptPath = path.resolve(__dirname, 'scripts', 'reboot.sh');
-        const command = os.platform() === 'win32' ? 'shutdown /r /t 1' : `sudo ${scriptPath}`;
-        console.log(`Attempting to execute reboot command: ${command}`);
-        exec(command, { timeout: 5000 }, (error, stdout, stderr) => {
+        if (os.platform() === 'win32') {
+            exec('shutdown /r /t 1 /f', { timeout: 5000 }, (error, stdout, stderr) => {
+                if (error) {
+                    console.error(`Reboot command failed: ${error.message}`);
+                    console.error(`Stderr: ${stderr}`);
+                    console.error(`Stdout: ${stdout}`);
+                } else {
+                    console.log(`Reboot command executed successfully. Stdout: ${stdout}`);
+                }
+            });
+            return;
+        }
+
+        if (os.platform() === 'linux') {
+            exec('systemctl reboot || reboot', { timeout: 5000 }, (error, stdout, stderr) => {
+                if (error) {
+                    console.error(`Reboot command failed: ${error.message}`);
+                    console.error(`Stderr: ${stderr}`);
+                    console.error(`Stdout: ${stdout}`);
+                } else {
+                    console.log(`Reboot command executed successfully. Stdout: ${stdout}`);
+                }
+            });
+            return;
+        }
+
+        exec('shutdown -r now', { timeout: 5000 }, (error, stdout, stderr) => {
             if (error) {
                 console.error(`Reboot command failed: ${error.message}`);
                 console.error(`Stderr: ${stderr}`);
                 console.error(`Stdout: ${stdout}`);
-                console.error(`Full error object:`, error);
             } else {
                 console.log(`Reboot command executed successfully. Stdout: ${stdout}`);
             }
@@ -1892,17 +1950,38 @@ app.post('/api/system/reboot', isAuthenticated, (req, res) => {
 app.post('/api/system/shutdown', isAuthenticated, (req, res) => {
     console.log('System shutdown requested');
     res.json({ success: true, message: 'Shutting down system...' });
-    // Execute shutdown command after a short delay to allow response to be sent
     setTimeout(() => {
-        const scriptPath = path.resolve(__dirname, 'scripts', 'shutdown.sh');
-        const command = os.platform() === 'win32' ? 'shutdown /s /t 1' : `sudo ${scriptPath}`;
-        console.log(`Attempting to execute shutdown command: ${command}`);
-        exec(command, { timeout: 5000 }, (error, stdout, stderr) => {
+        if (os.platform() === 'win32') {
+            exec('shutdown /s /t 1 /f', { timeout: 5000 }, (error, stdout, stderr) => {
+                if (error) {
+                    console.error(`Shutdown command failed: ${error.message}`);
+                    console.error(`Stderr: ${stderr}`);
+                    console.error(`Stdout: ${stdout}`);
+                } else {
+                    console.log(`Shutdown command executed successfully. Stdout: ${stdout}`);
+                }
+            });
+            return;
+        }
+
+        if (os.platform() === 'linux') {
+            exec('systemctl poweroff || poweroff', { timeout: 5000 }, (error, stdout, stderr) => {
+                if (error) {
+                    console.error(`Shutdown command failed: ${error.message}`);
+                    console.error(`Stderr: ${stderr}`);
+                    console.error(`Stdout: ${stdout}`);
+                } else {
+                    console.log(`Shutdown command executed successfully. Stdout: ${stdout}`);
+                }
+            });
+            return;
+        }
+
+        exec('shutdown -h now', { timeout: 5000 }, (error, stdout, stderr) => {
             if (error) {
                 console.error(`Shutdown command failed: ${error.message}`);
                 console.error(`Stderr: ${stderr}`);
                 console.error(`Stdout: ${stdout}`);
-                console.error(`Full error object:`, error);
             } else {
                 console.log(`Shutdown command executed successfully. Stdout: ${stdout}`);
             }
