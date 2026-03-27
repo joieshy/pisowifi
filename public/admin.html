@@ -2979,7 +2979,8 @@
         }
 
         // New network settings form handlers
-        document.getElementById('wifiSettingsForm').addEventListener('submit', async (e) => {
+        const wifiSettingsForm = document.getElementById('wifiSettingsForm');
+        if (wifiSettingsForm) wifiSettingsForm.addEventListener('submit', async (e) => {
             e.preventDefault();
 
             // Save WiFi settings to DB AND apply immediately on Debian (AP mode)
@@ -3553,24 +3554,16 @@
         }
 
         // Maghintay matapos ang DOM load bago mag-restore
-        document.addEventListener('DOMContentLoaded', async () => {
-            checkSuperAdmin();
-            await fetchConfig(); // Wait for config to load completely
-            await restoreActiveSection(); // Wait for section restoration to complete
-        });
-
-        // Para sa mga lumang browser
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', async () => {
-                checkSuperAdmin();
-                await fetchConfig();
-                await restoreActiveSection();
-            });
-        } else {
-            // If DOM is already loaded, run immediately
+        async function initializeAdminPage() {
             checkSuperAdmin();
             await fetchConfig();
             await restoreActiveSection();
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeAdminPage, { once: true });
+        } else {
+            initializeAdminPage();
         }
 
         setInterval(fetchStats, 5000); // Update stats every 5 seconds for responsive CPU bar

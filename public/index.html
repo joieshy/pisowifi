@@ -901,7 +901,6 @@
     } finally {
         if (socket && clientMacAddress) {
             socket.emit('endCoinInsertion', { mac: clientMacAddress });
-            alert("Internet Activated. You may now browse.");
         }
     }
 }
@@ -1327,7 +1326,6 @@
 
             } catch (error) {
                 console.error('Error fetching config:', error);
-                document.getElementById('ratesList').innerHTML = '<div style="text-align: center; color: red;">Error loading rates</div>';
             }
         }
 
