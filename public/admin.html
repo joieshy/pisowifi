@@ -1143,25 +1143,31 @@
 
                         <!-- LAN IP and DNS Display (similar to WAN display) -->
                         <div style="margin-top: 15px; margin-bottom: 20px; padding: 15px; background: #f8f9fc; border-radius: 8px; border: 1px solid #e3e6f0;">
-                            <div id="lanIpDisplay" style="display: none; padding: 10px; background: white; border-radius: 5px; border: 1px solid #ddd;">
-                                <div style="display: flex; justify-content: space-between; align-items: center;">
-                                    <div>
-                                        <strong>LAN IP Address:</strong>
-                                        <span id="lanIpAddress" style="font-family: monospace; font-weight: bold; color: var(--primary-color); margin-left: 10px;">Loading...</span>
-                                    </div>
-                                    <div id="lanIpStatus" class="badge badge-online" style="margin-left: 10px;">Applied</div>
+                        <div id="lanIpDisplay" style="display: none; padding: 10px; background: white; border-radius: 5px; border: 1px solid #ddd;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+                                <div>
+                                    <strong>Applied LAN IP:</strong>
+                                    <span id="lanIpAddress" style="font-family: monospace; font-weight: bold; color: var(--primary-color); margin-left: 10px;">Loading...</span>
                                 </div>
-                                <div style="margin-top: 5px; font-size: 0.8rem; color: #666;">
-                                    <strong>DNS Servers:</strong>
+                                <div id="lanIpStatus" class="badge badge-online" style="margin-left: 10px;">Applied</div>
+                            </div>
+                            <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #eee; font-size: 0.85rem; color: #666;">
+                                <div style="margin-bottom: 6px;">
+                                    <strong>Applied LAN DNS:</strong>
                                     <span id="lanDnsServers" style="font-family: monospace; margin-left: 10px;">Loading...</span>
                                 </div>
+                                <div>
+                                    <strong>Applied LAN IP:</strong>
+                                    <span id="lanAppliedIp" style="font-family: monospace; margin-left: 10px;">Loading...</span>
+                                </div>
                             </div>
-                            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 10px;">
-                                <button type="button" onclick="fetchLanSettings()" class="btn btn-secondary" style="width: 100%; padding: 10px 20px; border-radius: 8px; font-size: 1rem;">
-                                    <i class="fas fa-sync" style="margin-right: 8px;"></i> Refresh LAN Settings
-                                </button>
-                            </div>
-                            <div id="lanApplyMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;"></div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 10px;">
+                            <button type="button" onclick="fetchLanSettings()" class="btn btn-secondary" style="width: 100%; padding: 10px 20px; border-radius: 8px; font-size: 1rem;">
+                                <i class="fas fa-sync" style="margin-right: 8px;"></i> Refresh LAN Settings
+                            </button>
+                        </div>
+                        <div id="lanApplyMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;"></div>
                         </div>
                     </form>
                 </div>
@@ -3795,63 +3801,109 @@
                 setTimeout(() => msg.style.display = 'none', 5000);
             }
 
-            async function fetchWanIp() {
-                const wanIpDisplay = document.getElementById('wanIpDisplay');
-                const wanIpAddress = document.getElementById('wanIpAddress');
-                const wanIpStatus = document.getElementById('wanIpStatus');
-                const wanIpSource = document.getElementById('wanIpSource');
-                
-                wanIpDisplay.style.display = 'block';
-                wanIpAddress.innerText = 'Checking...';
-                wanIpStatus.innerText = 'Checking';
-                wanIpStatus.className = 'badge badge-warning';
-                wanIpSource.innerText = 'Detecting WAN IP...';
+        async function fetchWanIp() {
+            const wanIpDisplay = document.getElementById('wanIpDisplay');
+            const wanIpAddress = document.getElementById('wanIpAddress');
+            const wanIpStatus = document.getElementById('wanIpStatus');
+            const wanIpSource = document.getElementById('wanIpSource');
+            
+            wanIpDisplay.style.display = 'block';
+            wanIpAddress.innerText = 'Checking...';
+            wanIpStatus.innerText = 'Checking';
+            wanIpStatus.className = 'badge badge-warning';
+            wanIpSource.innerText = 'Detecting WAN IP...';
 
-                try {
-                    const response = await fetch('/api/wan-ip');
-                    const result = await response.json();
+            try {
+                const response = await fetch('/api/wan-ip');
+                const result = await response.json();
 
-                    if (response.ok && result.ip) {
-                        wanIpAddress.innerText = result.ip;
-                        wanIpStatus.innerText = 'Connected';
-                        wanIpStatus.className = 'badge badge-online';
-                        wanIpSource.innerText = result.source || 'Detected from interface';
-                        
-                        // Check if IP is public or private
-                        const ip = result.ip;
-                        const isPrivate = ip.startsWith('10.') || 
-                                         ip.startsWith('192.168.') || 
-                                         ip.startsWith('172.') && 
-                                         parseInt(ip.split('.')[1]) >= 16 && 
-                                         parseInt(ip.split('.')[1]) <= 31;
-                        
-                        if (isPrivate) {
-                            wanIpSource.innerText += ' (Private IP - Check router/modem)';
-                            wanIpStatus.innerText = 'Private IP';
-                            wanIpStatus.className = 'badge badge-warning';
-                        }
-                    } else {
-                        wanIpAddress.innerText = 'Not detected';
-                        wanIpStatus.innerText = 'Disconnected';
-                        wanIpStatus.className = 'badge badge-offline';
-                        wanIpSource.innerText = result.error || 'Unable to detect WAN IP';
+                if (response.ok && result.ip) {
+                    wanIpAddress.innerText = result.ip;
+                    wanIpStatus.innerText = 'Connected';
+                    wanIpStatus.className = 'badge badge-online';
+                    wanIpSource.innerText = result.source || 'Detected from interface';
+                    
+                    const ip = result.ip;
+                    const isPrivate = ip.startsWith('10.') || 
+                                     ip.startsWith('192.168.') || 
+                                     (ip.startsWith('172.') && parseInt(ip.split('.')[1]) >= 16 && parseInt(ip.split('.')[1]) <= 31);
+                    
+                    if (isPrivate) {
+                        wanIpSource.innerText += ' (Private IP - Check router/modem)';
+                        wanIpStatus.innerText = 'Private IP';
+                        wanIpStatus.className = 'badge badge-warning';
                     }
-                } catch (error) {
-                    wanIpAddress.innerText = 'Error';
-                    wanIpStatus.innerText = 'Error';
+                } else {
+                    wanIpAddress.innerText = 'Not detected';
+                    wanIpStatus.innerText = 'Disconnected';
                     wanIpStatus.className = 'badge badge-offline';
-                    wanIpSource.innerText = 'Failed to fetch WAN IP: ' + error.message;
+                    wanIpSource.innerText = result.error || 'Unable to detect WAN IP';
                 }
+            } catch (error) {
+                wanIpAddress.innerText = 'Error';
+                wanIpStatus.innerText = 'Error';
+                wanIpStatus.className = 'badge badge-offline';
+                wanIpSource.innerText = 'Failed to fetch WAN IP: ' + error.message;
             }
+        }
+
+        async function fetchLanSettings() {
+            const lanIpDisplay = document.getElementById('lanIpDisplay');
+            const lanIpAddress = document.getElementById('lanIpAddress');
+            const lanIpStatus = document.getElementById('lanIpStatus');
+            const lanDnsServers = document.getElementById('lanDnsServers');
+            const lanAppliedIp = document.getElementById('lanAppliedIp');
+            const lanApplyMsg = document.getElementById('lanApplyMsg');
+
+            lanIpDisplay.style.display = 'block';
+            lanIpAddress.innerText = 'Checking...';
+            lanAppliedIp.innerText = 'Checking...';
+            lanIpStatus.innerText = 'Checking';
+            lanIpStatus.className = 'badge badge-warning';
+            lanDnsServers.innerText = 'Loading...';
+
+            try {
+                const settingsRes = await fetch('/api/settings');
+                const settings = await settingsRes.json();
+
+                const configuredLanIp = settings.lan_ip_address || 'Not set';
+                const configuredLanDns = settings.lan_dns_servers || '';
+
+                let dnsText = 'Not set';
+                if (Array.isArray(configuredLanDns)) {
+                    dnsText = configuredLanDns.length ? configuredLanDns.join(', ') : 'Not set';
+                } else if (typeof configuredLanDns === 'string') {
+                    dnsText = configuredLanDns.trim() || 'Not set';
+                }
+
+                lanIpAddress.innerText = configuredLanIp;
+                lanAppliedIp.innerText = configuredLanIp;
+                lanDnsServers.innerText = dnsText;
+                lanIpStatus.innerText = configuredLanIp === 'Not set' ? 'Not Applied' : 'Applied';
+                lanIpStatus.className = configuredLanIp === 'Not set' ? 'badge badge-offline' : 'badge badge-online';
+
+                lanApplyMsg.style.display = 'none';
+            } catch (error) {
+                lanIpAddress.innerText = 'Error';
+                lanAppliedIp.innerText = 'Error';
+                lanIpStatus.innerText = 'Error';
+                lanIpStatus.className = 'badge badge-offline';
+                lanDnsServers.innerText = 'Unable to load';
+                lanApplyMsg.style.display = 'block';
+                lanApplyMsg.style.color = 'var(--danger-color)';
+                lanApplyMsg.innerText = 'Failed to load LAN settings: ' + error.message;
+            }
+        }
 
             // Auto-fetch WAN IP when network section is shown
             const originalShowSection = showSection;
             showSection = function(section) {
                 originalShowSection(section);
-                if (section === 'network') {
-                    // Fetch WAN IP after a short delay to ensure interface dropdowns are loaded
-                    setTimeout(fetchWanIp, 1000);
-                }
+            if (section === 'network') {
+                // Fetch WAN IP after a short delay to ensure interface dropdowns are loaded
+                setTimeout(fetchWanIp, 1000);
+                setTimeout(fetchLanSettings, 1000);
+            }
             };
 
             // Terminal Functions
