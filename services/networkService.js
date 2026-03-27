@@ -826,6 +826,34 @@ async function reapplyRuntimeFirewall(settings = {}) {
     });
 }
 
+async function allowWanToLanInternet(settings = {}) {
+    if (process.platform !== 'linux') return { success: true, message: 'Internet allowed from WAN to LAN (simulated).' };
+
+    const resolved = resolveNetworkSettings(settings);
+    if (!resolved.wan_interface_name || !resolved.lan_ip_address) {
+        throw new Error('WAN interface and LAN IP are required to allow internet from WAN to LAN.');
+    }
+
+    const lanInterface = resolved.bridge_interface_name || DEFAULT_LAN_BRIDGE;
+
+    await sudoExec('sysctl -w net.ipv4.ip_forward=1');
+    await sudoExec(`iptables -t nat -C POSTROUTING -o ${resolved.wan_interface_name} -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -o ${resolved.wan_interface_name} -j MASQUERADE`);
+
+    await sudoExec(`while iptables -t nat -D PREROUTING -i ${lanInterface} -j ACCEPT 2>/dev/null; do :; done`);
+    await sudoExec(`while iptables -t nat -D PREROUTING -i ${lanInterface} ! -d ${resolved.lan_ip_address.split('/')[0]} -j ACCEPT 2>/dev/null; do :; done`);
+    await sudoExec(`while iptables -D FORWARD -i ${lanInterface} -o ${resolved.wan_interface_name} -j DROP 2>/dev/null; do :; done`);
+    await sudoExec(`while iptables -D FORWARD -i ${lanInterface} -o ${resolved.wan_interface_name} -j REJECT 2>/dev/null; do :; done`);
+    await sudoExec(`while iptables -D FORWARD -i ${resolved.wan_interface_name} -o ${lanInterface} -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null; do :; done`);
+
+    await sudoExec(`iptables -I FORWARD 1 -i ${resolved.wan_interface_name} -o ${lanInterface} -m state --state RELATED,ESTABLISHED -j ACCEPT`);
+    await sudoExec(`iptables -I FORWARD 1 -i ${lanInterface} -o ${resolved.wan_interface_name} -j ACCEPT`);
+
+    return {
+        success: true,
+        message: `Internet allowed from WAN to LAN via ${resolved.wan_interface_name} -> ${lanInterface}.`
+    };
+}
+
 async function persistRuntimeNetworkSettings(settings = {}) {
     const resolved = resolveNetworkSettings(settings);
     writeRuntimeState({
@@ -852,6 +880,7 @@ module.exports = {
     restoreSavedNetworkSettings,
     persistRuntimeNetworkSettings,
     reapplyRuntimeFirewall,
+    allowWanToLanInternet,
     readRuntimeState,
     writeRuntimeState
 };

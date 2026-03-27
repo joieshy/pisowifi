@@ -2714,8 +2714,6 @@ app.post('/api/superadmin/internet/allow', isAuthenticated, async (req, res) => 
             return res.json({ success: true, message: 'Allow Internet applied (simulated on non-Linux).' });
         }
 
-        // If iptables is not installed, return a clear message (so button doesn't look "broken")
-        // NOTE: "command -v" is not reliable under non-bash shells. Prefer "which".
         const hasIptables = (() => {
             try {
                 execSync('iptables -V', { stdio: 'ignore' });
@@ -2757,32 +2755,23 @@ app.post('/api/superadmin/internet/allow', isAuthenticated, async (req, res) => 
         const lan = 'br0';
         const lanIp = (settings.lan_ip_address || '10.0.0.1/24').split('/')[0];
 
-        // Make sure forwarding + NAT baseline is present.
-        // (initNetwork normally does this; we re-apply the critical parts here for reliability.)
         await sudoExec('sysctl -w net.ipv4.ip_forward=1');
-
-        // Ensure MASQUERADE exists (idempotent)
         await sudoExec(`iptables -t nat -C POSTROUTING -o ${wan} -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -o ${wan} -j MASQUERADE`);
 
-        // IMPORTANT:
-        // Allowing internet is not enough if Captive Portal DNS/HTTP redirect keeps catching traffic.
-        // So we also add NAT PREROUTING bypass for ALL LAN clients (except portal IP),
-        // meaning: clients go directly to the internet, not forced to the portal.
+        // Remove captive-portal redirect/bypass rules so WAN traffic is no longer intercepted.
+        await sudoExec(`iptables -t nat -D PREROUTING -i ${lan} -p tcp --dport 80 -j REDIRECT --to-port ${PORT} 2>/dev/null || true`);
+        await sudoExec(`iptables -t nat -D PREROUTING -i ${lan} -p udp --dport 53 ! -s ${lanIp} -j DNAT --to-destination ${lanIp}:53 2>/dev/null || true`);
+        await sudoExec(`while iptables -t nat -D PREROUTING -i ${lan} ! -d ${lanIp} -j ACCEPT 2>/dev/null; do :; done`);
         await sudoExec(`while iptables -t nat -D PREROUTING -i ${lan} -j ACCEPT 2>/dev/null; do :; done`);
-        await sudoExec(`iptables -t nat -I PREROUTING 1 -i ${lan} ! -d ${lanIp} -j ACCEPT`);
 
-        // iptables is order-sensitive: remove older DROP/REJECT that may be above our ACCEPT
+        // Replace captive default drop with a global allow from WAN to LAN.
         await sudoExec(`while iptables -D FORWARD -i ${lan} -o ${wan} -j DROP 2>/dev/null; do :; done`);
         await sudoExec(`while iptables -D FORWARD -i ${lan} -o ${wan} -j REJECT 2>/dev/null; do :; done`);
-        await sudoExec(`while iptables -D FORWARD -i ${lan} -o ${wan} -j ACCEPT 2>/dev/null; do :; done`);
-
-        // Allow LAN->WAN globally at top
+        await sudoExec(`while iptables -D FORWARD -i ${wan} -o ${lan} -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null; do :; done`);
+        await sudoExec(`iptables -I FORWARD 1 -i ${wan} -o ${lan} -m state --state RELATED,ESTABLISHED -j ACCEPT`);
         await sudoExec(`iptables -I FORWARD 1 -i ${lan} -o ${wan} -j ACCEPT`);
 
-        // Keep established return traffic (idempotent)
-        await sudoExec(`iptables -C FORWARD -i ${wan} -o ${lan} -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || iptables -A FORWARD -i ${wan} -o ${lan} -m state --state RELATED,ESTABLISHED -j ACCEPT`);
-
-        return res.json({ success: true, message: 'Internet allowed for all clients.' });
+        return res.json({ success: true, message: 'Internet allowed from WAN to LAN.' });
     } catch (e) {
         console.error('Superadmin allow internet error:', e.message);
         return res.status(500).json({ success: false, error: e.message });
