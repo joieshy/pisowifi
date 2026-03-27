@@ -66,6 +66,38 @@ function getPortalPort(config = {}) {
     return Number.isFinite(port) && port > 0 ? port : DEFAULT_PORTAL_PORT;
 }
 
+function buildDnsmasqConfig(bridgeInterface, lanIp, dhcpRange, lanDnsServers) {
+    const upstreamDns = normalizeDnsList(lanDnsServers);
+    const lines = [
+        `interface=${bridgeInterface}`,
+        'bind-interfaces',
+        `dhcp-range=${dhcpRange.start},${dhcpRange.end},12h`,
+        `dhcp-option=option:router,${lanIp}`,
+        `dhcp-option=option:dns-server,${lanIp}`,
+        ...upstreamDns.map(dns => `server=${dns}`),
+        'no-resolv',
+        'log-queries',
+        'log-dhcp'
+    ];
+    return `${[...new Set(lines)].join('\n')}\n`;
+}
+
+function readDnsmasqConfig(pathname) {
+    try {
+        if (!fs.existsSync(pathname)) return '';
+        return fs.readFileSync(pathname, 'utf8');
+    } catch (e) {
+        return '';
+    }
+}
+
+function writeIfChanged(pathname, content) {
+    const existing = readDnsmasqConfig(pathname);
+    if (existing === content) return false;
+    fs.writeFileSync(pathname, content);
+    return true;
+}
+
 async function isIpAvailable(ip) {
     if (process.platform === 'win32') {
         try {
@@ -376,13 +408,15 @@ async function applyLanBridgeApSettings(config) {
     }
 
     try {
-        const bridgeInterface = getBridgeInterfaceName(config);
+        const bridgeInterface = getBridgeInterfaceName({
+            ...config,
+            bridge_interface_name: config.bridge_interface_name || lan_interface_name
+        });
         const wanInterface = getInterfaceName(wan_interface_name, '');
         const lanDnsList = normalizeDnsList(lan_dns_servers);
         const portalPort = getPortalPort(config);
         const lanCidr = lan_ip_address;
-        const lanIp = lan_ip_address.split('/')[0];
-        const prefix = parseInt(lan_ip_address.split('/')[1], 10);
+        const { ip: lanIp, prefix } = parseCidr(lan_ip_address);
 
         try {
             await sudoExec('systemctl stop systemd-resolved || true');
@@ -405,23 +439,15 @@ async function applyLanBridgeApSettings(config) {
         await sudoExec(`sysctl -w net.ipv4.conf.${bridgeInterface}.proxy_arp=1 || true`);
 
         const dhcpRange = computeDhcpRange(lanIp, prefix);
-        const dnsServers = lanDnsList.length > 0 ? lanDnsList : DEFAULT_FALLBACK_DNS;
+        const dnsmasqConfig = buildDnsmasqConfig(bridgeInterface, lanIp, dhcpRange, lanDnsList);
 
-        const dnsmasqConfig = `
-interface=${bridgeInterface}
-bind-interfaces
-dhcp-range=${dhcpRange.start},${dhcpRange.end},12h
-dhcp-option=option:router,${lanIp}
-dhcp-option=option:dns-server,${lanIp}
-${dnsServers.map(dns => `server=${dns}`).join('\n')}
-no-resolv
-log-queries
-log-dhcp
-`.trim() + '\n';
-
-        fs.writeFileSync('/etc/dnsmasq.conf', dnsmasqConfig);
-        await sudoExec('systemctl restart dnsmasq || true');
+        const dnsmasqPath = '/etc/dnsmasq.conf';
+        const dnsmasqUpdated = writeIfChanged(dnsmasqPath, dnsmasqConfig);
         await sudoExec('systemctl enable dnsmasq || true');
+        await sudoExec('systemctl restart dnsmasq || true');
+        if (!dnsmasqUpdated) {
+            console.log('[Network] dnsmasq configuration already up to date.');
+        }
 
         if (await commandExists('iptables')) {
             await applyIptablesRules(wanInterface, lanCidr, {
