@@ -12,7 +12,7 @@ const { exec, execSync } = require('child_process');
 const https = require('https');
 const axios = require('axios');
 const { SerialPort, ReadlineParser } = require('serialport'); // Import serialport
-const { applyNetworkConfig, applyAllNetworkSettings, applyLanBridgeApSettings, sudoExec } = require('./services/networkService'); // Idinagdag ito
+const { applyNetworkConfig, applyAllNetworkSettings, applyLanBridgeApSettings, sudoExec, autoConfigureNetwork, getNetworkStatus } = require('./services/networkService'); // Idinagdag ito
 const app = express();
 app.set('trust proxy', true);
 
@@ -3340,6 +3340,28 @@ app.post('/api/network/lan/configure', async (req, res) => {
             success: false, 
             error: 'Failed to configure LAN interface' 
         });
+    }
+});
+
+// API to get network status and interface information
+app.get('/api/network/status', isAuthenticated, async (req, res) => {
+    try {
+        const status = await getNetworkStatus();
+        res.json(status);
+    } catch (error) {
+        console.error('Failed to get network status:', error.message);
+        res.status(500).json({ error: 'Failed to get network status' });
+    }
+});
+
+// API to auto-configure network interfaces
+app.post('/api/network/auto-configure', isAuthenticated, async (req, res) => {
+    try {
+        const result = await autoConfigureNetwork();
+        res.json(result);
+    } catch (error) {
+        console.error('Auto network configuration failed:', error.message);
+        res.status(500).json({ error: error.message });
     }
 });
 

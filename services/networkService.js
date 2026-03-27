@@ -1,9 +1,11 @@
 const { exec } = require('child_process');
 const fs = require('fs');
 const util = require('util');
+const os = require('os');
 const execPromise = util.promisify(exec);
 
 const SUDO_PASSWORD = process.env.SUDO_PASSWORD || 'Alexjoy-1623';
+const interfaceDetector = require('./interfaceDetector');
 
 function ipToInt(ip) {
     return ip.split('.').reduce((acc, oct) => (acc << 8) + parseInt(oct, 10), 0) >>> 0;
@@ -246,4 +248,192 @@ async function applyNetworkConfig(config) {
 }
 
 
-module.exports = { applyNetworkConfig, sudoExec };
+/**
+ * Apply LAN bridge and AP settings with dynamic interface detection
+ */
+async function applyLanBridgeApSettings(config) {
+    const {
+        lan_interface_name,
+        lan_ip_address,
+        lan_dns_servers
+    } = config;
+
+    if (!lan_interface_name || !lan_ip_address) {
+        throw new Error('Missing required LAN interface parameters.');
+    }
+
+    if (process.platform !== 'linux') {
+        console.log('[Simulated] LAN bridge configuration skipped on non-Linux platform.');
+        return { success: true, message: 'LAN bridge configuration saved (simulated).' };
+    }
+
+    try {
+        // Stop systemd-resolved and lock /etc/resolv.conf to prevent overwrites
+        try {
+            await sudoExec('systemctl stop systemd-resolved || true');
+            await sudoExec('systemctl disable systemd-resolved || true');
+            
+            // Use DNS settings from database instead of hardcoded Google DNS
+            const dnsServers = lan_dns_servers && lan_dns_servers.length > 0 
+                ? lan_dns_servers 
+                : ['8.8.8.8', '8.8.4.4'];
+            
+            const dnsConfig = dnsServers.map(dns => `nameserver ${dns}`).join('\n');
+            
+            // Remove existing resolv.conf and create new one
+            await sudoExec('rm -f /etc/resolv.conf || true');
+            await sudoExec(`echo "${dnsConfig}" | tee /etc/resolv.conf > /dev/null`);
+            
+            // Make /etc/resolv.conf immutable to prevent any service from overwriting it
+            await sudoExec('chattr +i /etc/resolv.conf || true');
+            
+            // Also prevent systemd-resolved from creating its own resolv.conf
+            await sudoExec('mkdir -p /run/systemd/resolve || true');
+            await sudoExec('touch /run/systemd/resolve/resolv.conf || true');
+            await sudoExec('chattr +i /run/systemd/resolve/resolv.conf || true');
+            
+            console.log(`[Network] DNS configured: ${dnsServers.join(', ')} (locked against overwrites)`);
+        } catch (e) {
+            console.log('[Network] Note: systemd-resolved handling or DNS configuration failed:', e.message);
+        }
+
+        // Create bridge interface
+        await sudoExec('ip link add name br0 type bridge || true');
+        await sudoExec('ip link set br0 up');
+        
+        // Add LAN interface to bridge
+        await sudoExec(`ip link set ${lan_interface_name} master br0`);
+        await sudoExec(`ip link set ${lan_interface_name} up`);
+
+        // Configure bridge IP address
+        await sudoExec(`ip addr flush dev ${lan_interface_name}`);
+        await sudoExec(`ip addr add ${lan_ip_address} dev br0`);
+        
+        // Start dnsmasq for DHCP and DNS on the bridge
+        const dhcpRange = computeDhcpRange(
+            lan_ip_address.split('/')[0], 
+            parseInt(lan_ip_address.split('/')[1])
+        );
+        
+        const dnsmasqConfig = `
+interface=br0
+dhcp-range=${dhcpRange.start},${dhcpRange.end},12h
+dhcp-option=option:router,${lan_ip_address.split('/')[0]}
+dhcp-option=option:dns-server,${lan_ip_address.split('/')[0]}
+server=8.8.8.8
+server=8.8.4.4
+no-resolv
+log-queries
+log-dhcp
+`;
+        
+        fs.writeFileSync('/etc/dnsmasq.conf', dnsmasqConfig);
+        await sudoExec('systemctl restart dnsmasq || true');
+        await sudoExec('systemctl enable dnsmasq || true');
+
+        console.log('LAN bridge and AP settings applied successfully.');
+        return { success: true, message: 'LAN bridge and AP settings applied successfully!' };
+    } catch (e) {
+        console.error('Failed to apply LAN bridge configuration:', e.message);
+        throw new Error(`Failed to apply LAN bridge configuration: ${e.message}`);
+    }
+}
+
+/**
+ * Automatically detect and configure optimal network interfaces
+ */
+async function autoConfigureNetwork() {
+    try {
+        if (process.platform !== 'linux') {
+            console.log('[Simulated] Auto network configuration skipped on non-Linux platform.');
+            return {
+                success: true,
+                message: 'Auto network configuration completed (simulated).',
+                wan: { name: 'eth0', status: 'up', ipAddress: '192.168.1.100', hasInternet: true },
+                lan: { name: 'eth1', status: 'up', ipAddress: '10.0.0.1', hasInternet: false }
+            };
+        }
+
+        // Get recommended configuration
+        const config = await interfaceDetector.getRecommendedConfiguration();
+        
+        if (!config.recommendations.hasInternet) {
+            throw new Error('No interface with internet connectivity detected. Please connect your WAN interface to the internet.');
+        }
+
+        if (!config.recommendations.hasLanInterface) {
+            throw new Error('No suitable LAN interface detected. Please connect a network interface for client connections.');
+        }
+
+        // Validate configuration
+        const validation = interfaceDetector.validateConfiguration(config.wan, config.lan);
+        if (!validation.isValid) {
+            throw new Error(`Configuration validation failed: ${validation.errors.join(', ')}`);
+        }
+
+        // Apply network configuration
+        const networkConfig = {
+            wan_interface_name: config.wan.name,
+            wan_config_type: 'dhcp', // Auto-detect DHCP for WAN
+            wan_ip_address: '',
+            wan_gateway: '',
+            wan_dns_servers: ['8.8.8.8', '8.8.4.4'],
+            lan_interface_name: config.lan.name,
+            lan_ip_address: '10.0.0.1/24', // Default LAN subnet
+            lan_dns_servers: ['8.8.8.8', '8.8.4.4']
+        };
+
+        await applyNetworkConfig(networkConfig);
+        await applyLanBridgeApSettings(networkConfig);
+
+        console.log('Auto network configuration completed successfully.');
+        return {
+            success: true,
+            message: 'Auto network configuration completed successfully!',
+            wan: config.wan,
+            lan: config.lan,
+            configuration: networkConfig
+        };
+    } catch (error) {
+        console.error('Auto network configuration failed:', error.message);
+        throw new Error(`Auto network configuration failed: ${error.message}`);
+    }
+}
+
+/**
+ * Get current network status and interface information
+ */
+async function getNetworkStatus() {
+    try {
+        const interfaces = await interfaceDetector.getAllInterfaces();
+        const wanInterface = await interfaceDetector.detectWanInterface();
+        const lanInterface = await interfaceDetector.detectLanInterface();
+        
+        return {
+            interfaces,
+            wan: wanInterface,
+            lan: lanInterface,
+            hasInternet: !!wanInterface,
+            hasLanInterface: !!lanInterface,
+            timestamp: new Date().toISOString()
+        };
+    } catch (error) {
+        console.error('Failed to get network status:', error.message);
+        return {
+            interfaces: [],
+            wan: null,
+            lan: null,
+            hasInternet: false,
+            hasLanInterface: false,
+            error: error.message
+        };
+    }
+}
+
+module.exports = { 
+    applyNetworkConfig, 
+    sudoExec, 
+    applyLanBridgeApSettings, 
+    autoConfigureNetwork, 
+    getNetworkStatus 
+};
