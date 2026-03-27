@@ -167,20 +167,6 @@ function computeDhcpRange(gatewayIp, prefix) {
     };
 }
 
-function hasIptables() {
-    try {
-        require('child_process').execSync('iptables -V', { stdio: 'ignore' });
-        return true;
-    } catch (e1) {
-        try {
-            require('child_process').execSync('which iptables', { stdio: 'ignore' });
-            return true;
-        } catch (e2) {
-            return false;
-        }
-    }
-}
-
 async function commandExists(command) {
     try {
         await execPromise(`command -v ${command}`);
