@@ -357,13 +357,17 @@ async function applyLanBridgeApSettings(config) {
             parseInt(lan_ip_address.split('/')[1])
         );
         
+        // Use LAN DNS servers for dnsmasq, fallback to Google DNS if none provided
+        const dnsServers = lan_dns_servers && lan_dns_servers.length > 0 
+            ? lan_dns_servers 
+            : ['8.8.8.8', '8.8.4.4'];
+        
         const dnsmasqConfig = `
 interface=br0
 dhcp-range=${dhcpRange.start},${dhcpRange.end},12h
 dhcp-option=option:router,${lan_ip_address.split('/')[0]}
 dhcp-option=option:dns-server,${lan_ip_address.split('/')[0]}
-server=8.8.8.8
-server=8.8.4.4
+${dnsServers.map(dns => `server=${dns}`).join('\n')}
 no-resolv
 log-queries
 log-dhcp
