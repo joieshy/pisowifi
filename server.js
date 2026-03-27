@@ -502,6 +502,14 @@ async function initNetwork() {
             lan_dns_servers: lanDnsServers,
             wan_interface_name: wanInterface
         });
+        
+        if (os.platform() === 'linux') {
+            try {
+                await reapplyNatRulesFromDb();
+            } catch (natErr) {
+                console.error('[Network] Failed to reapply NAT rules after network init:', natErr.message);
+            }
+        }
 
         console.log('Network initialization complete (Bridge AP).');
     } catch (e) {
@@ -3382,12 +3390,16 @@ app.post('/api/network/lan/configure', async (req, res) => {
         }
 
         try {
-            // Apply LAN bridge configuration using the existing function
-            await applyLanBridgeApSettings({
-                lan_interface_name: lan_interface_name,
-                lan_ip_address: lan_ip_address,
-                lan_dns_servers: lan_dns_servers || []
-            });
+            const networkConfig = {
+                lan_interface_name,
+                lan_ip_address,
+                lan_dns_servers,
+                bridge_interface_name: 'br0',
+                portal_port: PORT
+            };
+
+            await applyLanBridgeApSettings(networkConfig);
+            await reapplyNatRulesFromDb();
 
             res.json({ 
                 success: true, 
