@@ -135,7 +135,54 @@ function hasIptables() {
     }
 }
 
-// Helper function to execute sudo commands with fallback
+async function commandExists(command) {
+    try {
+        await execPromise(`command -v ${command}`);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+async function iptablesRuleExists(args) {
+    try {
+        await sudoExec(`iptables ${args}`);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+async function ensureIptablesRule(args, checkArgs) {
+    if (!(await iptablesRuleExists(checkArgs))) {
+        await sudoExec(`iptables ${args}`);
+    }
+}
+
+async function applyIptablesRules(wanInterface, lanCidr) {
+    const lanIp = lanCidr.split('/')[0];
+    const forwardCheck = `-C FORWARD -i br0 -o ${wanInterface} -j ACCEPT`;
+    const forwardAdd = `-A FORWARD -i br0 -o ${wanInterface} -j ACCEPT`;
+    const returnCheck = `-C FORWARD -i ${wanInterface} -o br0 -m state --state ESTABLISHED,RELATED -j ACCEPT`;
+    const returnAdd = `-A FORWARD -i ${wanInterface} -o br0 -m state --state ESTABLISHED,RELATED -j ACCEPT`;
+    const natCheck = `-t nat -C POSTROUTING -s ${lanCidr} -o ${wanInterface} -j MASQUERADE`;
+    const natAdd = `-t nat -A POSTROUTING -s ${lanCidr} -o ${wanInterface} -j MASQUERADE`;
+    const redirectCheck = `-t nat -C PREROUTING -i br0 -p tcp --dport 80 -j REDIRECT --to-ports 8080`;
+    const redirectAdd = `-t nat -A PREROUTING -i br0 -p tcp --dport 80 -j REDIRECT --to-ports 8080`;
+
+    await sudoExec('sysctl -w net.ipv4.ip_forward=1');
+    await ensureIptablesRule(forwardAdd, forwardCheck);
+    await ensureIptablesRule(returnAdd, returnCheck);
+    await ensureIptablesRule(natAdd, natCheck);
+    await ensureIptablesRule(redirectAdd, redirectCheck);
+
+    try {
+        await sudoExec('iptables -t nat -C PREROUTING -i br0 -p udp --dport 53 -j REDIRECT --to-ports 53 || true');
+    } catch (e) {
+        // ignore DNS redirect check failures
+    }
+}
+
 async function sudoExec(command) {
     try {
         // Use -S to read password from stdin
@@ -200,7 +247,6 @@ async function applyNetworkConfig(config) {
         return { success: true, message: 'Network configuration saved (simulated).' };
     }
 
-    // Debian may not have netplan. Prefer netplan when available, otherwise use ifupdown (/etc/network/interfaces).
     const hasNetplan = async () => {
         try {
             await execPromise('command -v netplan');
@@ -297,7 +343,8 @@ async function applyLanBridgeApSettings(config) {
     const {
         lan_interface_name,
         lan_ip_address,
-        lan_dns_servers
+        lan_dns_servers,
+        wan_interface_name
     } = config;
 
     if (!lan_interface_name || !lan_ip_address) {
@@ -349,13 +396,17 @@ async function applyLanBridgeApSettings(config) {
 
         // Configure bridge IP address
         await sudoExec(`ip addr flush dev ${lan_interface_name}`);
+        await sudoExec(`ip addr flush dev br0`);
         await sudoExec(`ip addr add ${lan_ip_address} dev br0`);
-        
-        // Start dnsmasq for DHCP and DNS on the bridge
-        const dhcpRange = computeDhcpRange(
-            lan_ip_address.split('/')[0], 
-            parseInt(lan_ip_address.split('/')[1])
-        );
+
+        // Enable forwarding for the bridge safely
+        await sudoExec('sysctl -w net.ipv4.ip_forward=1');
+        await sudoExec('sysctl -w net.ipv4.conf.br0.proxy_arp=1 || true');
+
+        const lanCidr = lan_ip_address;
+        const wanInterface = wan_interface_name || 'enp1s0';
+        const lanIp = lan_ip_address.split('/')[0];
+        const dhcpRange = computeDhcpRange(lanIp, parseInt(lan_ip_address.split('/')[1]));
         
         // Use LAN DNS servers for dnsmasq, fallback to Google DNS if none provided
         const dnsServers = lan_dns_servers && lan_dns_servers.length > 0 
@@ -364,9 +415,10 @@ async function applyLanBridgeApSettings(config) {
         
         const dnsmasqConfig = `
 interface=br0
+bind-interfaces
 dhcp-range=${dhcpRange.start},${dhcpRange.end},12h
-dhcp-option=option:router,${lan_ip_address.split('/')[0]}
-dhcp-option=option:dns-server,${lan_ip_address.split('/')[0]}
+dhcp-option=option:router,${lanIp}
+dhcp-option=option:dns-server,${lanIp}
 ${dnsServers.map(dns => `server=${dns}`).join('\n')}
 no-resolv
 log-queries
@@ -376,6 +428,10 @@ log-dhcp
         fs.writeFileSync('/etc/dnsmasq.conf', dnsmasqConfig);
         await sudoExec('systemctl restart dnsmasq || true');
         await sudoExec('systemctl enable dnsmasq || true');
+
+        if (await commandExists('iptables')) {
+            await applyIptablesRules(wanInterface, lanCidr);
+        }
 
         console.log('LAN bridge and AP settings applied successfully.');
         return { success: true, message: 'LAN bridge and AP settings applied successfully!' };

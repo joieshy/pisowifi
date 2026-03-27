@@ -194,19 +194,12 @@ async function allowMac(mac, ip) {
 
         const wan = settings.wan_interface_name || 'enp1s0';
         const lan = 'br0';
-        const lanIp = (settings.lan_ip_address || '10.0.0.1/24').split('/')[0];
 
         // REMOVE existing rule first (important)
         await sudoExec(`iptables -D FORWARD -i ${lan} -o ${wan} -s ${ip} -j ACCEPT || true`);
 
         // INSERT at very top
         await sudoExec(`iptables -I FORWARD 1 -i ${lan} -o ${wan} -s ${ip} -j ACCEPT`);
-
-        // Bypass Captive Portal Redirect for Authenticated User (Fix for "No Internet" status)
-        // We exclude the LAN IP (Portal) from the bypass so it still gets redirected to port 3000
-        await sudoExec(`iptables -t nat -D PREROUTING -s ${ip} -j ACCEPT || true`);
-        await sudoExec(`iptables -t nat -D PREROUTING -s ${ip} ! -d ${lanIp} -j ACCEPT || true`);
-        await sudoExec(`iptables -t nat -I PREROUTING 1 -s ${ip} ! -d ${lanIp} -j ACCEPT`);
 
         // Apply Bandwidth Limits
         try {
@@ -336,11 +329,8 @@ async function blockMac(mac) {
             );
         });
         
-        const globalSettings = settings; // Keep reference
-
         const wan = settings.wan_interface_name || 'enp1s0';
         const lan = 'br0';
-        const lanIp = (settings.lan_ip_address || '10.0.0.1/24').split('/')[0];
 
         const user = await new Promise((resolve, reject) => {
             db.get(
@@ -359,10 +349,6 @@ async function blockMac(mac) {
 
         // DELETE the exact rule we inserted
         await sudoExec(`iptables -D FORWARD -i ${lan} -o ${wan} -s ${ip} -j ACCEPT || true`);
-
-        // Remove Bypass Rule
-        await sudoExec(`iptables -t nat -D PREROUTING -s ${ip} ! -d ${lanIp} -j ACCEPT || true`);
-        await sudoExec(`iptables -t nat -D PREROUTING -s ${ip} -j ACCEPT || true`); // Clean up old rules too
 
         // Remove Bandwidth Limits
         if (user.tc_class_id) {
@@ -484,52 +470,9 @@ async function initNetwork() {
         await applyLanBridgeApSettings({
             lan_interface_name: lanInterface,
             lan_ip_address: lanIpCidr,
-            lan_dns_servers: lanDnsServers
+            lan_dns_servers: lanDnsServers,
+            wan_interface_name: wanInterface
         });
-
-        // Enable IP Forwarding
-        await sudoExec('sysctl -w net.ipv4.ip_forward=1');
-
-        // NAT/captive portal rules will use br0 as LAN side
-        // (we keep lanInterface variable for saved setting; runtime uses br0)
-        const lanSide = 'br0';
-        const lanGatewayIp = lanIpCidr.split('/')[0];
-
-        // Clear only captive rules (safer)
-        await sudoExec('iptables -t nat -F PREROUTING || true');
-        await sudoExec('iptables -t nat -F POSTROUTING || true');
-
-        // Allow all traffic from LAN side
-        await sudoExec(`iptables -D INPUT -i ${lanSide} -j ACCEPT || true`);
-        await sudoExec(`iptables -A INPUT -i ${lanSide} -j ACCEPT`);
-        await sudoExec('iptables -D INPUT -i lo -j ACCEPT || true');
-        await sudoExec('iptables -A INPUT -i lo -j ACCEPT');
-
-        // Setup NAT (MASQUERADE)
-        await sudoExec(`iptables -t nat -A POSTROUTING -o ${wanInterface} -j MASQUERADE`);
-
-        // Allow DNS traffic (UDP 53) so users can resolve the portal domain
-        await sudoExec('iptables -D FORWARD -p udp --dport 53 -j ACCEPT || true');
-        await sudoExec('iptables -D FORWARD -p udp --sport 53 -j ACCEPT || true');
-        await sudoExec('iptables -I FORWARD -p udp --dport 53 -j ACCEPT');
-        await sudoExec('iptables -I FORWARD -p udp --sport 53 -j ACCEPT');
-
-        // Allow established connections back
-        await sudoExec(`iptables -D FORWARD -i ${wanInterface} -o ${lanSide} -m state --state RELATED,ESTABLISHED -j ACCEPT || true`);
-        await sudoExec(`iptables -A FORWARD -i ${wanInterface} -o ${lanSide} -m state --state RELATED,ESTABLISHED -j ACCEPT`);
-
-        // BLOCK everything from LAN by default
-        await sudoExec(`iptables -D FORWARD -i ${lanSide} -o ${wanInterface} -j DROP || true`);
-        await sudoExec(`iptables -A FORWARD -i ${lanSide} -o ${wanInterface} -j DROP`);
-
-        // --- Captive Portal Rules ---
-        await sudoExec(`iptables -t nat -A PREROUTING -i ${lanSide} -j LOG --log-prefix "PISOWIFI_PREROUTING: " --log-level 7`);
-
-        // REDIRECT: All HTTP traffic (port 80) from clients on LAN to Node.js portal (port 3000)
-        await sudoExec(`iptables -t nat -A PREROUTING -i ${lanSide} -p tcp --dport 80 -j REDIRECT --to-port ${PORT}`);
-
-        // REDIRECT: All DNS traffic (UDP 53) from clients on LAN (excluding the server itself) to dnsmasq on gateway
-        await sudoExec(`iptables -t nat -A PREROUTING -i ${lanSide} -p udp --dport 53 ! -s ${lanGatewayIp} -j DNAT --to-destination ${lanGatewayIp}:53`);
 
         console.log('Network initialization complete (Bridge AP).');
     } catch (e) {
