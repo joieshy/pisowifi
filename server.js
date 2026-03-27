@@ -3217,7 +3217,7 @@ io.on('connection', (socket) => {
         });
 });
 
-// Idinagdag na API endpoint para sa pag-save ng network configuration
+        // Idinagdag na API endpoint para sa pag-save ng network configuration
 app.post('/api/save-network', async (req, res) => {
     try {
         // Apply EVERYTHING including WiFi AP settings (ssid/password/security/max users/tx power/hide ssid)
@@ -3225,6 +3225,98 @@ app.post('/api/save-network', async (req, res) => {
         res.json({ success: true, message: "Network Updated! (LAN bridge AP + WiFi AP on same subnet)" });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// LAN Configuration API
+app.post('/api/network/lan/configure', async (req, res) => {
+    try {
+        const {
+            lan_interface_name,
+            lan_ip_address,
+            lan_dns_servers
+        } = req.body;
+
+        // Validate required fields
+        if (!lan_interface_name || !lan_ip_address) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Missing required fields: lan_interface_name and lan_ip_address' 
+            });
+        }
+
+        // Validate LAN IP format
+        const lanIpMatch = lan_ip_address.match(/^(\d+\.\d+\.\d+\.\d+)\/(\d+)$/);
+        if (!lanIpMatch) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Invalid LAN IP format. Use CIDR notation (e.g., 10.0.0.1/24)' 
+            });
+        }
+
+        const [_, ip, cidr] = lanIpMatch;
+        const subnet = ip.split('.').slice(0, 3).join('.');
+        
+        // Validate CIDR range
+        const cidrNum = parseInt(cidr);
+        if (cidrNum < 8 || cidrNum > 30) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'CIDR must be between /8 and /30' 
+            });
+        }
+
+        // Validate IP address
+        const ipParts = ip.split('.').map(Number);
+        if (ipParts.some(part => part < 0 || part > 255)) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Invalid IP address' 
+            });
+        }
+
+        // Save to database
+        const settings = {
+            lan_interface_name,
+            lan_ip_address,
+            lan_dns_servers: lan_dns_servers || []
+        };
+
+        await db.run('UPDATE settings SET value = ? WHERE key = ?', [JSON.stringify(settings), 'network_config']);
+
+        // Apply LAN configuration
+        if (os.platform() !== 'linux') {
+            return res.json({ 
+                success: true, 
+                message: 'LAN configuration saved successfully (simulated on non-Linux)' 
+            });
+        }
+
+        try {
+            // Apply LAN bridge configuration using the existing function
+            await applyLanBridgeApSettings({
+                lan_interface_name: lan_interface_name,
+                lan_ip_address: lan_ip_address,
+                lan_dns_servers: lan_dns_servers || []
+            });
+
+            res.json({ 
+                success: true, 
+                message: 'LAN configuration applied successfully!' 
+            });
+        } catch (applyError) {
+            console.error('Failed to apply LAN configuration:', applyError);
+            res.status(500).json({ 
+                success: false, 
+                error: 'Failed to apply LAN configuration: ' + applyError.message 
+            });
+        }
+    } catch (error) {
+        console.error('Error configuring LAN:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to configure LAN interface' 
+        });
     }
 });
 
