@@ -13,6 +13,7 @@ const DEFAULT_FALLBACK_DNS = ['8.8.8.8', '8.8.4.4'];
 
 let cachedDb = null;
 let cachedSettingsStore = null;
+let cachedStateFile = null;
 
 function ipToInt(ip) {
     return ip.split('.').reduce((acc, oct) => (acc << 8) + parseInt(oct, 10), 0) >>> 0;
@@ -284,6 +285,34 @@ function setNetworkDataSource(source) {
         if (source.settingsStore) {
             cachedSettingsStore = source.settingsStore;
         }
+        if (source.stateFile) {
+            cachedStateFile = source.stateFile;
+        }
+    }
+}
+
+function getRuntimeStateFile() {
+    return cachedStateFile || process.env.PISOWIFI_NETWORK_STATE_FILE || path.join(process.cwd(), 'network-state.json');
+}
+
+function readRuntimeState() {
+    try {
+        const stateFile = getRuntimeStateFile();
+        if (!fs.existsSync(stateFile)) return {};
+        const raw = fs.readFileSync(stateFile, 'utf8');
+        return raw ? JSON.parse(raw) : {};
+    } catch (e) {
+        return {};
+    }
+}
+
+function writeRuntimeState(state = {}) {
+    try {
+        const stateFile = getRuntimeStateFile();
+        fs.writeFileSync(stateFile, JSON.stringify(state, null, 2));
+        return stateFile;
+    } catch (e) {
+        return null;
     }
 }
 
@@ -291,7 +320,9 @@ async function loadNetworkSettings(source = {}) {
     setNetworkDataSource(source);
 
     const direct = resolveNetworkSettings(source);
-    if (direct.wan_interface_name || direct.lan_interface_name || direct.lan_ip_address) {
+    const hasSavedValues = !!(direct.wan_interface_name || direct.lan_interface_name || direct.lan_ip_address || direct.wan_gateway || (direct.wan_dns_servers && direct.wan_dns_servers.length) || (direct.lan_dns_servers && direct.lan_dns_servers.length));
+
+    if (hasSavedValues) {
         return direct;
     }
 
@@ -546,6 +577,11 @@ async function applyLanBridgeApSettings(config) {
 
         const dnsmasqPath = '/etc/dnsmasq.conf';
         const dnsmasqUpdated = writeIfChanged(dnsmasqPath, dnsmasqConfig);
+        if (dnsmasqUpdated) {
+            const tempDnsmasqPath = '/tmp/dnsmasq.conf';
+            fs.writeFileSync(tempDnsmasqPath, dnsmasqConfig);
+            await sudoExec(`mv ${tempDnsmasqPath} ${dnsmasqPath}`);
+        }
         await sudoExec('systemctl enable dnsmasq || true');
         await sudoExec('systemctl restart dnsmasq || true');
         if (!dnsmasqUpdated) {
@@ -755,6 +791,50 @@ async function getNetworkStatus() {
     }
 }
 
+async function restoreSavedNetworkSettings(source = {}) {
+    const runtimeState = readRuntimeState();
+    const resolved = await loadNetworkSettings(source);
+
+    const merged = resolveNetworkSettings({
+        ...runtimeState,
+        ...resolved
+    });
+
+    if (!merged.wan_interface_name || !merged.lan_interface_name || !merged.lan_ip_address) {
+        throw new Error('Saved network settings are incomplete. WAN interface, LAN interface, and LAN IP are required.');
+    }
+
+    await applyLanBridgeApSettings(merged);
+    await reapplyRuntimeFirewall(merged);
+
+    return {
+        success: true,
+        message: 'Saved network settings restored successfully.',
+        settings: merged
+    };
+}
+
+async function reapplyRuntimeFirewall(settings = {}) {
+    if (process.platform !== 'linux') return;
+    const resolved = resolveNetworkSettings(settings);
+    if (!resolved.wan_interface_name || !resolved.lan_ip_address) return;
+    await applyIptablesRules(resolved.wan_interface_name, resolved.lan_ip_address, {
+        lanInterface: resolved.bridge_interface_name,
+        bridge_interface_name: resolved.bridge_interface_name,
+        portalPort: resolved.portal_port,
+        dnsPort: 53
+    });
+}
+
+async function persistRuntimeNetworkSettings(settings = {}) {
+    const resolved = resolveNetworkSettings(settings);
+    writeRuntimeState({
+        ...resolved,
+        lastSavedAt: new Date().toISOString()
+    });
+    return resolved;
+}
+
 module.exports = {
     applyNetworkConfig,
     sudoExec,
@@ -768,5 +848,10 @@ module.exports = {
     getPortalPort,
     loadNetworkSettings,
     resolveNetworkSettings,
-    setNetworkDataSource
+    setNetworkDataSource,
+    restoreSavedNetworkSettings,
+    persistRuntimeNetworkSettings,
+    reapplyRuntimeFirewall,
+    readRuntimeState,
+    writeRuntimeState
 };

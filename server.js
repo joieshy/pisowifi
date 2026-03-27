@@ -12,7 +12,7 @@ const { exec, execSync } = require('child_process');
 const https = require('https');
 const axios = require('axios');
 const { SerialPort, ReadlineParser } = require('serialport'); // Import serialport
-const { applyNetworkConfig, applyAllNetworkSettings, applyLanBridgeApSettings, sudoExec, autoConfigureNetwork, getNetworkStatus, getCurrentLanSettings, applyDynamicLanIp, loadNetworkSettings, resolveNetworkSettings } = require('./services/networkService'); // Idinagdag ito
+const { applyNetworkConfig, applyAllNetworkSettings, applyLanBridgeApSettings, sudoExec, autoConfigureNetwork, getNetworkStatus, getCurrentLanSettings, applyDynamicLanIp, loadNetworkSettings, resolveNetworkSettings, restoreSavedNetworkSettings, persistRuntimeNetworkSettings } = require('./services/networkService'); // Idinagdag ito
 const app = express();
 app.set('trust proxy', true);
 
@@ -827,6 +827,9 @@ db.serialize(() => {
     initNetwork().then(() => {
         initTrafficControl();
         restoreOnlineUsers();
+    });
+    restoreSavedNetworkSettings({ db }).catch((err) => {
+        console.error('Failed to restore saved network settings on startup:', err.message);
     });
     initSerialPort(); // Re-enabled automatic serial port initialization
 });
@@ -3246,6 +3249,7 @@ app.post('/api/save-network', async (req, res) => {
         };
 
         const result = await applyNetworkConfig(networkConfig);
+        await persistRuntimeNetworkSettings(networkConfig);
         res.json({ success: true, message: result.message });
     } catch (error) {
         console.error('Error saving network settings:', error);
