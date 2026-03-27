@@ -303,7 +303,7 @@ async function loadNetworkSettings(source = {}) {
 
     if (cachedDb && typeof cachedDb.all === 'function') {
         const rows = await new Promise((resolve, reject) => {
-            cachedDb.all('SELECT setting_key, setting_value FROM settings', [], (err, result) => {
+            cachedDb.all('SELECT key, value FROM settings', [], (err, result) => {
                 if (err) return reject(err);
                 resolve(result || []);
             });
@@ -550,23 +550,25 @@ async function applyLanBridgeApSettings(config) {
         await sudoExec(`ip link set ${lan_interface_name} up`);
         await sudoExec(`ip addr flush dev ${lan_interface_name} 2>/dev/null || true`);
         await sudoExec(`ip addr flush dev ${bridgeInterface} 2>/dev/null || true`);
-        await sudoExec(`ip addr add ${lan_ip_address} dev ${bridgeInterface}`);
+        await sudoExec(`ip addr add ${lan_ip_address} dev ${bridgeInterface} 2>/dev/null || ip addr replace ${lan_ip_address} dev ${bridgeInterface}`);
 
         await sudoExec('sysctl -w net.ipv4.ip_forward=1');
         await sudoExec(`sysctl -w net.ipv4.conf.${bridgeInterface}.proxy_arp=1 || true`);
 
         const dhcpRange = computeDhcpRange(lanIp, prefix);
         const dnsmasqConfig = buildDnsmasqConfig(bridgeInterface, lanIp, dhcpRange, lanDnsList);
-
         const dnsmasqPath = '/etc/dnsmasq.conf';
-        const dnsmasqUpdated = writeIfChanged(dnsmasqPath, dnsmasqConfig);
-        await sudoExec('systemctl enable dnsmasq || true');
-        await sudoExec('systemctl restart dnsmasq || true');
-        if (!dnsmasqUpdated) {
-            console.log('[Network] dnsmasq configuration already up to date.');
+
+        const existingDnsmasq = readDnsmasqConfig(dnsmasqPath);
+        if (existingDnsmasq !== dnsmasqConfig) {
+            fs.writeFileSync('/tmp/pisowifi-dnsmasq.conf', dnsmasqConfig);
+            await sudoExec(`cp /tmp/pisowifi-dnsmasq.conf ${dnsmasqPath}`);
         }
 
-        if (await commandExists('iptables')) {
+        await sudoExec('systemctl enable dnsmasq || true');
+        await sudoExec('systemctl restart dnsmasq || true');
+
+        if (wanInterface && (await commandExists('iptables'))) {
             await applyIptablesRules(wanInterface, lanCidr, {
                 lanInterface: bridgeInterface,
                 bridge_interface_name: bridgeInterface,
