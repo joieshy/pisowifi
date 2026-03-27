@@ -675,73 +675,89 @@
         let socket; // Socket.IO client instance
 
         // Function to get client MAC address and initialize socket
+        // Enhanced initializeClient with proper error handling
         async function initializeClient() {
-    try {
-        const response = await fetch('/api/client-info');
-        const data = await response.json();
-        clientMacAddress = data.mac;
-        console.log('Client MAC Address:', clientMacAddress);
+            try {
+                const response = await fetch('/api/client-info');
+                const data = await response.json();
+                clientMacAddress = data.mac;
+                console.log('Client MAC Address:', clientMacAddress);
 
-        if (!clientMacAddress) return;
+                if (!clientMacAddress) return;
 
-        // Only initialize socket if io exists
-        if (typeof io === "undefined") {
-            console.warn("Socket.IO not loaded. Skipping realtime features.");
-            return;
+                // Only initialize socket if io exists and clientMacAddress is valid
+                if (typeof io === "undefined") {
+                    console.warn("Socket.IO not loaded. Skipping realtime features.");
+                    return;
+                }
+
+                socket = io({ query: { mac: clientMacAddress } });
+
+                // Add comprehensive error handling for socket connection
+                socket.on('connect_error', (error) => {
+                    console.warn('Socket connection failed:', error.message);
+                    // Don't reload page, just disable socket features gracefully
+                });
+
+                socket.on('connect', () => {
+                    console.log('Socket connected successfully');
+                });
+
+                socket.on('disconnect', () => {
+                    console.log('Socket disconnected, will attempt to reconnect');
+                });
+
+                socket.on('coinInsertionStatus', (status) => {
+                    const insertCoinBtn = document.getElementById('insertCoinButton');
+                    if (!insertCoinBtn) return;
+
+                    if (status.active && status.by !== clientMacAddress) {
+                        insertCoinBtn.disabled = true;
+                        insertCoinBtn.classList.add('busy');
+                        insertCoinBtn.innerHTML =
+                            '<i class="fas fa-hourglass-half" style="margin-right: 10px;"></i> WAIT LANG PO MAY NAGHUHULOG NA IBANG USER';
+                    } else {
+                        insertCoinBtn.disabled = false;
+                        insertCoinBtn.classList.remove('busy');
+                        insertCoinBtn.innerHTML =
+                            '<i class="fas fa-coins" style="margin-right: 10px;"></i> INSERT COIN';
+                    }
+                });
+
+                socket.on('coinInserted', (data) => {
+                    console.log('WebSocket: Coin inserted!', data);
+
+                    totalInserted = data.totalCoins || 0;
+
+                    const insertedAmount = document.getElementById('insertedAmount');
+                    const doneBtn = document.getElementById('doneBtn');
+                    const cancelBtn = document.getElementById('cancelBtn');
+                    const display = document.getElementById('countdownDisplay');
+
+                    if (insertedAmount)
+                        insertedAmount.innerText = totalInserted.toFixed(2);
+
+                    if (doneBtn) doneBtn.disabled = false;
+                    if (cancelBtn) cancelBtn.disabled = true;
+
+                    currentCount = countdownValue;
+
+                    if (display) {
+                        display.innerText = currentCount;
+                        display.style.color = '#34a853';
+                        display.style.borderTopColor = '#34a853';
+                    }
+
+                    if (typeof playCoinClink === "function") {
+                        playCoinClink();
+                    }
+                });
+
+            } catch (e) {
+                console.warn("Socket disabled. Running in fallback mode.", e);
+                // Don't reload page, just continue without socket features
+            }
         }
-
-        socket = io({ query: { mac: clientMacAddress } });
-
-        socket.on('coinInsertionStatus', (status) => {
-            const insertCoinBtn = document.getElementById('insertCoinButton');
-            if (!insertCoinBtn) return;
-
-            if (status.active && status.by !== clientMacAddress) {
-                insertCoinBtn.disabled = true;
-                insertCoinBtn.classList.add('busy');
-                insertCoinBtn.innerHTML =
-                    '<i class="fas fa-hourglass-half" style="margin-right: 10px;"></i> WAIT LANG PO MAY NAGHUHULOG NA IBANG USER';
-            } else {
-                insertCoinBtn.disabled = false;
-                insertCoinBtn.classList.remove('busy');
-                insertCoinBtn.innerHTML =
-                    '<i class="fas fa-coins" style="margin-right: 10px;"></i> INSERT COIN';
-            }
-        });
-
-        socket.on('coinInserted', (data) => {
-            console.log('WebSocket: Coin inserted!', data);
-
-            totalInserted = data.totalCoins || 0;
-
-            const insertedAmount = document.getElementById('insertedAmount');
-            const doneBtn = document.getElementById('doneBtn');
-            const cancelBtn = document.getElementById('cancelBtn');
-            const display = document.getElementById('countdownDisplay');
-
-            if (insertedAmount)
-                insertedAmount.innerText = totalInserted.toFixed(2);
-
-            if (doneBtn) doneBtn.disabled = false;
-            if (cancelBtn) cancelBtn.disabled = true;
-
-            currentCount = countdownValue;
-
-            if (display) {
-                display.innerText = currentCount;
-                display.style.color = '#34a853';
-                display.style.borderTopColor = '#34a853';
-            }
-
-            if (typeof playCoinClink === "function") {
-                playCoinClink();
-            }
-        });
-
-    } catch (e) {
-        console.warn("Socket disabled. Running in fallback mode.", e);
-    }
-}
 
 
         initializeClient(); // Call on page load

@@ -3518,15 +3518,56 @@
             }
         }
 
-        checkSuperAdmin();
-         fetchConfig();
-        
-        // Restore last active section or default to dashboard
-        const savedSection = localStorage.getItem('adminActiveSection') || 'dashboard';
-            console.log('Attempting to show section on load:', savedSection);
-            showSection(savedSection);
+        // Enhanced section restoration with proper timing
+        function restoreActiveSection() {
+            const savedSection = localStorage.getItem('adminActiveSection') || 'dashboard';
+            
+            // Maghintay ng 150ms para matapos ang DOM rendering at CSS animations
+            setTimeout(() => {
+                console.log('Restoring section after DOM load:', savedSection);
+                showSection(savedSection);
+                
+                // I-update ang sidebar active state para siguradong nakafocus
+                const menuItems = document.querySelectorAll('.sidebar-menu li');
+                menuItems.forEach(item => {
+                    item.classList.remove('active');
+                    const onClickAttr = item.getAttribute('onclick');
+                    if (onClickAttr && onClickAttr.includes(`'${savedSection}'`)) {
+                        item.classList.add('active');
+                    }
+                });
+                
+                // I-trigger ang sidebar toggle kung nasa mobile view
+                if (window.innerWidth <= 768) {
+                    const sidebar = document.getElementById('sidebar');
+                    if (sidebar && sidebar.classList.contains('active')) {
+                        sidebar.classList.remove('active');
+                    }
+                }
+            }, 150);
+        }
 
-            setInterval(fetchStats, 5000); // Update stats every 5 seconds for responsive CPU bar
+        // Maghintay matapos ang DOM load bago mag-restore
+        document.addEventListener('DOMContentLoaded', () => {
+            checkSuperAdmin();
+            fetchConfig();
+            restoreActiveSection();
+        });
+
+        // Para sa mga lumang browser
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                checkSuperAdmin();
+                fetchConfig();
+                restoreActiveSection();
+            });
+        } else {
+            checkSuperAdmin();
+            fetchConfig();
+            restoreActiveSection();
+        }
+
+        setInterval(fetchStats, 5000); // Update stats every 5 seconds for responsive CPU bar
 
             // Serial Port Functions
             async function fetchSerialPorts() {
