@@ -42,38 +42,67 @@ app.use(session({
     }
 }));
 
-// LAN-only force redirect to 10.0.0.1:3000
-// - Allows WAN access via http://<WAN-IP>:3000 without being redirected to 10.0.0.1
-// - But forces any LAN client access (10.0.0.0/24) to always land on http://10.0.0.1:3000
-app.use((req, res, next) => {
-    const host = (req.get('host') || '').trim();
+function getSettingValue(key, fallback = '') {
+    return new Promise((resolve) => {
+        db.get(`SELECT value FROM settings WHERE key = ?`, [key], (err, row) => {
+            if (err) return resolve(fallback);
+            resolve(row && row.value ? row.value : fallback);
+        });
+    });
+}
 
-    // Express may give IPv6-mapped IPv4 like ::ffff:10.0.0.50
-    const rawIp = (req.ip || req.connection?.remoteAddress || '').trim();
-    const ip = rawIp.replace('::ffff:', '');
+function getPortalHostPort() {
+    return `${PORT}`;
+}
 
-    const isLanClient = ip.startsWith('10.0.0.');
-    const isLocalhost = ip === '127.0.0.1' || ip === '::1';
+function normalizeLanIp(lanIpAddress) {
+    return String(lanIpAddress || '10.0.0.1/24').split('/')[0].trim();
+}
 
-    if (!isLocalhost && isLanClient) {
-        // If user typed WAN-IP or hostname while inside LAN, force them to portal IP
-        const needsRedirect =
-            !host.startsWith('10.0.0.1') ||
-            (host.startsWith('10.0.0.1') && !host.includes(':3000'));
+async function getPortalBaseUrl() {
+    const lanIpAddress = await getSettingValue('lan_ip_address', '10.0.0.1/24');
+    const lanIp = normalizeLanIp(lanIpAddress);
+    return `http://${lanIp}:${getPortalHostPort()}`;
+}
 
-        if (needsRedirect) {
-            res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
-            return res.redirect(`http://10.0.0.1:3000${req.originalUrl}`);
+// LAN-only force redirect to dynamic portal URL
+// - Uses the DB-backed LAN IP and runtime PORT
+// - Keeps WAN access untouched
+app.use(async (req, res, next) => {
+    try {
+        const host = (req.get('host') || '').trim();
+
+        // Express may give IPv6-mapped IPv4 like ::ffff:10.0.0.50
+        const rawIp = (req.ip || req.connection?.remoteAddress || '').trim();
+        const ip = rawIp.replace('::ffff:', '');
+
+        const lanIpAddress = await getSettingValue('lan_ip_address', '10.0.0.1/24');
+        const lanIp = normalizeLanIp(lanIpAddress);
+        const portalBaseUrl = await getPortalBaseUrl();
+
+        const isLanClient = ip.startsWith(lanIp.split('.').slice(0, 3).join('.') + '.');
+        const isLocalhost = ip === '127.0.0.1' || ip === '::1';
+
+        if (!isLocalhost && isLanClient) {
+            const needsRedirect =
+                !host.startsWith(lanIp) ||
+                (host.startsWith(lanIp) && !host.includes(`:${PORT}`));
+
+            if (needsRedirect) {
+                res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+                return res.redirect(`${portalBaseUrl}${req.originalUrl}`);
+            }
         }
-    }
 
-    // Keep the original behavior: if host is 10.0.0.1 without :3000, add :3000
-    if (host && host.startsWith('10.0.0.1') && !host.includes(':3000')) {
-        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
-        return res.redirect(`http://10.0.0.1:3000${req.originalUrl}`);
-    }
+        if (host && host.startsWith(lanIp) && !host.includes(`:${PORT}`)) {
+            res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+            return res.redirect(`${portalBaseUrl}${req.originalUrl}`);
+        }
 
-    next();
+        next();
+    } catch (err) {
+        next();
+    }
 });
 
 // Auth Middleware
@@ -1089,14 +1118,17 @@ let currentSessionCoins = 0;
 
 // Routes
 
-// Captive portal detection URLs - redirect to main portal
-const PORTAL_IP = 'http://10.0.0.1:3000';
-app.get('/generate_204', (req, res) => res.redirect(PORTAL_IP));
-app.get('/hotspot-detect.html', (req, res) => res.redirect(PORTAL_IP));
-app.get('/connecttest.txt', (req, res) => res.redirect(PORTAL_IP));
-app.get('/ncsi.txt', (req, res) => res.redirect(PORTAL_IP)); // Windows
-app.get('/canonical.html', (req, res) => res.redirect(PORTAL_IP)); // Android
-app.get('/success.txt', (req, res) => res.redirect(PORTAL_IP)); // Firefox
+async function redirectToPortal(req, res) {
+    const portalBaseUrl = await getPortalBaseUrl();
+    return res.redirect(portalBaseUrl);
+}
+
+app.get('/generate_204', async (req, res) => redirectToPortal(req, res));
+app.get('/hotspot-detect.html', async (req, res) => redirectToPortal(req, res));
+app.get('/connecttest.txt', async (req, res) => redirectToPortal(req, res));
+app.get('/ncsi.txt', async (req, res) => redirectToPortal(req, res)); // Windows
+app.get('/canonical.html', async (req, res) => redirectToPortal(req, res)); // Android
+app.get('/success.txt', async (req, res) => redirectToPortal(req, res)); // Firefox
 
 app.get('/', (req, res) => {
     // Prevent caching to avoid loading glitches
@@ -3378,8 +3410,9 @@ app.post('/api/network/lan/dynamic', isAuthenticated, async (req, res) => {
 });
 
 // 1. Unahin ang Redirect Routes para masalo agad ang Windows/Apple checks
-app.get('/redirect', (req, res) => {
-    res.redirect('http://10.0.0.1:3000');
+app.get('/redirect', async (req, res) => {
+    const portalBaseUrl = await getPortalBaseUrl();
+    res.redirect(portalBaseUrl);
 });
 
 const HOST = '0.0.0.0'; // Bind on all interfaces so it's reachable via LAN + WAN IPs

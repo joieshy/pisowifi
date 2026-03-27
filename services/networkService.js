@@ -7,6 +7,10 @@ const execPromise = util.promisify(exec);
 const SUDO_PASSWORD = process.env.SUDO_PASSWORD || 'Alexjoy-1623';
 const interfaceDetector = require('./interfaceDetector');
 
+const DEFAULT_LAN_BRIDGE = 'br0';
+const DEFAULT_PORTAL_PORT = 3000;
+const DEFAULT_FALLBACK_DNS = ['8.8.8.8', '8.8.4.4'];
+
 function ipToInt(ip) {
     return ip.split('.').reduce((acc, oct) => (acc << 8) + parseInt(oct, 10), 0) >>> 0;
 }
@@ -40,6 +44,29 @@ function parseCidr(cidr) {
     if (!ip.match(/^\d+\.\d+\.\d+\.\d+$/)) throw new Error(`Invalid IPv4 address in CIDR: ${cidr}`);
     if (Number.isNaN(prefix) || prefix < 1 || prefix > 30) throw new Error(`CIDR prefix must be between 1 and 30: ${cidr}`);
     return { ip, prefix };
+}
+
+function normalizeDnsList(dnsServers) {
+    if (!Array.isArray(dnsServers) || dnsServers.length === 0) {
+        return DEFAULT_FALLBACK_DNS;
+    }
+    return dnsServers.filter(Boolean);
+}
+
+function getInterfaceName(value, fallback) {
+    if (!value) return fallback;
+    if (typeof value === 'string') return value.trim() || fallback;
+    if (typeof value === 'object' && value.name) return value.name;
+    return fallback;
+}
+
+function getBridgeInterfaceName(config = {}) {
+    return getInterfaceName(config.bridge_interface_name || config.bridge_name || config.lan_bridge_name, DEFAULT_LAN_BRIDGE);
+}
+
+function getPortalPort(config = {}) {
+    const port = Number(config.portal_port || config.app_port || config.port);
+    return Number.isFinite(port) && port > 0 ? port : DEFAULT_PORTAL_PORT;
 }
 
 /**
@@ -159,28 +186,34 @@ async function ensureIptablesRule(args, checkArgs) {
     }
 }
 
-async function applyIptablesRules(wanInterface, lanCidr) {
+async function applyIptablesRules(wanInterface, lanCidr, options = {}) {
+    const lanInterface = getInterfaceName(options.lanInterface || options.lan_interface_name, DEFAULT_LAN_BRIDGE);
+    const portalPort = getPortalPort(options);
     const lanIp = lanCidr.split('/')[0];
-    const forwardCheck = `-C FORWARD -i br0 -o ${wanInterface} -j ACCEPT`;
-    const forwardAdd = `-A FORWARD -i br0 -o ${wanInterface} -j ACCEPT`;
-    const returnCheck = `-C FORWARD -i ${wanInterface} -o br0 -m state --state ESTABLISHED,RELATED -j ACCEPT`;
-    const returnAdd = `-A FORWARD -i ${wanInterface} -o br0 -m state --state ESTABLISHED,RELATED -j ACCEPT`;
+    const dnsPort = Number(options.dnsPort || 53);
+
+    const forwardCheck = `-C FORWARD -i ${lanInterface} -o ${wanInterface} -j ACCEPT`;
+    const forwardAdd = `-A FORWARD -i ${lanInterface} -o ${wanInterface} -j ACCEPT`;
+    const returnCheck = `-C FORWARD -i ${wanInterface} -o ${lanInterface} -m state --state ESTABLISHED,RELATED -j ACCEPT`;
+    const returnAdd = `-A FORWARD -i ${wanInterface} -o ${lanInterface} -m state --state ESTABLISHED,RELATED -j ACCEPT`;
     const natCheck = `-t nat -C POSTROUTING -s ${lanCidr} -o ${wanInterface} -j MASQUERADE`;
     const natAdd = `-t nat -A POSTROUTING -s ${lanCidr} -o ${wanInterface} -j MASQUERADE`;
-    const redirectCheck = `-t nat -C PREROUTING -i br0 -p tcp --dport 80 -j REDIRECT --to-ports 8080`;
-    const redirectAdd = `-t nat -A PREROUTING -i br0 -p tcp --dport 80 -j REDIRECT --to-ports 8080`;
+    const httpRedirectCheck = `-t nat -C PREROUTING -i ${lanInterface} -p tcp --dport 80 -j REDIRECT --to-ports ${portalPort}`;
+    const httpRedirectAdd = `-t nat -A PREROUTING -i ${lanInterface} -p tcp --dport 80 -j REDIRECT --to-ports ${portalPort}`;
+    const dnsRedirectCheck = `-t nat -C PREROUTING -i ${lanInterface} -p udp --dport 53 -j REDIRECT --to-ports ${dnsPort}`;
+    const dnsRedirectAdd = `-t nat -A PREROUTING -i ${lanInterface} -p udp --dport 53 -j REDIRECT --to-ports ${dnsPort}`;
+    const dnsTcpRedirectCheck = `-t nat -C PREROUTING -i ${lanInterface} -p tcp --dport 53 -j REDIRECT --to-ports ${dnsPort}`;
+    const dnsTcpRedirectAdd = `-t nat -A PREROUTING -i ${lanInterface} -p tcp --dport 53 -j REDIRECT --to-ports ${dnsPort}`;
 
     await sudoExec('sysctl -w net.ipv4.ip_forward=1');
     await ensureIptablesRule(forwardAdd, forwardCheck);
     await ensureIptablesRule(returnAdd, returnCheck);
     await ensureIptablesRule(natAdd, natCheck);
-    await ensureIptablesRule(redirectAdd, redirectCheck);
+    await ensureIptablesRule(httpRedirectAdd, httpRedirectCheck);
+    await ensureIptablesRule(dnsRedirectAdd, dnsRedirectCheck);
+    await ensureIptablesRule(dnsTcpRedirectAdd, dnsTcpRedirectCheck);
 
-    try {
-        await sudoExec('iptables -t nat -C PREROUTING -i br0 -p udp --dport 53 -j REDIRECT --to-ports 53 || true');
-    } catch (e) {
-        // ignore DNS redirect check failures
-    }
+    return { lanInterface, lanIp, portalPort };
 }
 
 async function sudoExec(command) {
@@ -282,8 +315,8 @@ async function applyNetworkConfig(config) {
         // Fallback: /etc/network/interfaces (ifupdown)
         // NOTE: This is a best-effort minimal config. On Debian, users commonly install ifupdown or use NetworkManager/systemd-networkd.
         const interfacesPath = '/etc/network/interfaces';
-        const wanDnsList = (wan_dns_servers && wan_dns_servers.length > 0) ? wan_dns_servers : [];
-        const lanDnsList = (lan_dns_servers && lan_dns_servers.length > 0) ? lan_dns_servers : [];
+        const wanDnsList = normalizeDnsList(wan_dns_servers);
+        const lanDnsList = normalizeDnsList(lan_dns_servers);
 
         const lines = [];
         lines.push('# Generated by PisoWiFi');
@@ -357,16 +390,17 @@ async function applyLanBridgeApSettings(config) {
     }
 
     try {
+        const bridgeInterface = getBridgeInterfaceName(config);
+        const wanInterface = getInterfaceName(wan_interface_name, '');
+        const lanDnsList = normalizeDnsList(lan_dns_servers);
+        const portalPort = getPortalPort(config);
+
         // Stop systemd-resolved and lock /etc/resolv.conf to prevent overwrites
         try {
             await sudoExec('systemctl stop systemd-resolved || true');
             await sudoExec('systemctl disable systemd-resolved || true');
             
-            // Use DNS settings from database instead of hardcoded Google DNS
-            const dnsServers = lan_dns_servers && lan_dns_servers.length > 0 
-                ? lan_dns_servers 
-                : ['8.8.8.8', '8.8.4.4'];
-            
+            const dnsServers = lanDnsList.length > 0 ? lanDnsList : DEFAULT_FALLBACK_DNS;
             const dnsConfig = dnsServers.map(dns => `nameserver ${dns}`).join('\n');
             
             // Remove existing resolv.conf and create new one
@@ -387,34 +421,31 @@ async function applyLanBridgeApSettings(config) {
         }
 
         // Create bridge interface
-        await sudoExec('ip link add name br0 type bridge || true');
-        await sudoExec('ip link set br0 up');
+        await sudoExec(`ip link add name ${bridgeInterface} type bridge || true`);
+        await sudoExec(`ip link set ${bridgeInterface} up`);
         
         // Add LAN interface to bridge
-        await sudoExec(`ip link set ${lan_interface_name} master br0`);
+        await sudoExec(`ip link set ${lan_interface_name} master ${bridgeInterface}`);
         await sudoExec(`ip link set ${lan_interface_name} up`);
 
         // Configure bridge IP address
         await sudoExec(`ip addr flush dev ${lan_interface_name}`);
-        await sudoExec(`ip addr flush dev br0`);
-        await sudoExec(`ip addr add ${lan_ip_address} dev br0`);
+        await sudoExec(`ip addr flush dev ${bridgeInterface}`);
+        await sudoExec(`ip addr add ${lan_ip_address} dev ${bridgeInterface}`);
 
         // Enable forwarding for the bridge safely
         await sudoExec('sysctl -w net.ipv4.ip_forward=1');
-        await sudoExec('sysctl -w net.ipv4.conf.br0.proxy_arp=1 || true');
+        await sudoExec(`sysctl -w net.ipv4.conf.${bridgeInterface}.proxy_arp=1 || true`);
 
         const lanCidr = lan_ip_address;
-        const wanInterface = wan_interface_name || 'enp1s0';
         const lanIp = lan_ip_address.split('/')[0];
         const dhcpRange = computeDhcpRange(lanIp, parseInt(lan_ip_address.split('/')[1]));
         
         // Use LAN DNS servers for dnsmasq, fallback to Google DNS if none provided
-        const dnsServers = lan_dns_servers && lan_dns_servers.length > 0 
-            ? lan_dns_servers 
-            : ['8.8.8.8', '8.8.4.4'];
+        const dnsServers = lanDnsList.length > 0 ? lanDnsList : DEFAULT_FALLBACK_DNS;
         
         const dnsmasqConfig = `
-interface=br0
+interface=${bridgeInterface}
 bind-interfaces
 dhcp-range=${dhcpRange.start},${dhcpRange.end},12h
 dhcp-option=option:router,${lanIp}
@@ -430,11 +461,14 @@ log-dhcp
         await sudoExec('systemctl enable dnsmasq || true');
 
         if (await commandExists('iptables')) {
-            await applyIptablesRules(wanInterface, lanCidr);
+            await applyIptablesRules(wanInterface, lanCidr, {
+                lanInterface: bridgeInterface,
+                portalPort
+            });
         }
 
         console.log('LAN bridge and AP settings applied successfully.');
-        return { success: true, message: 'LAN bridge and AP settings applied successfully!' };
+        return { success: true, message: 'LAN bridge and AP settings applied successfully!', bridge_interface_name: bridgeInterface };
     } catch (e) {
         console.error('Failed to apply LAN bridge configuration:', e.message);
         throw new Error(`Failed to apply LAN bridge configuration: ${e.message}`);
@@ -449,14 +483,14 @@ async function getCurrentLanSettings() {
         return {
             success: true,
             lan_ip: '10.0.0.1/24 (simulated)',
-            lan_dns: ['8.8.8.8', '8.8.4.4'],
+            lan_dns: DEFAULT_FALLBACK_DNS,
             applied: true
         };
     }
 
     try {
         // Get bridge IP
-        const { stdout: ipOutput } = await execPromise('ip addr show br0');
+        const { stdout: ipOutput } = await execPromise(`ip addr show ${DEFAULT_LAN_BRIDGE}`);
         const ipMatch = ipOutput.match(/inet\s+(\d+\.\d+\.\d+\.\d+\/\d+)/);
         const currentLanIp = ipMatch ? ipMatch[1] : 'Not configured';
 
@@ -469,7 +503,7 @@ async function getCurrentLanSettings() {
                 currentDns = dnsMatches.map(line => line.split(' ')[1]);
             }
         } catch (e) {
-            currentDns = ['8.8.8.8', '8.8.4.4']; // Fallback
+            currentDns = DEFAULT_FALLBACK_DNS; // Fallback
         }
 
         return {
@@ -505,7 +539,7 @@ async function applyDynamicLanIp(config) {
             success: true, 
             message: 'Dynamic LAN IP configuration saved (simulated).',
             applied_ip: '10.0.0.1/24',
-            applied_dns: lan_dns_servers || ['8.8.8.8', '8.8.4.4']
+            applied_dns: normalizeDnsList(lan_dns_servers)
         };
     }
 
@@ -530,14 +564,17 @@ async function applyDynamicLanIp(config) {
         const result = await applyLanBridgeApSettings({
             lan_interface_name,
             lan_ip_address: gatewayIp,
-            lan_dns_servers
+            lan_dns_servers,
+            bridge_interface_name: getBridgeInterfaceName(config),
+            wan_interface_name: config.wan_interface_name,
+            portal_port: getPortalPort(config)
         });
 
         return {
             success: true,
             message: `Dynamic LAN IP configuration applied successfully! Gateway: ${gatewayIp}`,
             applied_ip: gatewayIp,
-            applied_dns: lan_dns_servers || ['8.8.8.8', '8.8.4.4']
+            applied_dns: normalizeDnsList(lan_dns_servers)
         };
     } catch (e) {
         console.error('Failed to apply dynamic LAN IP configuration:', e.message);
@@ -583,14 +620,18 @@ async function autoConfigureNetwork() {
             wan_config_type: 'dhcp', // Auto-detect DHCP for WAN
             wan_ip_address: '',
             wan_gateway: '',
-            wan_dns_servers: ['8.8.8.8', '8.8.4.4'],
+            wan_dns_servers: DEFAULT_FALLBACK_DNS,
             lan_interface_name: config.lan.name,
             lan_ip_address: '10.0.0.1/24', // Default LAN subnet
-            lan_dns_servers: ['8.8.8.8', '8.8.4.4']
+            lan_dns_servers: DEFAULT_FALLBACK_DNS
         };
 
         await applyNetworkConfig(networkConfig);
-        await applyLanBridgeApSettings(networkConfig);
+        await applyLanBridgeApSettings({
+            ...networkConfig,
+            bridge_interface_name: DEFAULT_LAN_BRIDGE,
+            portal_port: DEFAULT_PORTAL_PORT
+        });
 
         console.log('Auto network configuration completed successfully.');
         return {
@@ -643,5 +684,8 @@ module.exports = {
     autoConfigureNetwork, 
     getNetworkStatus,
     getCurrentLanSettings,
-    applyDynamicLanIp
+    applyDynamicLanIp,
+    applyIptablesRules,
+    getBridgeInterfaceName,
+    getPortalPort
 };
