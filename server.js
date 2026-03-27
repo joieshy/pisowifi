@@ -480,13 +480,11 @@ async function initNetwork() {
             console.log('[Network] Note: systemd-resolved handling or DNS configuration failed:', e.message);
         }
 
-        // --- Apply bridge + dnsmasq + hostapd bridge on LAN subnet ---
-        // NOTE: wifi_interface_name is set to wlp2s0 as per your Debian device.
+        // --- Apply bridge + dnsmasq bridge on LAN subnet ---
         await applyLanBridgeApSettings({
             lan_interface_name: lanInterface,
             lan_ip_address: lanIpCidr,
-            lan_dns_servers: lanDnsServers,
-            wifi_interface_name: 'wlp2s0'
+            lan_dns_servers: lanDnsServers
         });
 
         // Enable IP Forwarding
@@ -800,13 +798,6 @@ db.serialize(() => {
         ['lan_interface_name', 'enx00e04c680013'],
         ['lan_ip_address', '10.0.0.1/24'],
         ['lan_dns_servers', '8.8.8.8,8.8.4.4'],
-        // NEW: WiFi Settings
-        ['wifi_ssid', 'PisoWiFi'],
-        ['wifi_password', ''],
-        ['wifi_security', 'wpa2'], // none, wpa2, wpa3
-        ['wifi_max_users', '50'],
-        ['wifi_transmit_power', '100'],
-        ['wifi_hidden', 'false'],
     ];
 
     defaultSettings.forEach(setting => {
@@ -2234,15 +2225,6 @@ app.post('/api/network/clear', isAuthenticated, (req, res) => {
         'lan_interface_name',
         'lan_ip_address',
         'lan_dns_servers',
-
-        // WiFi
-        'wifi_ssid',
-        'wifi_password',
-        'wifi_security',
-        'wifi_max_users',
-        'wifi_transmit_power',
-        'wifi_hidden',
-
     ];
 
     db.serialize(() => {
@@ -3220,9 +3202,9 @@ io.on('connection', (socket) => {
         // Idinagdag na API endpoint para sa pag-save ng network configuration
 app.post('/api/save-network', async (req, res) => {
     try {
-        // Apply EVERYTHING including WiFi AP settings (ssid/password/security/max users/tx power/hide ssid)
-        await applyAllNetworkSettings({ ...req.body, wifi_interface_name: 'wlp2s0' });
-        res.json({ success: true, message: "Network Updated! (LAN bridge AP + WiFi AP on same subnet)" });
+        // Apply network settings (LAN bridge configuration only)
+        await applyAllNetworkSettings({ ...req.body });
+        res.json({ success: true, message: "Network Updated! (LAN bridge configuration)" });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }

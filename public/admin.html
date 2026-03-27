@@ -1167,50 +1167,6 @@
                     </form>
                 </div>
 
-                <!-- WiFi Settings -->
-                <div class="card">
-                    <h3 style="margin-top: 0; color: #fd7e14; border-bottom: 1px solid #eee; padding-bottom: 10px;">
-                        <i class="fas fa-wifi"></i> WiFi Settings
-                    </h3>
-                    <form id="wifiSettingsForm">
-                        <div class="form-group">
-                            <label>WiFi Name</label>
-                            <input type="text" id="wifi_ssid" name="wifi_ssid" placeholder="Enter WiFi name (SSID)">
-                        </div>
-                        <div class="form-group">
-                            <label>WiFi Password</label>
-                            <input type="password" id="wifi_password" name="wifi_password" placeholder="Enter WiFi password">
-                        </div>
-                        <div class="form-group">
-                            <label>Security Mode</label>
-                            <select id="wifi_security" name="wifi_security">
-                                <option value="none">None (Open)</option>
-                                <option value="wpa2">WPA2 Personal</option>
-                                <option value="wpa3">WPA3 Personal</option>
-                                <option value="wpa2+wpa3">WPA2/WPA3 Mixed</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>Max Users</label>
-                            <input type="number" id="wifi_max_users" name="wifi_max_users" min="1" max="100" placeholder="50">
-                        </div>
-                        <div class="form-group">
-                            <label>Transmit Power (%)</label>
-                            <input type="number" id="wifi_transmit_power" name="wifi_transmit_power" min="10" max="100" placeholder="100">
-                        </div>
-                        <div class="form-group">
-                            <label>Hide SSID</label>
-                            <select id="wifi_hidden" name="wifi_hidden">
-                                <option value="false">No (Visible)</option>
-                                <option value="true">Yes (Hidden)</option>
-                            </select>
-                        </div>
-                        <button type="submit" class="btn btn-warning" style="width: 100%; color: white;">
-                            <i class="fas fa-save"></i> Save WiFi Settings
-                        </button>
-                    </form>
-                    <div id="wifiSettingsMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">WiFi settings saved!</div>
-                </div>
                 <!-- Port Triggering -->
                 <div class="card">
                     <h3 style="margin-top: 0; color: #6f42c1; border-bottom: 1px solid #eee; padding-bottom: 10px;">
