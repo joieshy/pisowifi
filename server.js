@@ -1983,15 +1983,27 @@ app.post('/api/system/firmware-update', isAuthenticated, (req, res) => {
     });
 });
 
+const { promisify } = require('util');
+const execAsync = promisify(exec);
+
 // Diagnostics: Ping
-app.post('/api/diagnostics/ping', isAuthenticated, (req, res) => {
+app.post('/api/diagnostics/ping', isAuthenticated, async (req, res) => {
     const { host } = req.body;
     if (!host) return res.status(400).json({ error: 'Host is required' });
-    
-    const command = os.platform() === 'win32' ? `ping -n 4 ${host}` : `ping -c 4 ${host}`;
-    exec(command, (error, stdout, stderr) => {
-        res.json({ output: stdout || stderr || error.message });
-    });
+
+    const safeHost = String(host).trim();
+    const isSafeHost = /^[a-zA-Z0-9.-]+$/.test(safeHost) || /^(\d{1,3}\.){3}\d{1,3}$/.test(safeHost);
+    if (!isSafeHost) {
+        return res.status(400).json({ error: 'Invalid host format' });
+    }
+
+    const command = os.platform() === 'win32' ? `ping -n 4 ${safeHost}` : `ping -c 4 ${safeHost}`;
+    try {
+        const { stdout, stderr } = await execAsync(command, { timeout: 15000, maxBuffer: 1024 * 1024 });
+        res.json({ output: stdout || stderr || 'Ping completed' });
+    } catch (error) {
+        res.json({ output: error.stdout || error.stderr || error.message || 'Ping failed' });
+    }
 });
 
 // Diagnostics: Speed Test (Real Download Test)
