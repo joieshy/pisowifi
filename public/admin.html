@@ -2676,7 +2676,16 @@
                     body: JSON.stringify({ host })
                 });
                 const result = await response.json();
-                output.innerText = result.output;
+
+                const rawOutput = result.output || '';
+                const permissionError = /missing cap_net_raw\+p capability|Operation not permitted|socktype:\s*SOCK_RAW/i.test(rawOutput);
+
+                if (permissionError) {
+                    output.innerText = `Ping diagnostic is unavailable on this system because the process does not have permission to open raw ICMP sockets.\n\nTechnical detail hidden for normal users.\n\nTip: grant cap_net_raw to the ping binary or run the diagnostics service with the required privileges.`;
+                    return;
+                }
+
+                output.innerText = rawOutput || 'No ping output returned.';
             } catch (e) {
                 output.innerText = 'Error: ' + e.message;
             }
