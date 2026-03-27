@@ -12,7 +12,7 @@ const { exec, execSync } = require('child_process');
 const https = require('https');
 const axios = require('axios');
 const { SerialPort, ReadlineParser } = require('serialport'); // Import serialport
-const { applyNetworkConfig, applyAllNetworkSettings, applyLanBridgeApSettings, sudoExec, autoConfigureNetwork, getNetworkStatus } = require('./services/networkService'); // Idinagdag ito
+const { applyNetworkConfig, applyAllNetworkSettings, applyLanBridgeApSettings, sudoExec, autoConfigureNetwork, getNetworkStatus, getCurrentLanSettings, applyDynamicLanIp } = require('./services/networkService'); // Idinagdag ito
 const app = express();
 app.set('trust proxy', true);
 
@@ -3362,6 +3362,63 @@ app.post('/api/network/auto-configure', isAuthenticated, async (req, res) => {
     } catch (error) {
         console.error('Auto network configuration failed:', error.message);
         res.status(500).json({ error: error.message });
+    }
+});
+
+// API to get current LAN IP and DNS settings
+app.get('/api/network/current-settings', isAuthenticated, async (req, res) => {
+    try {
+        const settings = await getCurrentLanSettings();
+        res.json(settings);
+    } catch (error) {
+        console.error('Failed to get current LAN settings:', error.message);
+        res.status(500).json({ error: 'Failed to get current LAN settings' });
+    }
+});
+
+// API to apply dynamic LAN IP configuration
+app.post('/api/network/lan/dynamic', isAuthenticated, async (req, res) => {
+    try {
+        const { lan_interface_name, desired_subnet, lan_dns_servers } = req.body;
+
+        if (!lan_interface_name || !desired_subnet) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Missing required parameters: lan_interface_name and desired_subnet' 
+            });
+        }
+
+        // Validate subnet format
+        const subnetMatch = desired_subnet.match(/^(\d+\.\d+\.\d+\.\d+)\/(\d+)$/);
+        if (!subnetMatch) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Invalid subnet format. Use CIDR notation (e.g., 10.0.0.0/24)' 
+            });
+        }
+
+        const result = await applyDynamicLanIp({
+            lan_interface_name,
+            desired_subnet,
+            lan_dns_servers
+        });
+
+        // Save to database
+        db.serialize(() => {
+            const stmt = db.prepare(`UPDATE settings SET value = ? WHERE key = ?`);
+            stmt.run(lan_interface_name, 'lan_interface_name');
+            stmt.run(result.applied_ip, 'lan_ip_address');
+            stmt.run(lan_dns_servers ? lan_dns_servers.join(',') : '', 'lan_dns_servers');
+            stmt.finalize();
+        });
+
+        res.json(result);
+    } catch (error) {
+        console.error('Failed to apply dynamic LAN IP configuration:', error.message);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
     }
 });
 

@@ -43,6 +43,48 @@ function parseCidr(cidr) {
 }
 
 /**
+ * Check if an IP address is available (no ping response)
+ */
+async function isIpAvailable(ip) {
+    if (process.platform === 'win32') {
+        try {
+            const { stdout } = await execPromise(`ping -n 1 -w 100 ${ip}`);
+            return !stdout.includes('TTL=');
+        } catch (e) {
+            return true; // Ping failed, likely available
+        }
+    } else {
+        try {
+            const { stdout } = await execPromise(`ping -c 1 -W 1 ${ip}`);
+            return !stdout.includes('ttl=');
+        } catch (e) {
+            return true; // Ping failed, likely available
+        }
+    }
+}
+
+/**
+ * Find an available IP in the subnet
+ */
+async function findAvailableIp(networkInt, prefix) {
+    const maskInt = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
+    const networkStart = (networkInt & maskInt) >>> 0;
+    const broadcastInt = (networkStart | (~maskInt >>> 0)) >>> 0;
+    
+    // Start from network + 1, avoid broadcast - 1
+    for (let i = 1; i <= 254; i++) {
+        const candidate = networkStart + i;
+        if (candidate === broadcastInt) continue;
+        
+        const ip = intToIp(candidate);
+        if (await isIpAvailable(ip)) {
+            return ip;
+        }
+    }
+    throw new Error('No available IP found in subnet');
+}
+
+/**
  * Compute DHCP range inside the CIDR.
  * - reserves network, broadcast
  * - reserves gateway IP
@@ -340,6 +382,110 @@ log-dhcp
 }
 
 /**
+ * Get current applied LAN IP and DNS settings
+ */
+async function getCurrentLanSettings() {
+    if (process.platform !== 'linux') {
+        return {
+            success: true,
+            lan_ip: '10.0.0.1/24 (simulated)',
+            lan_dns: ['8.8.8.8', '8.8.4.4'],
+            applied: true
+        };
+    }
+
+    try {
+        // Get bridge IP
+        const { stdout: ipOutput } = await execPromise('ip addr show br0');
+        const ipMatch = ipOutput.match(/inet\s+(\d+\.\d+\.\d+\.\d+\/\d+)/);
+        const currentLanIp = ipMatch ? ipMatch[1] : 'Not configured';
+
+        // Get DNS servers from resolv.conf
+        let currentDns = [];
+        try {
+            const { stdout: dnsOutput } = await execPromise('cat /etc/resolv.conf');
+            const dnsMatches = dnsOutput.match(/nameserver\s+(\d+\.\d+\.\d+\.\d+)/g);
+            if (dnsMatches) {
+                currentDns = dnsMatches.map(line => line.split(' ')[1]);
+            }
+        } catch (e) {
+            currentDns = ['8.8.8.8', '8.8.4.4']; // Fallback
+        }
+
+        return {
+            success: true,
+            lan_ip: currentLanIp,
+            lan_dns: currentDns,
+            applied: currentLanIp !== 'Not configured'
+        };
+    } catch (e) {
+        return {
+            success: false,
+            error: e.message,
+            lan_ip: 'Error',
+            lan_dns: [],
+            applied: false
+        };
+    }
+}
+
+/**
+ * Validate and apply dynamic LAN IP configuration
+ */
+async function applyDynamicLanIp(config) {
+    const { lan_interface_name, desired_subnet, lan_dns_servers } = config;
+
+    if (!lan_interface_name || !desired_subnet) {
+        throw new Error('Missing required parameters for dynamic LAN IP configuration.');
+    }
+
+    if (process.platform !== 'linux') {
+        console.log('[Simulated] Dynamic LAN IP configuration skipped on non-Linux platform.');
+        return { 
+            success: true, 
+            message: 'Dynamic LAN IP configuration saved (simulated).',
+            applied_ip: '10.0.0.1/24',
+            applied_dns: lan_dns_servers || ['8.8.8.8', '8.8.4.4']
+        };
+    }
+
+    try {
+        // Parse desired subnet (e.g., 10.0.0.0/24)
+        const subnetMatch = desired_subnet.match(/^(\d+\.\d+\.\d+\.\d+)\/(\d+)$/);
+        if (!subnetMatch) {
+            throw new Error('Invalid subnet format. Use CIDR notation (e.g., 10.0.0.0/24)');
+        }
+
+        const [_, networkIp, prefix] = subnetMatch;
+        const networkInt = ipToInt(networkIp);
+        const prefixNum = parseInt(prefix);
+
+        // Find an available IP in the subnet
+        const availableIp = await findAvailableIp(networkInt, prefixNum);
+        const gatewayIp = `${availableIp}/${prefix}`;
+
+        console.log(`[Dynamic LAN] Found available IP: ${availableIp} in subnet ${desired_subnet}`);
+
+        // Apply the configuration
+        const result = await applyLanBridgeApSettings({
+            lan_interface_name,
+            lan_ip_address: gatewayIp,
+            lan_dns_servers
+        });
+
+        return {
+            success: true,
+            message: `Dynamic LAN IP configuration applied successfully! Gateway: ${gatewayIp}`,
+            applied_ip: gatewayIp,
+            applied_dns: lan_dns_servers || ['8.8.8.8', '8.8.4.4']
+        };
+    } catch (e) {
+        console.error('Failed to apply dynamic LAN IP configuration:', e.message);
+        throw new Error(`Failed to apply dynamic LAN IP configuration: ${e.message}`);
+    }
+}
+
+/**
  * Automatically detect and configure optimal network interfaces
  */
 async function autoConfigureNetwork() {
@@ -435,5 +581,7 @@ module.exports = {
     sudoExec, 
     applyLanBridgeApSettings, 
     autoConfigureNetwork, 
-    getNetworkStatus 
+    getNetworkStatus,
+    getCurrentLanSettings,
+    applyDynamicLanIp
 };
