@@ -3199,14 +3199,55 @@ io.on('connection', (socket) => {
         });
 });
 
-        // Idinagdag na API endpoint para sa pag-save ng network configuration
+        // Save Network Settings
 app.post('/api/save-network', async (req, res) => {
     try {
-        // Apply network settings (LAN bridge configuration only)
-        await applyAllNetworkSettings({ ...req.body });
-        res.json({ success: true, message: "Network Updated! (LAN bridge configuration)" });
-    } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        const {
+            wan_interface_name, wan_config_type, wan_ip_address, wan_gateway, wan_dns_servers,
+            lan_interface_name, lan_ip_address, lan_dns_servers
+        } = req.body;
+
+        // Validate required fields
+        if (!wan_interface_name || !lan_interface_name || !lan_ip_address) {
+            return res.status(400).json({ success: false, message: 'Missing required network interface parameters.' });
+        }
+
+        // Validate LAN IP address format (CIDR)
+        if (!lan_ip_address.includes('/')) {
+            return res.status(400).json({ success: false, message: 'LAN IP address must be in CIDR format (e.g., 10.0.0.1/24).' });
+        }
+
+        // Save to database
+        db.serialize(() => {
+            const stmt = db.prepare(`UPDATE settings SET value = ? WHERE key = ?`);
+            stmt.run(wan_interface_name, 'wan_interface_name');
+            stmt.run(wan_config_type, 'wan_config_type');
+            stmt.run(wan_ip_address, 'wan_ip_address');
+            stmt.run(wan_gateway, 'wan_gateway');
+            stmt.run(wan_dns_servers ? wan_dns_servers.join(',') : '', 'wan_dns_servers');
+            stmt.run(lan_interface_name, 'lan_interface_name');
+            stmt.run(lan_ip_address, 'lan_ip_address');
+            stmt.run(lan_dns_servers ? lan_dns_servers.join(',') : '', 'lan_dns_servers');
+            stmt.finalize();
+        });
+
+        // Apply network configuration
+        const networkConfig = {
+            wan_interface_name,
+            wan_config_type,
+            wan_ip_address,
+            wan_gateway,
+            wan_dns_servers,
+            lan_interface_name,
+            lan_ip_address,
+            lan_dns_servers
+        };
+
+        const result = await applyNetworkConfig(networkConfig);
+        res.json({ success: true, message: result.message });
+    } catch (error) {
+        console.error('Error saving network settings:', error);
+        res.status(500).json({ success: false, message: error.message });
     }
 });
 
