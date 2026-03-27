@@ -213,13 +213,28 @@ class InterfaceDetector {
         try {
             // Test connectivity using ping with specific interface
             if (os.platform() === 'linux') {
-                // Try to ping Google DNS using the specific interface
-                const result = await execPromise(
-                    `timeout 5 ping -I ${interfaceName} -c 2 8.8.8.8`, 
-                    { timeout: 6000 }
-                );
-                return result.stdout.includes('2 packets transmitted, 2 received') || 
-                       result.stdout.includes('2 packets transmitted, 1 received');
+                // Try sudo ping first, then fallback to regular ping
+                try {
+                    const result = await execPromise(
+                        `sudo timeout 5 ping -I ${interfaceName} -c 2 8.8.8.8`, 
+                        { timeout: 6000 }
+                    );
+                    return result.stdout.includes('2 packets transmitted, 2 received') || 
+                           result.stdout.includes('2 packets transmitted, 1 received');
+                } catch (sudoError) {
+                    // If sudo ping fails, try regular ping (may fail due to permissions)
+                    try {
+                        const result = await execPromise(
+                            `timeout 5 ping -I ${interfaceName} -c 2 8.8.8.8`, 
+                            { timeout: 6000 }
+                        );
+                        return result.stdout.includes('2 packets transmitted, 2 received') || 
+                               result.stdout.includes('2 packets transmitted, 1 received');
+                    } catch (regularError) {
+                        // If ping fails due to permissions, try alternative connectivity check
+                        return await this.checkConnectivityAlternative(interfaceName);
+                    }
+                }
             } else if (os.platform() === 'win32') {
                 // Windows ping with specific interface (more complex)
                 const result = await execPromise(
@@ -230,6 +245,41 @@ class InterfaceDetector {
             }
             return false;
         } catch (error) {
+            return false;
+        }
+    }
+
+    /**
+     * Alternative connectivity check when ping fails due to permissions
+     * Uses curl/wget to test internet connectivity
+     */
+    async checkConnectivityAlternative(interfaceName) {
+        try {
+            // Try curl first
+            try {
+                const result = await execPromise(
+                    `curl --interface ${interfaceName} --connect-timeout 5 --head 8.8.8.8`, 
+                    { timeout: 6000 }
+                );
+                return result.stdout.includes('HTTP/');
+            } catch (curlError) {
+                // Try wget as fallback
+                try {
+                    const result = await execPromise(
+                        `wget --timeout=5 --spider --bind-address=${interfaceName} 8.8.8.8`, 
+                        { timeout: 6000 }
+                    );
+                    return result.stdout.includes('HTTP request sent');
+                } catch (wgetError) {
+                    // Try nslookup for DNS resolution test
+                    const result = await execPromise(
+                        `nslookup 8.8.8.8 ${interfaceName}`, 
+                        { timeout: 6000 }
+                    );
+                    return result.stdout.includes('Name:') || result.stdout.includes('Address:');
+                }
+            }
+        } catch (e) {
             return false;
         }
     }
