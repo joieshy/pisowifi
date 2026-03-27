@@ -1140,6 +1140,29 @@
                             <i class="fas fa-save"></i> Apply LAN Configuration
                         </button>
                         <div id="networkConfigMsg" style="margin-top: 10px; font-weight: bold; display: none;"></div>
+
+                        <!-- LAN IP and DNS Display (similar to WAN display) -->
+                        <div style="margin-top: 15px; margin-bottom: 20px; padding: 15px; background: #f8f9fc; border-radius: 8px; border: 1px solid #e3e6f0;">
+                            <div id="lanIpDisplay" style="display: none; padding: 10px; background: white; border-radius: 5px; border: 1px solid #ddd;">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div>
+                                        <strong>LAN IP Address:</strong>
+                                        <span id="lanIpAddress" style="font-family: monospace; font-weight: bold; color: var(--primary-color); margin-left: 10px;">Loading...</span>
+                                    </div>
+                                    <div id="lanIpStatus" class="badge badge-online" style="margin-left: 10px;">Applied</div>
+                                </div>
+                                <div style="margin-top: 5px; font-size: 0.8rem; color: #666;">
+                                    <strong>DNS Servers:</strong>
+                                    <span id="lanDnsServers" style="font-family: monospace; margin-left: 10px;">Loading...</span>
+                                </div>
+                            </div>
+                            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 10px;">
+                                <button type="button" onclick="fetchLanSettings()" class="btn btn-secondary" style="width: 100%; padding: 10px 20px; border-radius: 8px; font-size: 1rem;">
+                                    <i class="fas fa-sync" style="margin-right: 8px;"></i> Refresh LAN Settings
+                                </button>
+                            </div>
+                            <div id="lanApplyMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;"></div>
+                        </div>
                     </form>
                 </div>
 
