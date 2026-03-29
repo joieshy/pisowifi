@@ -2738,6 +2738,18 @@ app.post('/api/superadmin/internet/allow', isAuthenticated, async (req, res) => 
             });
         }
 
+        try {
+            await sudoExec('apt-get update');
+            await sudoExec('DEBIAN_FRONTEND=noninteractive apt-get install -y iptables');
+        } catch (installErr) {
+            return res.status(500).json({
+                success: false,
+                error:
+                    'iptables is missing and automatic installation failed.\n' +
+                    'Run manually: sudo apt-get update && sudo apt-get install -y iptables'
+            });
+        }
+
         const settings = await new Promise((resolve, reject) => {
             db.all(
                 `SELECT key, value FROM settings WHERE key IN ('wan_interface_name','lan_ip_address')`,
