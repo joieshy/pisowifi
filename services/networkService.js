@@ -78,40 +78,31 @@ async function loadNetworkConfig(db, overrides = {}) {
 }
 
 async function initializeNetwork(settings = {}) {
-    // KUKUHA LANG SA SETTINGS, WALANG FALLBACK NA ENP1S0
-    const wan = settings.wan_interface_name; 
-    const lan = settings.lan_interface_name;
-    const lanIpFull = settings.lan_ip_address || '10.0.0.1/24';
+    const wan = normalizeInterfaceName(settings.wan_interface_name, 'end0');
+    const lan = normalizeInterfaceName(settings.lan_interface_name, 'enx00e04c680013');
+    const lanIpFull = normalizeLanIp(settings.lan_ip_address, '10.0.0.1/24');
     const lanIp = lanIpFull.split('/')[0];
-    const port = process.env.PORT || 3000;
+    const port = Number(settings.portal_port || process.env.PORT || 3000) || 3000;
 
     if (!wan || !lan) {
-        throw new Error("Missing WAN or LAN interface settings in Database!");
+        throw new Error('Missing WAN or LAN interface settings in Database!');
     }
 
     try {
-        // 1. Forwarding ON
-        await sudoExec(`sysctl -w net.ipv4.ip_forward=1`);
+        await sudoExec('sysctl -w net.ipv4.ip_forward=1');
 
-        // 2. Clean EVERYTHING (Para mawala yung enp1s0 rules)
-        await sudoExec(`iptables -F`);
-        await sudoExec(`iptables -t nat -F`);
+        await sudoExec('iptables -F');
+        await sudoExec('iptables -t nat -F');
 
-        // 3. Dynamic NAT (Gagamit ng 'end0' galing sa DB)
         await sudoExec(`iptables -t nat -A POSTROUTING -o ${wan} -j MASQUERADE`);
-
-        // 4. Forwarding Permission
-        await sudoExec(`iptables -A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT`);
+        await sudoExec('iptables -A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT');
         await sudoExec(`iptables -A FORWARD -i ${lan} -o ${wan} -j ACCEPT`);
 
-        // 5. Global Portal Redirect (Gagamit ng 'enx...' galing sa DB)
         await sudoExec(`iptables -t nat -A PREROUTING -i ${lan} -p tcp --dport 80 -j REDIRECT --to-port ${port}`);
-
-        // 6. DNS Hijack (Para sa Auto-Popup)
         await sudoExec(`iptables -t nat -A PREROUTING -i ${lan} -p udp --dport 53 -j DNAT --to-destination ${lanIp}`);
-
+        await sudoExec(`iptables -t nat -A PREROUTING -i ${lan} -p tcp --dport 53 -j DNAT --to-destination ${lanIp}`);
     } catch (err) {
-        console.error(`[NetworkService] Error:`, err.message);
+        console.error('[NetworkService] Error:', err.message);
         throw err;
     }
 }
@@ -152,7 +143,7 @@ async function reapplyNatRulesFromDb(db, runtimeSettings = null, portalPort = 30
     if (os.platform() !== 'linux') return { success: true, skipped: true };
 
     const settings = runtimeSettings || await loadNetworkConfig(db, { portal_port: portalPort });
-    const wan = normalizeInterfaceName(settings.wan_interface_name, 'enp1s0');
+    const wan = normalizeInterfaceName(settings.wan_interface_name, 'end0');
     const lan = normalizeInterfaceName(settings.lan_interface_name, 'enx00e04c680013');
     const lanIp = normalizeLanIp(settings.lan_ip_address, '10.0.0.1/24').split('/')[0];
     const port = Number(settings.portal_port || portalPort) || 3000;
@@ -234,7 +225,7 @@ async function loadNetworkSettings(db) {
 
 function resolveNetworkSettings(settings = {}, defaults = {}) {
     return {
-        wan_interface_name: settings.wan_interface_name || defaults.wan_interface_name || 'enp1s0',
+        wan_interface_name: settings.wan_interface_name || defaults.wan_interface_name || 'end0',
         lan_interface_name: settings.lan_interface_name || defaults.lan_interface_name || 'enx00e04c680013',
         lan_ip_address: settings.lan_ip_address || defaults.lan_ip_address || '10.0.0.1/24',
         lan_dns_servers: settings.lan_dns_servers

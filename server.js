@@ -13,6 +13,7 @@ const https = require('https');
 const axios = require('axios');
 const { SerialPort, ReadlineParser } = require('serialport'); // Import serialport
 const { applyNetworkConfig, applyLanBridgeApSettings, sudoExec, autoConfigureNetwork, getNetworkStatus, getCurrentLanSettings, applyDynamicLanIp, loadNetworkSettings, resolveNetworkSettings, restoreSavedNetworkSettings, persistRuntimeNetworkSettings, initializeNetwork, reapplyNatRulesFromDb, allowMac, blockMac } = require('./services/networkService');
+const interfaceDetector = require('./services/interfaceDetector');
 const app = express();
 app.set('trust proxy', true);
 
@@ -33,16 +34,30 @@ const startApp = async () => {
             });
         });
 
-        // 2. I-apply ang Network Rules gamit ang values mula sa DB
-        // Dito papasok ang WAN=end0 at LAN=enx00e04c680013 galing sa sqlite
-        await initializeNetwork(settings);
+        // 2. Resolve runtime-detected interfaces when available, then apply network rules
+        const detected = await interfaceDetector.getRecommendedConfiguration();
+        const resolvedSettings = resolveNetworkSettings(settings, {
+            wan_interface_name: detected?.recommendations?.wanRecommended || 'end0',
+            lan_interface_name: detected?.recommendations?.lanRecommended || 'enx00e04c680013',
+            lan_ip_address: settings.lan_ip_address || '10.0.0.1/24',
+            portal_port: PORT
+        });
+
+        settings.wan_interface_name = settings.wan_interface_name || resolvedSettings.wan_interface_name;
+        settings.lan_interface_name = settings.lan_interface_name || resolvedSettings.lan_interface_name;
+        settings.lan_ip_address = settings.lan_ip_address || resolvedSettings.lan_ip_address;
+
+        await initializeNetwork({
+            ...resolvedSettings,
+            portal_port: PORT
+        });
 
         // 3. Start Server
         server.listen(PORT, HOST, () => {
             console.log(`=========================================`);
             console.log(`PisoWiFi System Started Dynamically`);
-            console.log(`WAN (Internet): ${settings.wan_interface_name}`);
-            console.log(`LAN (Clients): ${settings.lan_interface_name}`);
+            console.log(`WAN (Internet): ${settings.wan_interface_name || 'end0'}`);
+            console.log(`LAN (Clients): ${settings.lan_interface_name || 'enx00e04c680013'}`);
             console.log(`Portal IP: ${settings.lan_ip_address || '10.0.0.1/24'}`);
             console.log(`=========================================`);
         });

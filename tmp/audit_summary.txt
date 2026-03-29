@@ -1,0 +1,7 @@
+TODO
+- Inspect server entry point and service files
+- Inspect network service implementation
+- Inspect interface detector implementation
+- Implement dynamic interface handling
+- Wire updates into captive portal logic
+- Validate behavior and summarize changes
