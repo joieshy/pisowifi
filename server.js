@@ -16,6 +16,53 @@ const { applyNetworkConfig, applyAllNetworkSettings, applyLanBridgeApSettings, s
 const app = express();
 app.set('trust proxy', true);
 
+const IPTABLES = '/usr/sbin/iptables';
+
+// --- DYNAMIC NETWORK INITIALIZATION ---
+// Ito ang magpapatakbo ng internet sharing pag-start ng app
+async function initializeNetwork() {
+    if (os.platform() !== 'linux') return;
+
+    try {
+        const settings = await new Promise((resolve) => {
+            db.all(`SELECT key, value FROM settings WHERE key IN ('wan_interface_name','lan_interface_name')`, [], (err, rows) => {
+                const s = {};
+                if (rows) rows.forEach(r => s[r.key] = r.value);
+                resolve(s);
+            });
+        });
+
+        const wan = settings.wan_interface_name || 'end0';
+        const lan = settings.lan_interface_name || 'enx00e04c680013';
+
+        console.log(`[Network] Initializing: WAN=${wan}, LAN=${lan}`);
+
+        // 1. Enable IP Forwarding
+        execSync('sudo /usr/sbin/sysctl -w net.ipv4.ip_forward=1');
+
+        // 2. Linisin ang NAT at Forward rules para iwas double entries
+        // Inalis natin ang blanket DROP para hindi ma-lock out ang admin
+        execSync(`sudo ${IPTABLES} -t nat -F`);
+        execSync(`sudo ${IPTABLES} -F FORWARD`);
+
+        // 3. Setup NAT (Internet Sharing)
+        execSync(`sudo ${IPTABLES} -t nat -A POSTROUTING -o ${wan} -j MASQUERADE`);
+
+        // 4. Forwarding Permission
+        execSync(`sudo ${IPTABLES} -A FORWARD -i ${lan} -o ${wan} -j ACCEPT`);
+        execSync(`sudo ${IPTABLES} -A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT`);
+
+        // 5. Global Captive Portal Redirect (Port 80 -> Port 3000)
+        execSync(`sudo ${IPTABLES} -t nat -A PREROUTING -i ${lan} -p tcp --dport 80 -j REDIRECT --to-port ${PORT}`);
+
+        console.log(`[Network] System Setup Complete on ${lan}`);
+    } catch (err) {
+        console.error('[Network] Startup Error:', err.message);
+    }
+}
+
+// Patakbuhin ang network setup
+initializeNetwork();
 if (os.platform() === 'linux') {
     try {
         // IMPORTANT:
@@ -202,73 +249,60 @@ function getMacFromIp(ip) {
 }
 
 async function allowMac(mac, ip) {
-
     if (os.platform() !== 'linux') return;
 
     try {
-
-        const settings = await new Promise((resolve, reject) => {
+        const settings = await new Promise((resolve) => {
             db.all(
                 `SELECT key, value FROM settings 
                  WHERE key IN ('wan_interface_name','lan_interface_name', 'lan_ip_address')`,
                 [],
                 (err, rows) => {
-                    if (err) return reject(err);
                     const s = {};
-                    rows.forEach(r => s[r.key] = r.value);
+                    if (rows) rows.forEach(r => s[r.key] = r.value);
                     resolve(s);
                 }
             );
         });
 
-        const wan = settings.wan_interface_name || 'enp1s0';
-        const lan = settings.lan_interface_name;
+        const lan = settings.lan_interface_name || 'enx00e04c680013';
+        const lanIp = normalizeLanIp(settings.lan_ip_address || '10.0.0.1/24');
 
-        // REMOVE existing rule first (important)
-        await sudoExec(`iptables -D FORWARD -i ${lan} -o ${wan} -s ${ip} -j ACCEPT || true`);
+        // INSERT 'RETURN' rule sa taas ng PREROUTING para ma-bypass ang redirect
+        // Ang '! -d ${lanIp}' ay sinisiguro na ang portal interface mismo ay reachable pa rin
+        await sudoExec(`sudo ${IPTABLES} -t nat -I PREROUTING 1 -i ${lan} -m mac --mac-source ${mac} ! -d ${lanIp} -j RETURN`);
 
-        // INSERT at very top
-        await sudoExec(`iptables -I FORWARD 1 -i ${lan} -o ${wan} -s ${ip} -j ACCEPT`);
+        console.log(`[Auth] Internet Access GRANTED for MAC: ${mac}`);
+    } catch (e) {
+        console.error('[Auth] Error in allowMac:', e.message);
+    }
+}
 
-        // Apply Bandwidth Limits
-        try {
-            // 1. Get Global Settings
-            const settingsRows = await new Promise((resolve) => {
-                db.all(`SELECT key, value FROM settings WHERE key IN ('download_limit', 'upload_limit')`, [], (err, rows) => resolve(rows || []));
-            });
-            const bwSettings = {};
-            settingsRows.forEach(r => bwSettings[r.key] = r.value);
-            const globalDl = parseFloat(bwSettings.download_limit || 0);
-            const globalUl = parseFloat(bwSettings.upload_limit || 0);
+async function blockMac(mac) {
+    if (os.platform() !== 'linux') return;
 
-            // 2. Get User Settings
-            const user = await new Promise((resolve) => {
-                db.get(`SELECT id, download_limit, upload_limit, tc_class_id FROM users WHERE mac_address = ?`, [mac], (err, row) => resolve(row));
-            });
-
-            if (user) {
-                // 3. Determine Effective Limits (User overrides Global)
-                const dlLimit = (user.download_limit > 0) ? user.download_limit : globalDl;
-                const ulLimit = (user.upload_limit > 0) ? user.upload_limit : globalUl;
-
-                if (dlLimit > 0 || ulLimit > 0) {
-                    let classId = user.tc_class_id;
-                    if (!classId) {
-                        classId = user.id + 100; // Generate a simple unique ID based on user ID
-                        db.run(`UPDATE users SET tc_class_id = ? WHERE mac_address = ?`, [classId, mac]);
-                    }
-                    // Apply limits
-                    applyBandwidthLimits(ip, dlLimit, ulLimit, classId);
+    try {
+        const settings = await new Promise((resolve) => {
+            db.all(
+                `SELECT key, value FROM settings WHERE key IN ('lan_interface_name', 'lan_ip_address')`,
+                [],
+                (err, rows) => {
+                    const s = {};
+                    if (rows) rows.forEach(r => s[r.key] = r.value);
+                    resolve(s);
                 }
-            }
-        } catch (bwErr) {
-            console.error('Error applying bandwidth limits in allowMac:', bwErr);
-        }
+            );
+        });
 
-        console.log(`Internet allowed for ${mac} (${ip})`);
+        const lan = settings.lan_interface_name || 'enx00e04c680013';
+        const lanIp = normalizeLanIp(settings.lan_ip_address || '10.0.0.1/24');
 
-    } catch (err) {
-        console.error('allowMac error:', err.message);
+        // Delete ang RETURN rule para bumalik sa redirect state
+        await sudoExec(`sudo ${IPTABLES} -t nat -D PREROUTING -i ${lan} -m mac --mac-source ${mac} ! -d ${lanIp} -j RETURN || true`);
+
+        console.log(`[Auth] Internet Access REVOKED for MAC: ${mac}`);
+    } catch (e) {
+        // Error is expected if rule doesn't exist
     }
 }
 
@@ -338,61 +372,6 @@ async function applyBandwidthLimits(ip, downloadLimitMbps, uploadLimitMbps, tcCl
     }
 }
 
-async function blockMac(mac) {
-
-    if (os.platform() !== 'linux') return;
-
-    try {
-
-        const settings = await new Promise((resolve, reject) => {
-            db.all(
-                `SELECT key, value FROM settings 
-                 WHERE key IN ('wan_interface_name','lan_interface_name', 'lan_ip_address')`,
-                [],
-                (err, rows) => {
-                    if (err) return reject(err);
-                    const s = {};
-                    rows.forEach(r => s[r.key] = r.value);
-                    resolve(s);
-                }
-            );
-        });
-        
-        const wan = settings.wan_interface_name || 'enp1s0';
-        const lan = settings.lan_interface_name;
-
-        const user = await new Promise((resolve, reject) => {
-            db.get(
-                `SELECT ip_address, tc_class_id, tc_mark FROM users WHERE mac_address = ?`,
-                [mac],
-                (err, row) => {
-                    if (err) return reject(err);
-                    resolve(row);
-                }
-            );
-        });
-
-        if (!user || !user.ip_address) return;
-
-        const ip = user.ip_address;
-
-        // DELETE the exact rule we inserted
-        await sudoExec(`iptables -D FORWARD -i ${lan} -o ${wan} -s ${ip} -j ACCEPT || true`);
-
-        // Remove Bandwidth Limits
-        if (user.tc_class_id) {
-            removeBandwidthLimits(ip, user.tc_class_id);
-        } else {
-            // Try to remove based on ID if class_id wasn't set but might exist
-            removeBandwidthLimits(ip, user.id + 100);
-        }
-
-        console.log(`Internet blocked for ${mac} (${ip})`);
-
-    } catch (err) {
-        console.error('blockMac error:', err.message);
-    }
-}
 
 
 
