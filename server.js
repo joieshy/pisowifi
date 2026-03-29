@@ -23,37 +23,32 @@ const DATABASE_PATH = process.env.DATABASE_PATH || './pisowifi.db';
 
 const startApp = async () => {
     try {
+        // 1. Kunin ang lahat ng network settings sa DB (WALANG HARDCODE)
         const settings = await new Promise((resolve, reject) => {
-            db.all(
-                `SELECT key, value FROM settings WHERE key IN ('wan_interface_name','lan_interface_name','lan_ip_address','portal_port')`,
-                [],
-                (err, rows) => {
-                    if (err) return reject(err);
-                    const s = {};
-                    if (rows) rows.forEach((r) => { s[r.key] = r.value; });
-                    resolve(s);
-                }
-            );
+            db.all(`SELECT key, value FROM settings WHERE key IN ('wan_interface_name','lan_interface_name','lan_ip_address')`, [], (err, rows) => {
+                if (err) return reject(err);
+                const s = {};
+                if (rows) rows.forEach(r => s[r.key] = r.value);
+                resolve(s);
+            });
         });
 
-        const runtimeSettings = {
-            wan_interface_name: settings.wan_interface_name || process.env.WAN_INTERFACE_NAME || 'enp1s0',
-            lan_interface_name: settings.lan_interface_name || process.env.LAN_INTERFACE_NAME || 'enx00e04c680013',
-            lan_ip_address: settings.lan_ip_address || process.env.LAN_IP_ADDRESS || '10.0.0.1/24',
-            portal_port: Number(settings.portal_port || process.env.PORT || PORT) || PORT,
-        };
+        // 2. I-apply ang Network Rules gamit ang values mula sa DB
+        // Dito papasok ang WAN=end0 at LAN=enx00e04c680013 galing sa sqlite
+        await initializeNetwork(settings);
 
-        await initializeNetwork(runtimeSettings);
-
+        // 3. Start Server
         server.listen(PORT, HOST, () => {
-            console.log(`Server running and Network Configured!`);
-            console.log(`WAN: ${runtimeSettings.wan_interface_name}`);
-            console.log(`LAN: ${runtimeSettings.lan_interface_name}`);
-            console.log(`LAN IP: ${runtimeSettings.lan_ip_address}`);
+            console.log(`=========================================`);
+            console.log(`PisoWiFi System Started Dynamically`);
+            console.log(`WAN (Internet): ${settings.wan_interface_name}`);
+            console.log(`LAN (Clients): ${settings.lan_interface_name}`);
+            console.log(`Portal IP: ${settings.lan_ip_address || '10.0.0.1/24'}`);
+            console.log(`=========================================`);
         });
     } catch (err) {
-        console.error('Failed to start app due to network error:', err);
-        server.listen(PORT, HOST, () => console.log(`Server started with network errors on port ${PORT}`));
+        console.error('CRITICAL: Startup Network Error:', err);
+        server.listen(PORT, HOST, () => console.log(`Server started with errors.`));
     }
 };
 
