@@ -1694,8 +1694,6 @@ app.get('/api/users', isAuthenticated, async (req, res) => {
 // API to get a specific user's transaction history
 app.get('/api/users/:mac/history', isAuthenticated, (req, res) => {
     const userMac = req.params.mac;
-    // Search for sales records where the description contains the user's MAC address
-    // This assumes MAC address is consistently included in the description for relevant sales
     db.all(`SELECT * FROM sales WHERE user_mac = ? ORDER BY created_at DESC`, [userMac], (err, rows) => {
         if (err) {
             console.error('Error fetching user transaction history:', err.message);
@@ -1703,23 +1701,21 @@ app.get('/api/users/:mac/history', isAuthenticated, (req, res) => {
         }
 
         const salesWithLocalTime = rows.map(sale => {
-            const date = new Date(sale.created_at); // This will parse as UTC
-            // Add 8 hours for Asia/Manila (UTC+8)
-            date.setHours(date.getHours() + 8); 
+            const date = new Date(sale.created_at);
+            date.setHours(date.getHours() + 8);
             return {
                 ...sale,
-                created_at_local: date.toISOString() // Send as ISO string, client will parse as local
+                created_at_local: date.toISOString()
             };
         });
+
         res.json(salesWithLocalTime);
     });
 });
 
-// API to manually allow/block MAC (Admin)
 app.post('/api/users/allow', isAuthenticated, (req, res) => {
-    const { mac, ip } = req.body; // IP is now expected from frontend
+    const { mac, ip } = req.body;
     if (!mac) return res.status(400).json({ error: 'MAC is required' });
-    // If IP is not provided, try to get it from the user's current record
     const userIp = ip || req.ip || req.connection.remoteAddress;
     allowMac(mac, userIp);
     db.run(`UPDATE users SET status = 'Online', ip_address = ? WHERE mac_address = ?`, [userIp, mac]);
@@ -1734,40 +1730,33 @@ app.post('/api/users/block', isAuthenticated, (req, res) => {
     res.json({ success: true });
 });
 
-// API to set user-specific bandwidth limits
 app.post('/api/users/bandwidth', isAuthenticated, async (req, res) => {
     const { mac, download_limit, upload_limit } = req.body;
     if (!mac) return res.status(400).json({ error: 'MAC is required' });
-    
+
     const downloadLimit = parseFloat(download_limit) || 0;
     const uploadLimit = parseFloat(upload_limit) || 0;
-    
+
     try {
-        // Get user's current IP and status
         const user = await new Promise((resolve, reject) => {
             db.get(`SELECT id, ip_address, status, tc_class_id FROM users WHERE mac_address = ?`, [mac], (err, row) => {
                 if (err) return reject(err);
                 resolve(row);
             });
         });
-        
+
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
         }
-        
-        // Update user's bandwidth limits in database
-        db.run(`UPDATE users SET download_limit = ?, upload_limit = ? WHERE mac_address = ?`, 
-            [downloadLimit, uploadLimit, mac]);
-        
-        // If user is online, apply the new bandwidth limits
+
+        db.run(`UPDATE users SET download_limit = ?, upload_limit = ? WHERE mac_address = ?`, [downloadLimit, uploadLimit, mac]);
+
         if (user.status === 'Online' && user.ip_address) {
             const classId = user.tc_class_id || (user.id + 100);
-            // Remove existing limits first
             removeBandwidthLimits(user.ip_address, classId);
-            // Apply new limits
             applyBandwidthLimits(user.ip_address, downloadLimit, uploadLimit, classId);
         }
-        
+
         res.json({ success: true, message: 'Bandwidth limits updated successfully' });
     } catch (error) {
         console.error('Error updating user bandwidth:', error);
@@ -1775,29 +1764,24 @@ app.post('/api/users/bandwidth', isAuthenticated, async (req, res) => {
     }
 });
 
-// API to get connected devices
 app.get('/api/devices', isAuthenticated, (req, res) => {
     network.scan({}, (err, list) => {
         if (err) return res.status(500).json({ error: 'Network scan failed' });
-        
-        // Filter only active devices (those with an IP and MAC)
         const activeDevices = list.filter(device => device.alive);
         res.json(activeDevices);
     });
 });
 
-// API Sales Report
 app.get('/api/sales', isAuthenticated, (req, res) => {
     db.all(`SELECT * FROM sales ORDER BY created_at DESC`, [], (err, rows) => {
         if (err) return res.status(500).json({ error: 'Database error' });
-        
+
         const salesWithLocalTime = rows.map(sale => {
-            const date = new Date(sale.created_at); // This will parse as UTC
-            // Add 8 hours for Asia/Manila (UTC+8)
-            date.setHours(date.getHours() + 8); 
+            const date = new Date(sale.created_at);
+            date.setHours(date.getHours() + 8);
             return {
                 ...sale,
-                created_at_local: date.toISOString() // Send as ISO string, client will parse as local
+                created_at_local: date.toISOString()
             };
         });
         res.json(salesWithLocalTime);
@@ -1806,7 +1790,6 @@ app.get('/api/sales', isAuthenticated, (req, res) => {
 
 app.post('/api/sales/clear', isAuthenticated, (req, res) => {
     db.serialize(() => {
-        // Get all online users to block them in iptables before resetting their time
         db.all(`SELECT mac_address FROM users WHERE status = 'Online'`, [], (err, rows) => {
             if (!err && rows) {
                 rows.forEach(user => blockMac(user.mac_address));
@@ -1814,12 +1797,10 @@ app.post('/api/sales/clear', isAuthenticated, (req, res) => {
 
             db.run(`DELETE FROM sales`, (err) => {
                 if (err) return res.status(500).json({ error: 'Database error' });
-                
-                // Also delete all users
+
                 db.run(`DELETE FROM users`, (err) => {
                     if (err) return res.status(500).json({ error: 'Database error' });
-                    
-                    // Also delete all vouchers
+
                     db.run(`DELETE FROM vouchers`, (err) => {
                         if (err) return res.status(500).json({ error: 'Database error' });
                         res.json({ success: true, message: 'All sales data, user data, and voucher data cleared successfully' });
@@ -1833,19 +1814,13 @@ app.post('/api/sales/clear', isAuthenticated, (req, res) => {
 app.get('/api/stats', isAuthenticated, (req, res) => {
     const stats = {};
     stats.machineId = getMachineId();
-    
-    // System Stats
+
     const totalMem = os.totalmem();
     const freeMem = os.freemem();
     stats.ramUsage = (((totalMem - freeMem) / totalMem) * 100).toFixed(1);
-    
-    // Real CPU usage calculation
     stats.cpuUsage = lastCpuUsage;
-    
-    // Mock CPU Temp (since it's hard to get cross-platform without extra tools)
     stats.cpuTemp = (40 + Math.random() * 20).toFixed(1);
 
-    // System Uptime
     const uptimeSeconds = getSystemUptimeSeconds();
     stats.systemUptimeSeconds = uptimeSeconds;
     stats.systemUptime = formatUptime(uptimeSeconds);
@@ -1863,7 +1838,6 @@ app.get('/api/stats', isAuthenticated, (req, res) => {
     });
 });
 
-// System Actions
 app.post('/api/system/reboot', isAuthenticated, (req, res) => {
     console.log('System reboot requested');
     res.json({ success: true, message: 'Rebooting system...' });
@@ -1948,20 +1922,16 @@ app.post('/api/system/shutdown', isAuthenticated, (req, res) => {
     }, 1000);
 });
 
-
 app.post('/api/system/reset-database', isAuthenticated, (req, res) => {
     console.log('Database reset requested');
-    // In a real app, you'd drop tables and re-run init
     res.json({ success: true, message: 'Database reset successfully' });
 });
 
-// Backup Database
 app.get('/api/system/backup', isAuthenticated, (req, res) => {
     const dbFile = path.join(__dirname, 'pisowifi.db');
     res.download(dbFile, 'pisowifi_backup.db');
 });
 
-// Restore Database
 app.post('/api/system/restore', isAuthenticated, (req, res) => {
     upload.single('database')(req, res, (err) => {
         if (err) return res.status(400).json({ error: err.message });
@@ -1970,14 +1940,12 @@ app.post('/api/system/restore', isAuthenticated, (req, res) => {
         const tempPath = req.file.path;
         const targetPath = path.resolve(DATABASE_PATH);
 
-        // Close DB connection before replacing
         db.close((err) => {
             if (err) return res.status(500).json({ error: 'Failed to close database' });
 
             fs.copyFile(tempPath, targetPath, (err) => {
                 if (err) return res.status(500).json({ error: 'Failed to restore database' });
-                
-                // Re-open DB connection
+
                 db = new sqlite3.Database(DATABASE_PATH);
                 res.json({ success: true, message: 'Database restored successfully. System will restart.' });
             });
@@ -1985,7 +1953,6 @@ app.post('/api/system/restore', isAuthenticated, (req, res) => {
     });
 });
 
-// Firmware Update
 app.post('/api/system/firmware-update', isAuthenticated, (req, res) => {
     upload.single('firmware')(req, res, (err) => {
         if (err) return res.status(400).json({ error: err.message });
@@ -1999,7 +1966,6 @@ app.post('/api/system/firmware-update', isAuthenticated, (req, res) => {
 const { promisify } = require('util');
 const execAsync = promisify(exec);
 
-// Diagnostics: Ping
 app.post('/api/diagnostics/ping', isAuthenticated, async (req, res) => {
     const { host } = req.body;
     if (!host) return res.status(400).json({ error: 'Host is required' });
@@ -2019,9 +1985,8 @@ app.post('/api/diagnostics/ping', isAuthenticated, async (req, res) => {
     }
 });
 
-// Diagnostics: Speed Test (Real Download Test)
 app.get('/api/diagnostics/speedtest', isAuthenticated, (req, res) => {
-    const testFileUrl = 'https://speed.cloudflare.com/__down?bytes=5000000'; // 5MB test file
+    const testFileUrl = 'https://speed.cloudflare.com/__down?bytes=5000000';
     const startTime = Date.now();
     let receivedBytes = 0;
 
@@ -2036,15 +2001,12 @@ app.get('/api/diagnostics/speedtest', isAuthenticated, (req, res) => {
             const bitsLoaded = receivedBytes * 8;
             const speedBps = bitsLoaded / durationInSeconds;
             const speedMbps = (speedBps / (1024 * 1024)).toFixed(2);
-
-            // For upload, we'll do a smaller test or mock it as upload is harder without a target
-            // but we can simulate a small POST to a speedtest endpoint
-            const uploadMbps = (speedMbps * 0.4).toFixed(2); // Typical ratio
+            const uploadMbps = (speedMbps * 0.4).toFixed(2);
 
             res.json({
                 download: speedMbps,
                 upload: uploadMbps,
-                ping: Math.floor(Math.random() * 20 + 10) // We can get real ping from the ping tool
+                ping: Math.floor(Math.random() * 20 + 10)
             });
         });
     }).on('error', (e) => {
@@ -2052,7 +2014,6 @@ app.get('/api/diagnostics/speedtest', isAuthenticated, (req, res) => {
     });
 });
 
-// Diagnostics: Logs
 app.get('/api/diagnostics/logs', isAuthenticated, (req, res) => {
     const logs = [
         `[${new Date().toISOString()}] System started`,
@@ -2061,58 +2022,40 @@ app.get('/api/diagnostics/logs', isAuthenticated, (req, res) => {
     res.json({ logs });
 });
 
-// Diagnostics: Terminal Command Execution
 app.post('/api/diagnostics/terminal', isAuthenticated, (req, res) => {
     const { command } = req.body;
-    
+
     if (!command) {
         return res.status(400).json({ error: 'Command is required' });
     }
-    
-    // Security: Allow most commands but block dangerous operations
-    // We'll be more permissive but still block truly dangerous commands
+
     const dangerousPatterns = [
-        // File system destruction
         /rm\s+.*-rf/, /rm\s+.*\//, /rm\s+.*\.\./,
         /dd\s+/, /fdisk\s+/, /mkfs\s+/, /format\s+/,
-        
-        // System modification
         /sudo\s+/, /su\s+/, /passwd\s+/, /useradd\s+/, /userdel\s+/, /usermod\s+/,
         /groupadd\s+/, /groupdel\s+/, /groupmod\s+/,
         /chmod\s+.*777/, /chmod\s+.*\//, /chown\s+.*\//,
-        
-        // Network disruption
         /iptables\s+.*-F/, /iptables\s+.*-X/, /iptables\s+.*-Z/,
         /route\s+del/, /ip\s+route\s+del/, /ifconfig\s+.*down/,
-        
-        // System shutdown/reboot
         /reboot\s*/, /shutdown\s*/, /halt\s*/, /poweroff\s*/,
-        
-        // Package management (can be dangerous)
         /apt\s+.*install/, /apt\s+.*remove/, /apt\s+.*purge/,
         /yum\s+.*install/, /yum\s+.*remove/,
         /dnf\s+.*install/, /dnf\s+.*remove/,
         /pacman\s+.*-S/, /pacman\s+.*-R/,
-        
-        // Script execution
         /bash\s+/, /sh\s+/, /zsh\s+/, /fish\s+/, /python\s+/, /perl\s+/, /ruby\s+/,
         /\.\/.*\.sh/, /\.\/.*\.py/, /\.\/.*\.pl/, /\.\/.*\.rb/,
-        
-        // Configuration modification
         /echo\s+.*>>\s+\/etc\//, /echo\s+.*>\s+\/etc\//,
         /cat\s+.*>\s+\/etc\//, /cat\s+.*>>\s+\/etc\//
     ];
-    
-    // Check for dangerous patterns
+
     for (const pattern of dangerousPatterns) {
         if (pattern.test(command)) {
-            return res.status(400).json({ 
-                error: `Command contains potentially dangerous operations and is not allowed: ${pattern}` 
+            return res.status(400).json({
+                error: `Command contains potentially dangerous operations and is not allowed: ${pattern}`
             });
         }
     }
-    
-    // Execute command with timeout
+
     exec(command, { timeout: 30000, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
         res.json({
             command: command,
@@ -2123,7 +2066,6 @@ app.post('/api/diagnostics/terminal', isAuthenticated, (req, res) => {
     });
 });
 
-// Security: Website Blocker
 app.get('/api/security/websites', isAuthenticated, (req, res) => {
     db.all(`SELECT * FROM blocked_websites ORDER BY created_at DESC`, [], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -2147,7 +2089,6 @@ app.delete('/api/security/websites/:id', isAuthenticated, (req, res) => {
     });
 });
 
-// Security: MAC Filtering
 app.get('/api/security/mac-filters', isAuthenticated, (req, res) => {
     db.all(`SELECT * FROM mac_filters ORDER BY created_at DESC`, [], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -2171,7 +2112,6 @@ app.delete('/api/security/mac-filters/:id', isAuthenticated, (req, res) => {
     });
 });
 
-// Network: Port Triggering
 app.get('/api/network/port-triggers', isAuthenticated, (req, res) => {
     db.all(`SELECT * FROM port_triggers ORDER BY created_at DESC`, [], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -2181,7 +2121,7 @@ app.get('/api/network/port-triggers', isAuthenticated, (req, res) => {
 
 app.post('/api/network/port-triggers', isAuthenticated, (req, res) => {
     const { name, trigger_port, trigger_proto, open_port, open_proto } = req.body;
-    db.run(`INSERT INTO port_triggers (name, trigger_port, trigger_proto, open_port, open_proto) VALUES (?, ?, ?, ?, ?)`, 
+    db.run(`INSERT INTO port_triggers (name, trigger_port, trigger_proto, open_port, open_proto) VALUES (?, ?, ?, ?, ?)`,
         [name, trigger_port, trigger_proto, open_port, open_proto], (err) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json({ success: true });
@@ -2195,15 +2135,13 @@ app.delete('/api/network/port-triggers/:id', isAuthenticated, (req, res) => {
     });
 });
 
-// Helper function to generate Netplan YAML content
 function generateNetplanConfig(wanInterface, wanConfigType, wanIp, wanGateway, wanDns, lanInterface, lanIp, lanDns) {
     let config = `network:\n  version: 2\n  renderer: networkd\n  ethernets:\n`;
 
-    // WAN Interface
     config += `    ${wanInterface}:\n`;
     if (wanConfigType === 'dhcp') {
         config += `      dhcp4: true\n`;
-    } else { // Static WAN (currently commented out in frontend, but good to have logic)
+    } else {
         config += `      dhcp4: false\n`;
         config += `      addresses: [${wanIp}]\n`;
         if (wanGateway) {
@@ -2213,9 +2151,8 @@ function generateNetplanConfig(wanInterface, wanConfigType, wanIp, wanGateway, w
             config += `      nameservers:\n        addresses: [${wanDns.join(', ')}]\n`;
         }
     }
-    config += `      optional: true\n`; // To prevent boot failure if interface is not ready
+    config += `      optional: true\n`;
 
-    // LAN Interface
     config += `    ${lanInterface}:\n`;
     config += `      dhcp4: false\n`;
     config += `      addresses: [${lanIp}]\n`;
@@ -2226,22 +2163,12 @@ function generateNetplanConfig(wanInterface, wanConfigType, wanIp, wanGateway, w
     return config;
 }
 
-/**
- * Clear/blank all Network tab related saved values
- * - settings table: network keys -> set to ''
- * - port_triggers table: delete all
- *
- * NOTE: This only clears saved config values. It does NOT run applyNetworkConfig().
- */
 app.post('/api/network/clear', isAuthenticated, (req, res) => {
     const keysToBlank = [
-        // QoS
         'qos_enabled',
         'qos_gaming_priority',
         'qos_streaming_priority',
         'qos_browsing_priority',
-
-        // WAN/LAN interface config
         'wan_interface_name',
         'wan_config_type',
         'wan_ip_address',
@@ -2253,12 +2180,10 @@ app.post('/api/network/clear', isAuthenticated, (req, res) => {
     ];
 
     db.serialize(() => {
-        // Blank settings
         const stmt = db.prepare(`UPDATE settings SET value = '' WHERE key = ?`);
         keysToBlank.forEach((k) => stmt.run(k));
         stmt.finalize();
 
-        // Clear port triggers
         db.run(`DELETE FROM port_triggers`, (err) => {
             if (err) return res.status(500).json({ error: 'Failed to clear port triggers' });
             res.json({ success: true });
@@ -2266,12 +2191,6 @@ app.post('/api/network/clear', isAuthenticated, (req, res) => {
     });
 });
 
-/**
- * Re-apply NAT + core captive portal forwarding rules based on current DB settings.
- * Debian-compatible (iptables + iproute2).
- *
- * NOTE: This does not change interface IPs; it only updates iptables rules.
- */
 async function reapplyNatRulesFromDb(runtimeSettings = null) {
     if (os.platform() !== 'linux') return;
 
@@ -2326,7 +2245,6 @@ async function reapplyNatRulesFromDb(runtimeSettings = null) {
     console.log(`[Network] Re-applied NAT rules: WAN=${wanInterface}, LAN=${lanInterface}`);
 }
 
-// API to get network interface settings
 app.get('/api/network/interfaces', isAuthenticated, (req, res) => {
     db.all(`SELECT key, value FROM settings WHERE key LIKE 'wan_%' OR key LIKE 'lan_%'`, [], (err, rows) => {
         if (err) return res.status(500).json({ error: 'Database error' });
@@ -2342,7 +2260,6 @@ app.get('/api/network/interfaces', isAuthenticated, (req, res) => {
     });
 });
 
-// API to apply network interface settings (Netplan)
 app.post('/api/network/interfaces', isAuthenticated, async (req, res) => {
     const {
         wan_interface_name, wan_config_type, wan_ip_address, wan_gateway, wan_dns_servers,
@@ -2353,7 +2270,6 @@ app.post('/api/network/interfaces', isAuthenticated, async (req, res) => {
         return res.status(400).json({ error: 'Missing required network interface parameters.' });
     }
 
-    // Save settings to database
     db.serialize(() => {
         const stmt = db.prepare(`UPDATE settings SET value = ? WHERE key = ?`);
         stmt.run(wan_interface_name, 'wan_interface_name');
@@ -2377,15 +2293,12 @@ app.post('/api/network/interfaces', isAuthenticated, async (req, res) => {
             wan_interface_name, wan_config_type, wan_ip_address, wan_gateway, wan_dns_servers,
             lan_interface_name, lan_ip_address, lan_dns_servers
         );
-        
-        const netplanFilePath = `/etc/netplan/01-pisowifi-config.yaml`; // Use a custom file name
 
-        // Write Netplan config to a temporary file first, then move it
-        // This avoids issues if the write fails midway
+        const netplanFilePath = `/etc/netplan/01-pisowifi-config.yaml`;
         const tempNetplanPath = `/tmp/01-pisowifi-config.yaml.tmp`;
         fs.writeFileSync(tempNetplanPath, netplanConfig);
         await sudoExec(`mv ${tempNetplanPath} ${netplanFilePath}`);
-        await sudoExec(`chmod 600 ${netplanFilePath}`); // Set appropriate permissions
+        await sudoExec(`chmod 600 ${netplanFilePath}`);
 
         console.log(`Netplan configuration written to ${netplanFilePath}`);
         console.log('Applying Netplan configuration...');
@@ -2400,13 +2313,6 @@ app.post('/api/network/interfaces', isAuthenticated, async (req, res) => {
     }
 });
 
-/**
- * Debian-safe WAN selection:
- * - bring interface up
- * - request DHCP lease (dhclient)
- * - save wan_interface_name to DB
- * - re-apply NAT rules using the newly selected WAN
- */
 app.post('/api/network/wan/select', isAuthenticated, async (req, res) => {
     const { wan_interface_name } = req.body;
 
@@ -2414,7 +2320,6 @@ app.post('/api/network/wan/select', isAuthenticated, async (req, res) => {
         return res.status(400).json({ error: 'WAN interface name is required.' });
     }
 
-    // Save WAN settings to database (force DHCP for this "Select" action)
     db.serialize(() => {
         const stmt = db.prepare(`UPDATE settings SET value = ? WHERE key = ?`);
         stmt.run(wan_interface_name, 'wan_interface_name');
@@ -2430,7 +2335,6 @@ app.post('/api/network/wan/select', isAuthenticated, async (req, res) => {
     }
 
     try {
-        // Validate interface exists
         if (!fs.existsSync(`/sys/class/net/${wan_interface_name}`)) {
             return res.status(400).json({ error: `Interface not found: ${wan_interface_name}` });
         }
@@ -2457,13 +2361,8 @@ app.post('/api/network/wan/select', isAuthenticated, async (req, res) => {
             }
         };
 
-        // Bring interface up
         await sudoExec(`ip link set dev ${wan_interface_name} up`);
 
-        // Debian-safe DHCP renew with fallbacks.
-        // NOTE: Some minimal images don't ship with a DHCP client. If none is found,
-        // we still switch the WAN interface in DB + iptables (NAT), but we warn the user.
-        // User can then install isc-dhcp-client/dhcpcd/udhcpc or set a static IP outside this UI.
         let dhcpAttempted = false;
 
         if (which('dhclient')) {
@@ -2481,7 +2380,6 @@ app.post('/api/network/wan/select', isAuthenticated, async (req, res) => {
 
         const wanIp = getInterfaceIpv4(wan_interface_name);
 
-        // Re-apply NAT rules to use the new WAN (even if it currently has no IP yet)
         await reapplyNatRulesFromDb();
 
         if (!dhcpAttempted) {
@@ -2506,7 +2404,6 @@ app.post('/api/network/wan/select', isAuthenticated, async (req, res) => {
     }
 });
 
-// API to apply WAN-only settings
 app.post('/api/apply-wan-settings', isAuthenticated, async (req, res) => {
     const {
         wan_interface_name, wan_config_type, wan_ip_address, wan_gateway, wan_dns_servers
@@ -2516,7 +2413,6 @@ app.post('/api/apply-wan-settings', isAuthenticated, async (req, res) => {
         return res.status(400).json({ error: 'WAN interface name is required.' });
     }
 
-    // Save WAN settings to database
     db.serialize(() => {
         const stmt = db.prepare(`UPDATE settings SET value = ? WHERE key = ?`);
         stmt.run(wan_interface_name, 'wan_interface_name');
@@ -2528,7 +2424,6 @@ app.post('/api/apply-wan-settings', isAuthenticated, async (req, res) => {
     });
 
     try {
-        // Get current LAN settings from database to preserve them
         const lanSettings = await new Promise((resolve, reject) => {
             db.all(`SELECT key, value FROM settings WHERE key IN ('lan_interface_name', 'lan_ip_address', 'lan_dns_servers')`, [], (err, rows) => {
                 if (err) return reject(err);
@@ -2542,7 +2437,6 @@ app.post('/api/apply-wan-settings', isAuthenticated, async (req, res) => {
         const lan_ip_address = lanSettings.lan_ip_address || '10.0.0.1/24';
         const lan_dns_servers = lanSettings.lan_dns_servers ? lanSettings.lan_dns_servers.split(',').map(s => s.trim()).filter(s => s) : [];
 
-        // Use the applyNetworkConfig function from networkService.js
         await applyNetworkConfig({
             wan_interface_name,
             wan_config_type,
@@ -2561,13 +2455,6 @@ app.post('/api/apply-wan-settings', isAuthenticated, async (req, res) => {
     }
 });
 
-/**
- * System dependencies (Debian/Ubuntu):
- * - iptables (NAT/captive portal rules)
- * - dhclient (isc-dhcp-client) (WAN DHCP lease)
- *
- * These are OS-level packages, but we can auto-install them via apt if the admin is root/sudo.
- */
 app.get('/api/system/dependencies/status', isAuthenticated, async (req, res) => {
     try {
         if (os.platform() !== 'linux') {
@@ -2619,8 +2506,6 @@ app.post('/api/system/dependencies/install', isAuthenticated, async (req, res) =
             });
         }
 
-        // Minimal: iptables + dhclient (isc-dhcp-client)
-        // NOTE: dnsmasq is used in initNetwork(); user can still install it manually if missing.
         const pkgs = ['iptables', 'isc-dhcp-client'];
 
         const hasAptGet = (() => {
@@ -2636,8 +2521,6 @@ app.post('/api/system/dependencies/install', isAuthenticated, async (req, res) =
             return res.status(500).json({ error: 'apt-get not found. This installer currently supports Debian/Ubuntu (apt-based) only.' });
         }
 
-        // Run apt-get update + install
-        // Using sudoExec so it works whether running as root or sudo-capable user.
         await sudoExec('apt-get update');
         await sudoExec(`DEBIAN_FRONTEND=noninteractive apt-get install -y ${pkgs.join(' ')}`);
 
@@ -2651,14 +2534,8 @@ app.post('/api/system/dependencies/install', isAuthenticated, async (req, res) =
     }
 });
 
-/**
- * API to get WAN IPv4 address (interface IP ONLY)
- * - Returns the IPv4 of the currently selected WAN interface from DB.
- * - Does NOT fallback to default route or external IP services (to avoid misleading output).
- */
 app.get('/api/wan-ip', isAuthenticated, async (req, res) => {
     try {
-        // Get WAN interface from database
         const wanInterface = await new Promise((resolve, reject) => {
             db.get(`SELECT value FROM settings WHERE key = 'wan_interface_name'`, [], (err, row) => {
                 if (err) return reject(err);
@@ -2670,7 +2547,6 @@ app.get('/api/wan-ip', isAuthenticated, async (req, res) => {
             return res.status(400).json({ error: 'WAN interface is not set.' });
         }
 
-        // Linux: read interface IPv4 using ip(8)
         if (os.platform() === 'linux') {
             try {
                 const output = execSync(`ip -4 addr show ${wanInterface} 2>/dev/null`).toString();
@@ -2690,8 +2566,6 @@ app.get('/api/wan-ip', isAuthenticated, async (req, res) => {
             }
         }
 
-        // Windows / other platforms: best-effort, but still do NOT use external IP.
-        // We only return an error to keep semantics consistent.
         return res.status(404).json({
             error: 'WAN interface IP detection is supported on Linux only in this build.',
             interface: wanInterface,
@@ -2703,11 +2577,6 @@ app.get('/api/wan-ip', isAuthenticated, async (req, res) => {
     }
 });
 
-/**
- * Super Admin: Allow internet (global)
- * - Purpose: allow ALL LAN clients to forward to WAN (removes captive restriction)
- * - Linux only; non-linux returns simulated success
- */
 app.post('/api/superadmin/internet/allow', isAuthenticated, async (req, res) => {
     try {
         if (os.platform() !== 'linux') {
@@ -2767,13 +2636,11 @@ app.post('/api/superadmin/internet/allow', isAuthenticated, async (req, res) => 
         await sudoExec('sysctl -w net.ipv4.ip_forward=1');
         await sudoExec(`iptables -t nat -C POSTROUTING -o ${wan} -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -o ${wan} -j MASQUERADE`);
 
-        // Remove captive-portal redirect/bypass rules so WAN traffic is no longer intercepted.
         await sudoExec(`iptables -t nat -D PREROUTING -i ${lan} -p tcp --dport 80 -j REDIRECT --to-port ${PORT} 2>/dev/null || true`);
         await sudoExec(`iptables -t nat -D PREROUTING -i ${lan} -p udp --dport 53 ! -s ${lanIp} -j DNAT --to-destination ${lanIp}:53 2>/dev/null || true`);
         await sudoExec(`while iptables -t nat -D PREROUTING -i ${lan} ! -d ${lanIp} -j ACCEPT 2>/dev/null; do :; done`);
         await sudoExec(`while iptables -t nat -D PREROUTING -i ${lan} -j ACCEPT 2>/dev/null; do :; done`);
 
-        // Replace captive default drop with a global allow from WAN to LAN.
         await sudoExec(`while iptables -D FORWARD -i ${lan} -o ${wan} -j DROP 2>/dev/null; do :; done`);
         await sudoExec(`while iptables -D FORWARD -i ${lan} -o ${wan} -j REJECT 2>/dev/null; do :; done`);
         await sudoExec(`while iptables -D FORWARD -i ${wan} -o ${lan} -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null; do :; done`);
@@ -2787,12 +2654,6 @@ app.post('/api/superadmin/internet/allow', isAuthenticated, async (req, res) => 
     }
 });
 
-/**
- * Super Admin: Enable captive portal mode (revert global bypass)
- * - Removes NAT PREROUTING ACCEPT bypass rules added by /internet/allow
- * - Ensures captive redirect rules exist (80 -> 3000, DNS -> gateway)
- * - Ensures LAN->WAN is blocked by default (users allowed via allowMac())
- */
 app.post('/api/superadmin/internet/captive', isAuthenticated, async (req, res) => {
     try {
         if (os.platform() !== 'linux') {
@@ -2841,28 +2702,14 @@ app.post('/api/superadmin/internet/captive', isAuthenticated, async (req, res) =
         const lanIp = (settings.lan_ip_address || '10.0.0.1/24').split('/')[0];
 
         await sudoExec('sysctl -w net.ipv4.ip_forward=1');
-
-        // Remove ALL global bypass rules created by "Allow Internet"
-        // - We remove both patterns for compatibility with older rules:
-        //   (1) -i br0 ! -d <lanIp> -j ACCEPT
-        //   (2) ! -d <lanIp> -i br0 -j ACCEPT
-        // Also remove accidental "-i br0 -j ACCEPT" if it exists.
         await sudoExec(`while iptables -t nat -D PREROUTING -i ${lan} ! -d ${lanIp} -j ACCEPT 2>/dev/null; do :; done`);
         await sudoExec(`while iptables -t nat -D PREROUTING ! -d ${lanIp} -i ${lan} -j ACCEPT 2>/dev/null; do :; done`);
         await sudoExec(`while iptables -t nat -D PREROUTING -i ${lan} -j ACCEPT 2>/dev/null; do :; done`);
 
-        // Ensure captive redirect rules exist (idempotent)
         await sudoExec(`iptables -t nat -C PREROUTING -i ${lan} -p tcp --dport 80 -j REDIRECT --to-port ${PORT} 2>/dev/null || iptables -t nat -A PREROUTING -i ${lan} -p tcp --dport 80 -j REDIRECT --to-port ${PORT}`);
         await sudoExec(`iptables -t nat -C PREROUTING -i ${lan} -p udp --dport 53 ! -s ${lanIp} -j DNAT --to-destination ${lanIp}:53 2>/dev/null || iptables -t nat -A PREROUTING -i ${lan} -p udp --dport 53 ! -s ${lanIp} -j DNAT --to-destination ${lanIp}:53`);
-
-        // Ensure MASQUERADE exists (keep NAT ready for paid users)
         await sudoExec(`iptables -t nat -C POSTROUTING -o ${wan} -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -o ${wan} -j MASQUERADE`);
-
-        // Ensure default block (LAN->WAN) exists.
-        // NOTE: We do NOT flush entire FORWARD chain; we only ensure a DROP rule exists.
         await sudoExec(`iptables -C FORWARD -i ${lan} -o ${wan} -j DROP 2>/dev/null || iptables -A FORWARD -i ${lan} -o ${wan} -j DROP`);
-
-        // Ensure established return traffic (idempotent)
         await sudoExec(`iptables -C FORWARD -i ${wan} -o ${lan} -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || iptables -A FORWARD -i ${wan} -o ${lan} -m state --state RELATED,ESTABLISHED -j ACCEPT`);
 
         return res.json({ success: true, message: 'Captive portal mode enabled (bypass removed).' });
@@ -2872,7 +2719,6 @@ app.post('/api/superadmin/internet/captive', isAuthenticated, async (req, res) =
     }
 });
 
-// License: Generate (Super Admin)
 app.post('/api/license/generate', isAuthenticated, (req, res) => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     let randomPart = '';
@@ -2880,25 +2726,22 @@ app.post('/api/license/generate', isAuthenticated, (req, res) => {
         randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     const key = 'PISO-' + randomPart;
-    
+
     db.run(`INSERT INTO generated_licenses (key) VALUES (?)`, [key], (err) => {
         if (err) return res.status(500).json({ error: 'Failed to save license' });
         res.json({ key });
     });
 });
 
-
-// License: Activate
 app.post('/api/license/activate', isAuthenticated, (req, res) => {
     const { key } = req.body;
     if (!key) return res.status(400).json({ error: 'License key is required' });
 
     const machineId = getMachineId();
 
-    // Check if license exists
     db.get(`SELECT * FROM generated_licenses WHERE key = ?`, [key], (err, row) => {
         if (err) return res.status(500).json({ error: 'Database error' });
-        
+
         if (!row) {
             return res.status(400).json({ error: 'Invalid license key.' });
         }
@@ -2908,18 +2751,15 @@ app.post('/api/license/activate', isAuthenticated, (req, res) => {
         }
 
         db.serialize(() => {
-            // Mark license as used and bind to machine_id
             db.run(`UPDATE generated_licenses SET status = 'used', machine_id = ? WHERE key = ?`, [machineId, key]);
-            // Update system settings
             db.run(`UPDATE settings SET value = ? WHERE key = 'license_key'`, [key]);
             db.run(`UPDATE settings SET value = 'Activated' WHERE key = 'license_status'`);
-            db.run(`UPDATE settings SET value = ? WHERE key = 'license_expiry'`, [new Date(Date.now() + 31536000000).toLocaleDateString()]); // 1 year
+            db.run(`UPDATE settings SET value = ? WHERE key = 'license_expiry'`, [new Date(Date.now() + 31536000000).toLocaleDateString()]);
         });
         res.json({ success: true, message: 'License activated successfully!' });
     });
 });
 
-// Session Manager: Decrement time every minute
 setInterval(() => {
     db.all(`SELECT * FROM users WHERE status = 'Online' AND time_left > 0`, [], (err, rows) => {
         if (err || !rows) return;
@@ -2936,7 +2776,6 @@ setInterval(() => {
     });
 }, 60000);
 
-// Auto Reboot Task
 setInterval(() => {
     db.all(`SELECT key, value FROM settings WHERE key IN ('auto_reboot_enabled', 'auto_reboot_time')`, [], (err, rows) => {
         if (err || !rows) return;
@@ -2946,17 +2785,14 @@ setInterval(() => {
         if (settings.auto_reboot_enabled === 'true') {
             const now = new Date();
             const currentTime = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
-            
+
             if (currentTime === settings.auto_reboot_time) {
                 console.log(`[${new Date().toISOString()}] Auto reboot triggered at ${settings.auto_reboot_time}`);
-                // In a real system, you'd execute a reboot command here
-                // exec('reboot'); 
             }
         }
     });
-}, 60000); // Check every minute
+}, 60000);
 
-// Maya Payment Integration
 app.post('/api/maya/checkout', async (req, res) => {
     const { amount, duration, unit, mac } = req.body;
 
@@ -2964,7 +2800,6 @@ app.post('/api/maya/checkout', async (req, res) => {
         return res.status(400).json({ error: 'Amount and MAC address are required' });
     }
 
-    // Fetch keys from database
     const getSetting = (key) => {
         return new Promise((resolve, reject) => {
             db.get(`SELECT value FROM settings WHERE key = ?`, [key], (err, row) => {
@@ -2987,8 +2822,8 @@ app.post('/api/maya/checkout', async (req, res) => {
         return res.status(500).json({ error: 'Maya API keys are not configured' });
     }
 
-    const baseUrl = mayaEnv === 'production' 
-        ? 'https://pg.paymaya.com' 
+    const baseUrl = mayaEnv === 'production'
+        ? 'https://pg.paymaya.com'
         : 'https://pg-sandbox.paymaya.com';
 
     const checkoutData = {
@@ -3032,21 +2867,19 @@ app.post('/api/maya/checkout', async (req, res) => {
     }
 });
 
-// Webhook for Maya (In production, this should be a public URL)
 app.post('/api/maya/webhook', async (req, res) => {
     const payment = req.body;
     console.log('Maya Webhook received:', JSON.stringify(payment, null, 2));
-    
+
     if (payment.status === 'PAYMENT_SUCCESS') {
         const amount = parseFloat(payment.totalAmount.value);
         const mac = payment.metadata ? payment.metadata.macAddress : null;
 
         if (!mac) {
             console.error('Webhook Error: No MAC address in metadata');
-            return res.status(200).send('OK'); // Still return 200 to Maya
+            return res.status(200).send('OK');
         }
 
-        // Calculate total minutes based on rates
         db.all(`SELECT * FROM rates ORDER BY amount DESC`, [], (err, rates) => {
             if (err) {
                 console.error('Webhook DB Error:', err);
@@ -3066,20 +2899,19 @@ app.post('/api/maya/webhook', async (req, res) => {
             if (totalMinutes > 0) {
                 db.get(`SELECT * FROM users WHERE mac_address = ?`, [mac], (err, user) => {
                     if (err) return console.error('Webhook User Lookup Error:', err);
-                    
+
                     if (user) {
                         const newTime = user.time_left + totalMinutes;
-                        db.run(`UPDATE users SET time_left = ?, status = 'Online' WHERE mac_address = ?`, 
+                        db.run(`UPDATE users SET time_left = ?, status = 'Online' WHERE mac_address = ?`,
                             [newTime, mac], (err) => {
                                 if (err) return console.error('Webhook User Update Error:', err);
-                                // Retrieve IP from the user record for allowMac
                                 db.get(`SELECT ip_address FROM users WHERE mac_address = ?`, [mac], (ipErr, ipRow) => {
                                     if (ipErr || !ipRow) {
                                         console.error('Webhook IP Lookup Error:', ipErr || 'IP not found for MAC');
                                         return;
                                     }
                                     allowMac(mac, ipRow.ip_address);
-                                    db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'maya', ?, ?)`, 
+                                    db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'maya', ?, ?)`,
                                         [amount, `Maya Payment (${mac})`, mac]);
                                     console.log(`Successfully added ${totalMinutes} mins to existing user ${mac} via Maya`);
                                 });
@@ -3092,16 +2924,14 @@ app.post('/api/maya/webhook', async (req, res) => {
                                     db.run(`UPDATE users SET time_left = time_left + ?, status = 'Online' WHERE mac_address = ?`,
                                         [totalMinutes, mac], (err2) => {
                                             if (err2) return console.error('Webhook User Create Fallback Error:', err2);
-                                            // For new users from webhook, we don't have an IP yet, so use a placeholder
-                                            allowMac(mac, '0.0.0.0'); 
-                                            db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'maya', ?, ?)`, 
+                                            allowMac(mac, '0.0.0.0');
+                                            db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'maya', ?, ?)`,
                                                 [amount, `Maya Payment (${mac})`, mac]);
                                             console.log(`Successfully added ${totalMinutes} mins to new user ${mac} via Maya (fallback)`);
                                         });
                                 } else {
-                                    // For new users from webhook, we don't have an IP yet, so use a placeholder
-                                    allowMac(mac, '0.0.0.0'); 
-                                    db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'maya', ?, ?)`, 
+                                    allowMac(mac, '0.0.0.0');
+                                    db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'maya', ?, ?)`,
                                         [amount, `Maya Payment (${mac})`, mac]);
                                     console.log(`Successfully added ${totalMinutes} mins to new user ${mac} via Maya`);
                                 }
@@ -3111,11 +2941,10 @@ app.post('/api/maya/webhook', async (req, res) => {
             }
         });
     }
-    
+
     res.status(200).send('OK');
 });
 
-// API to connect to the internet (for users with remaining time)
 app.post('/api/connect-internet', (req, res) => {
     const ip = req.ip || req.connection.remoteAddress;
     const mac = getMacFromIp(ip);
@@ -3141,7 +2970,6 @@ app.post('/api/connect-internet', (req, res) => {
 io.on('connection', (socket) => {
     console.log('A user connected to WebSocket');
 
-    // Send current coin insertion status to newly connected client
     socket.emit('coinInsertionStatus', { active: coinInsertionActive, by: activeCoinInserterMac });
 
     socket.on('startCoinInsertion', (data) => {
@@ -3151,58 +2979,54 @@ io.on('connection', (socket) => {
             return;
         }
 
-            if (!coinInsertionActive) {
-                coinInsertionActive = true;
-                activeCoinInserterMac = mac;
-                sendSerialCommand('D'); // Set D8 LOW to INHIBIT coin acceptance
-                io.emit('coinInsertionStatus', { active: true, by: mac });
-                console.log(`Coin insertion started by ${mac}. D8 set to LOW (inhibit).`);
+        if (!coinInsertionActive) {
+            coinInsertionActive = true;
+            activeCoinInserterMac = mac;
+            sendSerialCommand('D');
+            io.emit('coinInsertionStatus', { active: true, by: mac });
+            console.log(`Coin insertion started by ${mac}. D8 set to LOW (inhibit).`);
 
-                // Set a timeout to allow D8 HIGH if no coins are inserted for COINSLOT_INACTIVITY_TIMEOUT
-                if (coinslotEnableTimeout) clearTimeout(coinslotEnableTimeout);
-                coinslotEnableTimeout = setTimeout(() => {
-                    if (coinInsertionActive && activeCoinInserterMac === mac) {
-                        sendSerialCommand('E'); // Set D8 HIGH to ALLOW coin acceptance
-                        coinInsertionActive = false;
-                        activeCoinInserterMac = null;
-                        io.emit('coinInsertionStatus', { active: false, by: null });
-                        console.log('Coinslot allowed due to inactivity timeout.');
-                    }
-                }, COINSLOT_INACTIVITY_TIMEOUT);
+            if (coinslotEnableTimeout) clearTimeout(coinslotEnableTimeout);
+            coinslotEnableTimeout = setTimeout(() => {
+                if (coinInsertionActive && activeCoinInserterMac === mac) {
+                    sendSerialCommand('E');
+                    coinInsertionActive = false;
+                    activeCoinInserterMac = null;
+                    io.emit('coinInsertionStatus', { active: false, by: null });
+                    console.log('Coinslot allowed due to inactivity timeout.');
+                }
+            }, COINSLOT_INACTIVITY_TIMEOUT);
 
-            } else if (activeCoinInserterMac !== mac) {
-                // If another user tries to start, notify them it's busy
-                socket.emit('coinInsertionBusy', { by: activeCoinInserterMac });
-            }
-        });
+        } else if (activeCoinInserterMac !== mac) {
+            socket.emit('coinInsertionBusy', { by: activeCoinInserterMac });
+        }
+    });
 
-        socket.on('endCoinInsertion', (data) => {
-            const { mac } = data;
-            if (coinInsertionActive && activeCoinInserterMac === mac) {
-                if (coinslotEnableTimeout) clearTimeout(coinslotEnableTimeout);
-                sendSerialCommand('E'); // Set D8 HIGH to ALLOW coin acceptance
-                coinInsertionActive = false;
-                activeCoinInserterMac = null;
-                io.emit('coinInsertionStatus', { active: false, by: null });
-                console.log(`Coin insertion ended by ${mac}. D8 set to HIGH (allow).`);
-            }
-        });
+    socket.on('endCoinInsertion', (data) => {
+        const { mac } = data;
+        if (coinInsertionActive && activeCoinInserterMac === mac) {
+            if (coinslotEnableTimeout) clearTimeout(coinslotEnableTimeout);
+            sendSerialCommand('E');
+            coinInsertionActive = false;
+            activeCoinInserterMac = null;
+            io.emit('coinInsertionStatus', { active: false, by: null });
+            console.log(`Coin insertion ended by ${mac}. D8 set to HIGH (allow).`);
+        }
+    });
 
-        socket.on('disconnect', () => {
-            console.log('User disconnected from WebSocket');
-            // If the user who was inserting coins disconnects, reset the status
-            if (activeCoinInserterMac === socket.handshake.query.mac) { // Assuming MAC is passed as query param
-                if (coinslotEnableTimeout) clearTimeout(coinslotEnableTimeout);
-                sendSerialCommand('E'); // Set D8 HIGH to ALLOW coin acceptance
-                coinInsertionActive = false;
-                activeCoinInserterMac = null;
-                io.emit('coinInsertionStatus', { active: false, by: null });
-                        console.log(`Coin insertion reset due to disconnect of ${socket.handshake.query.mac}. D8 set to HIGH (allow).`);
-            }
-        });
+    socket.on('disconnect', () => {
+        console.log('User disconnected from WebSocket');
+        if (activeCoinInserterMac === socket.handshake.query.mac) {
+            if (coinslotEnableTimeout) clearTimeout(coinslotEnableTimeout);
+            sendSerialCommand('E');
+            coinInsertionActive = false;
+            activeCoinInserterMac = null;
+            io.emit('coinInsertionStatus', { active: false, by: null });
+            console.log(`Coin insertion reset due to disconnect of ${socket.handshake.query.mac}. D8 set to HIGH (allow).`);
+        }
+    });
 });
 
-        // Save Network Settings
 app.post('/api/save-network', async (req, res) => {
     try {
         const {
@@ -3210,17 +3034,14 @@ app.post('/api/save-network', async (req, res) => {
             lan_interface_name, lan_ip_address, lan_dns_servers
         } = req.body;
 
-        // Validate required fields
         if (!wan_interface_name || !lan_interface_name || !lan_ip_address) {
             return res.status(400).json({ success: false, message: 'Missing required network interface parameters.' });
         }
 
-        // Validate LAN IP address format (CIDR)
         if (!lan_ip_address.includes('/')) {
             return res.status(400).json({ success: false, message: 'LAN IP address must be in CIDR format (e.g., 10.0.0.1/24).' });
         }
 
-        // Save to database
         db.serialize(() => {
             const stmt = db.prepare(`UPDATE settings SET value = ? WHERE key = ?`);
             stmt.run(wan_interface_name, 'wan_interface_name');
@@ -3234,7 +3055,6 @@ app.post('/api/save-network', async (req, res) => {
             stmt.finalize();
         });
 
-        // Apply network configuration
         const networkConfig = {
             wan_interface_name,
             wan_config_type,
@@ -3255,7 +3075,6 @@ app.post('/api/save-network', async (req, res) => {
     }
 });
 
-// LAN Configuration API
 app.post('/api/network/lan/configure', async (req, res) => {
     try {
         const {
@@ -3264,45 +3083,40 @@ app.post('/api/network/lan/configure', async (req, res) => {
             lan_dns_servers
         } = req.body;
 
-        // Validate required fields
         if (!lan_interface_name || !lan_ip_address) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'Missing required fields: lan_interface_name and lan_ip_address' 
+            return res.status(400).json({
+                success: false,
+                error: 'Missing required fields: lan_interface_name and lan_ip_address'
             });
         }
 
-        // Validate LAN IP format
         const lanIpMatch = lan_ip_address.match(/^(\d+\.\d+\.\d+\.\d+)\/(\d+)$/);
         if (!lanIpMatch) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'Invalid LAN IP format. Use CIDR notation (e.g., 10.0.0.1/24)' 
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid LAN IP format. Use CIDR notation (e.g., 10.0.0.1/24)'
             });
         }
 
         const [_, ip, cidr] = lanIpMatch;
         const subnet = ip.split('.').slice(0, 3).join('.');
-        
-        // Validate CIDR range
+
         const cidrNum = parseInt(cidr);
         if (cidrNum < 8 || cidrNum > 30) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'CIDR must be between /8 and /30' 
+            return res.status(400).json({
+                success: false,
+                error: 'CIDR must be between /8 and /30'
             });
         }
 
-        // Validate IP address
         const ipParts = ip.split('.').map(Number);
         if (ipParts.some(part => part < 0 || part > 255)) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'Invalid IP address' 
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid IP address'
             });
         }
 
-        // Save to database
         db.serialize(() => {
             const stmt = db.prepare(`UPDATE settings SET value = ? WHERE key = ?`);
             stmt.run(lan_interface_name, 'lan_interface_name');
@@ -3311,47 +3125,45 @@ app.post('/api/network/lan/configure', async (req, res) => {
             stmt.finalize();
         });
 
-        // Apply LAN configuration
         if (os.platform() !== 'linux') {
-            return res.json({ 
-                success: true, 
-                message: 'LAN configuration saved successfully (simulated on non-Linux)' 
+            return res.json({
+                success: true,
+                message: 'LAN configuration saved successfully (simulated on non-Linux)'
             });
         }
 
         try {
-        const networkConfig = {
-            lan_interface_name,
-            lan_ip_address,
-            lan_dns_servers,
-            bridge_interface_name: 'br0',
-            portal_port: PORT
-        };
+            const networkConfig = {
+                lan_interface_name,
+                lan_ip_address,
+                lan_dns_servers,
+                bridge_interface_name: 'br0',
+                portal_port: PORT
+            };
 
             await applyLanBridgeApSettings(networkConfig);
             await reapplyNatRulesFromDb();
 
-            res.json({ 
-                success: true, 
-                message: 'LAN configuration applied successfully!' 
+            res.json({
+                success: true,
+                message: 'LAN configuration applied successfully!'
             });
         } catch (applyError) {
             console.error('Failed to apply LAN configuration:', applyError);
-            res.status(500).json({ 
-                success: false, 
-                error: 'Failed to apply LAN configuration: ' + applyError.message 
+            res.status(500).json({
+                success: false,
+                error: 'Failed to apply LAN configuration: ' + applyError.message
             });
         }
     } catch (error) {
         console.error('Error configuring LAN:', error);
-        res.status(500).json({ 
-            success: false, 
-            error: 'Failed to configure LAN interface' 
+        res.status(500).json({
+            success: false,
+            error: 'Failed to configure LAN interface'
         });
     }
 });
 
-// API to get network status and interface information
 app.get('/api/network/status', isAuthenticated, async (req, res) => {
     try {
         const status = await getNetworkStatus();
@@ -3362,7 +3174,6 @@ app.get('/api/network/status', isAuthenticated, async (req, res) => {
     }
 });
 
-// API to auto-configure network interfaces
 app.post('/api/network/auto-configure', isAuthenticated, async (req, res) => {
     try {
         const result = await autoConfigureNetwork();
@@ -3373,7 +3184,6 @@ app.post('/api/network/auto-configure', isAuthenticated, async (req, res) => {
     }
 });
 
-// API to get current LAN IP and DNS settings
 app.get('/api/network/current-settings', isAuthenticated, async (req, res) => {
     try {
         const settings = await getCurrentLanSettings();
@@ -3384,24 +3194,22 @@ app.get('/api/network/current-settings', isAuthenticated, async (req, res) => {
     }
 });
 
-// API to apply dynamic LAN IP configuration
 app.post('/api/network/lan/dynamic', isAuthenticated, async (req, res) => {
     try {
         const { lan_interface_name, desired_subnet, lan_dns_servers } = req.body;
 
         if (!lan_interface_name || !desired_subnet) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'Missing required parameters: lan_interface_name and desired_subnet' 
+            return res.status(400).json({
+                success: false,
+                error: 'Missing required parameters: lan_interface_name and desired_subnet'
             });
         }
 
-        // Validate subnet format
         const subnetMatch = desired_subnet.match(/^(\d+\.\d+\.\d+\.\d+)\/(\d+)$/);
         if (!subnetMatch) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'Invalid subnet format. Use CIDR notation (e.g., 10.0.0.0/24)' 
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid subnet format. Use CIDR notation (e.g., 10.0.0.0/24)'
             });
         }
 
@@ -3411,7 +3219,6 @@ app.post('/api/network/lan/dynamic', isAuthenticated, async (req, res) => {
             lan_dns_servers
         });
 
-        // Save to database
         db.serialize(() => {
             const stmt = db.prepare(`UPDATE settings SET value = ? WHERE key = ?`);
             stmt.run(lan_interface_name, 'lan_interface_name');
@@ -3423,20 +3230,19 @@ app.post('/api/network/lan/dynamic', isAuthenticated, async (req, res) => {
         res.json(result);
     } catch (error) {
         console.error('Failed to apply dynamic LAN IP configuration:', error.message);
-        res.status(500).json({ 
-            success: false, 
-            error: error.message 
+        res.status(500).json({
+            success: false,
+            error: error.message
         });
     }
 });
 
-// 1. Unahin ang Redirect Routes para masalo agad ang Windows/Apple checks
 app.get('/redirect', async (req, res) => {
     const portalBaseUrl = await getPortalBaseUrl();
     res.redirect(portalBaseUrl);
 });
 
-const HOST = '0.0.0.0'; // Bind on all interfaces so it's reachable via LAN + WAN IPs
+const HOST = '0.0.0.0';
 server.listen(PORT, HOST, () => {
     console.log(`Server running on http://${HOST}:${PORT}`);
 });
