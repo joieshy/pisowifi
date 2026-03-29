@@ -1491,64 +1491,14 @@
             <div class="header">
                 <h2>E-Wallet & API Integration</h2>
             </div>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
-                <div class="card">
-                    <h3 style="margin-top: 0; color: var(--primary-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
-                        <i class="fas fa-wallet"></i> Payment Gateway
-                    </h3>
-                    <form id="ewalletForm">
-                        <div class="form-group">
-                            <label>Enable E-Wallet Payments</label>
-                            <select id="ewallet_enabled" name="ewallet_enabled">
-                                <option value="false">Disabled</option>
-                                <option value="true">Enabled</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>Maya Environment</label>
-                            <select id="maya_env" name="maya_env">
-                                <option value="sandbox">Sandbox (Testing)</option>
-                                <option value="production">Production (Live)</option>
-                            </select>
-                            <p style="font-size: 0.7rem; color: #858796;">Gamitin ang Sandbox kung tinitest pa lang. Production kung totoong pera na.</p>
-                        </div>
-                        <div class="form-group">
-                            <label>Merchant ID</label>
-                            <input type="text" id="merchant_id" name="merchant_id" placeholder="Enter Merchant ID">
-                        </div>
-                        <div class="form-group">
-                            <label>GCash API Key</label>
-                            <input type="password" id="gcash_api_key" name="gcash_api_key" placeholder="Enter GCash API Key">
-                        </div>
-                        <div class="form-group">
-                            <label>Maya Public Key</label>
-                            <input type="text" id="maya_public_key" name="maya_public_key" placeholder="Enter Maya Public Key">
-                        </div>
-                        <div class="form-group">
-                            <label>Maya Secret Key</label>
-                            <input type="password" id="maya_api_key" name="maya_api_key" placeholder="Enter Maya Secret Key">
-                        </div>
-                        <button type="submit" class="btn btn-success">
-                            <i class="fas fa-save"></i> Save API Settings
-                        </button>
-                        <div id="ewalletMsg" style="margin-top: 10px; color: var(--success-color); font-weight: bold; display: none;">API settings saved!</div>
-                    </form>
+            <div class="card" style="max-width: 600px; margin: 0 auto; text-align: center; padding: 3rem 1.5rem;">
+                <div style="font-size: 3rem; color: var(--warning-color); margin-bottom: 1rem;">
+                    <i class="fas fa-clock"></i>
                 </div>
-                <div class="card">
-                    <h3 style="margin-top: 0; color: var(--info-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
-                        <i class="fas fa-code"></i> Webhook Configuration
-                    </h3>
-                    <div class="form-group">
-                        <label>Webhook URL</label>
-                        <div style="display: flex; gap: 5px;">
-                            <input type="text" id="webhook_url_display" readonly value="" style="background: #f8f9fc; flex: 1;">
-                            <button class="btn btn-info" onclick="copyWebhookUrl()" title="Copy to clipboard">
-                                <i class="fas fa-copy"></i>
-                            </button>
-                        </div>
-                        <p style="font-size: 0.8rem; color: #858796; margin-top: 5px;">I-copy ang URL na ito at ilagay sa iyong Maya Dashboard. <strong>Paalala:</strong> Siguraduhin na ang gamit mong IP ay Public IP o Domain para ma-reach ng Maya ang iyong server.</p>
-                    </div>
-                </div>
+                <h3 style="margin-top: 0; color: var(--primary-color);">Coming Soon!</h3>
+                <p style="margin-bottom: 0; color: var(--secondary-color);">
+                    This feature is not available yet.
+                </p>
             </div>
         </div>
 
@@ -3197,20 +3147,28 @@
             }
 
             try {
-                const res = await fetch('/api/save-network', {
+                const res = await fetch('/api/network/lan/configure', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify({
+                        lan_interface_name: payload.lan_interface_name,
+                        lan_ip_address: payload.lan_ip_address,
+                        lan_dns_servers: payload.lan_dns_servers
+                    })
                 });
 
                 const result = await res.json();
                 const msg = document.getElementById('networkConfigMsg');
                 if (result.success) {
                     msg.style.color = 'var(--success-color)';
-                    msg.innerText = result.message || "Network Updated!";
+                    msg.innerText = result.message || 'LAN configuration applied successfully!';
+                    setTimeout(() => {
+                        showSection('dashboard');
+                        setTimeout(() => fetchStats(), 300);
+                    }, 1200);
                 } else {
                     msg.style.color = 'var(--danger-color)';
-                    msg.innerText = result.error || "Failed to update network.";
+                    msg.innerText = result.error || result.message || 'Failed to apply LAN configuration.';
                 }
                 msg.style.display = 'block';
                 setTimeout(() => msg.style.display = 'none', 7000);
