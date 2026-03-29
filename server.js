@@ -587,7 +587,7 @@ db.serialize(() => {
         tc_mark INTEGER DEFAULT 0
     )`);
 
-    // Add tc_class_id and tc_mark columns if they don't exist (for existing database)
+    // Add tc_class_id and tc_mark columns if they don't exist (for existing databases)
     db.run(`ALTER TABLE users ADD COLUMN tc_class_id INTEGER DEFAULT 0`, (err) => { /* ignore error if column exists */ });
     db.run(`ALTER TABLE users ADD COLUMN tc_mark INTEGER DEFAULT 0`, (err) => { /* ignore error if column exists */ });
     
