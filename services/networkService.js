@@ -1,5 +1,6 @@
 const { exec } = require('child_process');
 const fs = require('fs');
+const path = require('path');
 const util = require('util');
 const os = require('os');
 const execPromise = util.promisify(exec);
@@ -7,6 +8,8 @@ const execPromise = util.promisify(exec);
 const SUDO_PASSWORD = process.env.SUDO_PASSWORD || 'Alexjoy-1623';
 const interfaceDetector = require('./interfaceDetector');
 
+const IPTABLES = '/usr/sbin/iptables';
+const SYSCTL = '/usr/sbin/sysctl';
 const DEFAULT_LAN_BRIDGE = 'br0';
 const DEFAULT_PORTAL_PORT = 3000;
 const DEFAULT_FALLBACK_DNS = ['8.8.8.8', '8.8.4.4'];
@@ -178,12 +181,16 @@ async function commandExists(command) {
 }
 
 async function sudoExec(command) {
+    const secureCommand = command
+        .replace(/^iptables/, IPTABLES)
+        .replace(/^sysctl/, SYSCTL);
+
     try {
-        return await execPromise(`echo "${SUDO_PASSWORD}" | sudo -S ${command}`);
+        return await execPromise(`echo "${SUDO_PASSWORD}" | sudo -S ${secureCommand}`);
     } catch (sudoError) {
-        console.warn(`sudo command failed with password for: ${command}, trying without sudo...`);
+        console.warn(`sudo command failed with password for: ${secureCommand}, trying without sudo...`);
         try {
-            return await execPromise(command);
+            return await execPromise(secureCommand);
         } catch (error) {
             throw new Error(`Failed to execute command: ${error.message}. Original sudo error: ${sudoError.message}`);
         }
