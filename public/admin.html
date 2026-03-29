@@ -3124,6 +3124,10 @@
         document.getElementById('networkInterfacesForm').addEventListener('submit', async (e) => {
             e.preventDefault();
 
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            const msg = document.getElementById('networkConfigMsg');
+            const currentScrollY = window.scrollY;
+
             const payload = {
                 wan_interface_name: document.getElementById('wan_interface_name').value,
                 wan_config_type: document.getElementById('wan_config_type').value,
@@ -3135,10 +3139,8 @@
                 lan_dns_servers: document.getElementById('lan_dns_servers').value.split(',').map(s => s.trim()).filter(s => s)
             };
 
-            // Basic front-end validation for LAN CIDR (10.0.0.1/24)
             const cidr = (payload.lan_ip_address || '').trim();
             if (!/^\d+\.\d+\.\d+\.\d+\/\d+$/.test(cidr)) {
-                const msg = document.getElementById('networkConfigMsg');
                 msg.style.display = 'block';
                 msg.style.color = 'var(--danger-color)';
                 msg.innerText = 'Invalid LAN CIDR format. Example: 10.0.0.1/24';
@@ -3147,6 +3149,11 @@
             }
 
             try {
+                if (submitBtn) submitBtn.disabled = true;
+                msg.style.display = 'block';
+                msg.style.color = 'var(--primary-color)';
+                msg.innerText = 'Applying LAN configuration...';
+
                 const res = await fetch('/api/network/lan/configure', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -3158,14 +3165,13 @@
                 });
 
                 const result = await res.json();
-                const msg = document.getElementById('networkConfigMsg');
                 if (result.success) {
                     msg.style.color = 'var(--success-color)';
                     msg.innerText = result.message || 'LAN configuration applied successfully!';
                     setTimeout(() => {
-                        showSection('dashboard');
-                        setTimeout(() => fetchStats(), 300);
-                    }, 1200);
+                        fetchLanSettings();
+                        window.scrollTo({ top: currentScrollY, behavior: 'instant' });
+                    }, 300);
                 } else {
                     msg.style.color = 'var(--danger-color)';
                     msg.innerText = result.error || result.message || 'Failed to apply LAN configuration.';
@@ -3174,12 +3180,13 @@
                 setTimeout(() => msg.style.display = 'none', 7000);
 
             } catch (error) {
-                const msg = document.getElementById('networkConfigMsg');
                 msg.style.color = 'var(--danger-color)';
                 msg.innerText = 'An error occurred while applying network configuration.';
                 msg.style.display = 'block';
                 setTimeout(() => msg.style.display = 'none', 7000);
                 console.error('Error applying network configuration:', error);
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
             }
         });
 
