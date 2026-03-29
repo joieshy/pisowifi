@@ -17,14 +17,29 @@ const interfaceDetector = require('./services/interfaceDetector');
 const app = express();
 app.set('trust proxy', true);
 
+let db;
+let serverStarted = false;
+let startupInProgress = false;
+
 const IPTABLES = '/usr/sbin/iptables';
 const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0';
 const DATABASE_PATH = process.env.DATABASE_PATH || './pisowifi.db';
 
+const http = require('http');
+const server = http.createServer(app);
+const io = require('socket.io')(server);
+
+function startServerOnce(onStarted) {
+    if (serverStarted) return;
+    serverStarted = true;
+    server.listen(PORT, HOST, onStarted);
+}
+
 const startApp = async () => {
+    if (startupInProgress) return;
+    startupInProgress = true;
     try {
-        // 1. Kunin ang lahat ng network settings sa DB (WALANG HARDCODE)
         const settings = await new Promise((resolve, reject) => {
             db.all(`SELECT key, value FROM settings WHERE key IN ('wan_interface_name','lan_interface_name','lan_ip_address')`, [], (err, rows) => {
                 if (err) return reject(err);
@@ -34,7 +49,6 @@ const startApp = async () => {
             });
         });
 
-        // 2. Resolve runtime-detected interfaces when available, then apply network rules
         const detected = await interfaceDetector.getRecommendedConfiguration();
         const resolvedSettings = resolveNetworkSettings(settings, {
             wan_interface_name: detected?.recommendations?.wanRecommended || 'end0',
@@ -47,13 +61,16 @@ const startApp = async () => {
         settings.lan_interface_name = settings.lan_interface_name || resolvedSettings.lan_interface_name;
         settings.lan_ip_address = settings.lan_ip_address || resolvedSettings.lan_ip_address;
 
-        await initializeNetwork({
-            ...resolvedSettings,
-            portal_port: PORT
-        });
+        try {
+            await initializeNetwork({
+                ...resolvedSettings,
+                portal_port: PORT
+            });
+        } catch (networkErr) {
+            console.error('Network initialization failed, continuing to start server:', networkErr);
+        }
 
-        // 3. Start Server
-        server.listen(PORT, HOST, () => {
+        startServerOnce(() => {
             console.log(`=========================================`);
             console.log(`PisoWiFi System Started Dynamically`);
             console.log(`WAN (Internet): ${settings.wan_interface_name || 'end0'}`);
@@ -63,17 +80,15 @@ const startApp = async () => {
         });
     } catch (err) {
         console.error('CRITICAL: Startup Network Error:', err);
-        server.listen(PORT, HOST, () => console.log(`Server started with errors.`));
+        startServerOnce(() => console.log(`Server started with errors.`));
+    } finally {
+        startupInProgress = false;
     }
 };
 
 startApp();
 if (os.platform() === 'linux') {
     try {
-        // IMPORTANT:
-        // Do NOT hardcode interface names here.
-        // This project runs in bridge/AP mode where LAN side is br0.
-        // We also avoid forcing a blanket FORWARD DROP on startup that can override later rules.
         console.log('Firewall reset on startup: skipped hardcoded rules (bridge mode uses dynamic rules).');
     } catch (e) {
         console.log('Firewall startup block failed');
@@ -88,9 +103,9 @@ app.use(session({
     resave: false,
     saveUninitialized: false,
     cookie: { 
-        maxAge: 3600000, // 1 hour
-        secure: false, // Set to true if using HTTPS
-        sameSite: 'Lax' // Can be 'Strict', 'Lax', or 'None'
+        maxAge: 3600000,
+        secure: false,
+        sameSite: 'Lax'
     }
 }));
 
@@ -139,29 +154,19 @@ async function handleBlockMac(mac) {
     }
 }
 
-// LAN-only force redirect to dynamic portal URL
-// - Uses the DB-backed LAN IP and runtime PORT
-// - Keeps WAN access untouched
 app.use(async (req, res, next) => {
     try {
         const host = (req.get('host') || '').trim();
-
-        // Express may give IPv6-mapped IPv4 like ::ffff:10.0.0.50
         const rawIp = (req.ip || req.connection?.remoteAddress || '').trim();
         const ip = rawIp.replace('::ffff:', '');
-
         const lanIpAddress = await getSettingValue('lan_ip_address', '10.0.0.1/24');
         const lanIp = normalizeLanIp(lanIpAddress);
         const portalBaseUrl = await getPortalBaseUrl();
-
         const isLanClient = ip.startsWith(lanIp.split('.').slice(0, 3).join('.') + '.');
         const isLocalhost = ip === '127.0.0.1' || ip === '::1';
 
         if (!isLocalhost && isLanClient) {
-            const needsRedirect =
-                !host.startsWith(lanIp) ||
-                (host.startsWith(lanIp) && !host.includes(`:${PORT}`));
-
+            const needsRedirect = !host.startsWith(lanIp) || (host.startsWith(lanIp) && !host.includes(`:${PORT}`));
             if (needsRedirect) {
                 res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
                 return res.redirect(`${portalBaseUrl}${req.originalUrl}`);
@@ -179,7 +184,6 @@ app.use(async (req, res, next) => {
     }
 });
 
-// Auth Middleware
 const isAuthenticated = (req, res, next) => {
     if (req.session && req.session.adminId) {
         next();
@@ -189,53 +193,35 @@ const isAuthenticated = (req, res, next) => {
 };
 
 let serialPort = null;
-// Common identifiers for NodeMCU (CH340G chip) across different OS
 const NODE_MCU_IDENTIFIERS = [
-    'USB-SERIAL CH340', // Common for Windows
-    'wch.cn',           // Common for CH340 on Linux
-    'QinHeng Electronics', // Another common for CH340 on Linux
-    'CH340'             // More generic, might appear in pnpId or description
+    'USB-SERIAL CH340',
+    'wch.cn',
+    'QinHeng Electronics',
+    'CH340'
 ];
 
-const http = require('http');
-const server = http.createServer(app);
-const io = require('socket.io')(server);
-
-let coinInsertionActive = false; // Global state to track if someone is inserting coins
-let activeCoinInserterMac = null; // MAC address of the user currently inserting coins
-let coinslotEnableTimeout = null; // Timeout to disable coinslot if no activity
-const COINSLOT_INACTIVITY_TIMEOUT = 60000; // 60 seconds of inactivity before disabling coinslot
-let lastTotalCoinsFromMCU = 0; // To track the total coins reported by NodeMCU
-
-// --- NETWORK CONTROL LOGIC (LINUX/ORANGE PI) ---
+let coinInsertionActive = false;
+let activeCoinInserterMac = null;
+let coinslotEnableTimeout = null;
+const COINSLOT_INACTIVITY_TIMEOUT = 60000;
+let lastTotalCoinsFromMCU = 0;
 
 function getMacFromIp(ip) {
     try {
         if (!ip) return null;
-        
-        // Remove IPv6 prefix if present
         const cleanIp = ip.replace('::ffff:', '').trim();
-        
-        // Handle localhost/server
         if (cleanIp === '127.0.0.1' || cleanIp === '::1' || cleanIp === 'localhost') {
             return '00:00:00:00:00:00';
         }
-        
+
         let mac = null;
-        
-        // Try to ping the IP first to ensure it's in the ARP table
+
         try {
-            const pingCmd = os.platform() === 'win32' 
-                ? `ping -n 1 -w 200 ${cleanIp}` 
-                : `ping -c 1 -W 1 ${cleanIp}`;
+            const pingCmd = os.platform() === 'win32' ? `ping -n 1 -w 200 ${cleanIp}` : `ping -c 1 -W 1 ${cleanIp}`;
             execSync(pingCmd, { timeout: 1000, stdio: 'ignore' });
         } catch (e) {}
 
-        // Try multiple methods to get the MAC address
-        const commands = os.platform() === 'win32' 
-            ? [`arp -a ${cleanIp}`] 
-            : [`arp -n ${cleanIp}`, `ip neighbor show to ${cleanIp}`, `grep ${cleanIp} /proc/net/arp`];
-
+        const commands = os.platform() === 'win32' ? [`arp -a ${cleanIp}`] : [`arp -n ${cleanIp}`, `ip neighbor show to ${cleanIp}`, `grep ${cleanIp} /proc/net/arp`];
         for (const cmd of commands) {
             try {
                 const output = execSync(cmd, { timeout: 1000 }).toString();
@@ -247,7 +233,6 @@ function getMacFromIp(ip) {
             } catch (e) {}
         }
 
-        // If still not found, try scanning the whole ARP table
         if (!mac) {
             try {
                 const listCmd = os.platform() === 'win32' ? 'arp -a' : 'arp -n';
@@ -272,7 +257,6 @@ function getMacFromIp(ip) {
     }
 }
 
-
 async function applyBandwidthLimits(ip, downloadLimitMbps, uploadLimitMbps, tcClassId) {
     if (os.platform() !== 'linux') {
         console.log(`[Simulated] Applying bandwidth limits for IP: ${ip}, DL: ${downloadLimitMbps}Mbps, UL: ${uploadLimitMbps}Mbps, ClassID: ${tcClassId}`);
@@ -280,22 +264,13 @@ async function applyBandwidthLimits(ip, downloadLimitMbps, uploadLimitMbps, tcCl
     }
 
     try {
-        // When we run in bridge/AP mode, traffic shaping must be applied on br0 (not the raw LAN member interface).
-        // This ensures both wired LAN + WiFi clients are shaped consistently.
         const lanInterface = 'br0';
-
-        // --- ENSURE TRAFFIC CONTROL INFRASTRUCTURE ---
-        // 1. LAN Interface (Download) - Ensure root qdisc exists
         try { await sudoExec(`tc qdisc add dev ${lanInterface} root handle 1: htb default 10 2>/dev/null || true`); } catch (e) {}
         try { await sudoExec(`tc class add dev ${lanInterface} parent 1: classid 1:10 htb rate 1000mbit 2>/dev/null || true`); } catch (e) {}
-
-        // 2. IFB Interface (Upload) - Ensure module loaded and root qdisc exists
         try { await sudoExec('modprobe ifb numifbs=1'); } catch (e) {}
         try { await sudoExec('ip link set dev ifb0 up'); } catch (e) {}
         try { await sudoExec(`tc qdisc add dev ifb0 root handle 1: htb default 10 2>/dev/null || true`); } catch (e) {}
         try { await sudoExec(`tc class add dev ifb0 parent 1: classid 1:10 htb rate 1000mbit 2>/dev/null || true`); } catch (e) {}
-
-        // 3. LAN Ingress Redirection (Redirect Upload to IFB)
         try {
             await sudoExec(`tc qdisc add dev ${lanInterface} handle ffff: ingress 2>/dev/null || true`);
             const currentFilters = await sudoExec(`tc filter show dev ${lanInterface} parent ffff:`);
@@ -303,33 +278,24 @@ async function applyBandwidthLimits(ip, downloadLimitMbps, uploadLimitMbps, tcCl
                 await sudoExec(`tc filter add dev ${lanInterface} parent ffff: protocol ip u32 match u32 0 0 action mirred egress redirect dev ifb0`);
             }
         } catch (e) {}
-        // ---------------------------------------------
 
-        // Convert Mbps to Mbits for tc
         const dlRate = downloadLimitMbps > 0 ? `${downloadLimitMbps}mbit` : '1000mbit';
         const ulRate = uploadLimitMbps > 0 ? `${uploadLimitMbps}mbit` : '1000mbit';
         const classId = `1:${tcClassId}`;
-        const prio = tcClassId + 100; // Offset priority to avoid conflicts
+        const prio = tcClassId + 100;
 
-        // Clean up existing limits for this class ID/Prio just in case
         try { await sudoExec(`tc filter del dev ${lanInterface} parent 1: prio ${prio} 2>/dev/null || true`); } catch (e) {}
         try { await sudoExec(`tc class del dev ${lanInterface} parent 1: classid ${classId} 2>/dev/null || true`); } catch (e) {}
         try { await sudoExec(`tc filter del dev ifb0 parent 1: prio ${prio} 2>/dev/null || true`); } catch (e) {}
         try { await sudoExec(`tc class del dev ifb0 parent 1: classid ${classId} 2>/dev/null || true`); } catch (e) {}
 
-        // DOWNLOAD (LAN Interface Egress) - Server to Client
         if (downloadLimitMbps > 0) {
-            // Create class
             await sudoExec(`tc class add dev ${lanInterface} parent 1: classid ${classId} htb rate ${dlRate} ceil ${dlRate}`);
-            // Filter: Match Destination IP (Client IP)
             await sudoExec(`tc filter add dev ${lanInterface} protocol ip parent 1: prio ${prio} u32 match ip dst ${ip}/32 flowid ${classId}`);
         }
 
-        // UPLOAD (IFB0 Interface Egress, redirected from LAN Ingress) - Client to Server
         if (uploadLimitMbps > 0) {
-            // Create class
             await sudoExec(`tc class add dev ifb0 parent 1: classid ${classId} htb rate ${ulRate} ceil ${ulRate}`);
-            // Filter: Match Source IP (Client IP)
             await sudoExec(`tc filter add dev ifb0 protocol ip parent 1: prio ${prio} u32 match ip src ${ip}/32 flowid ${classId}`);
         }
 
@@ -339,26 +305,19 @@ async function applyBandwidthLimits(ip, downloadLimitMbps, uploadLimitMbps, tcCl
     }
 }
 
-
-
-
-
 async function removeBandwidthLimits(ip, tcClassId) {
     if (os.platform() !== 'linux') {
         console.log(`[Simulated] Removing bandwidth limits for IP: ${ip}, Class: ${tcClassId}`);
         return;
     }
     try {
-        // When we run in bridge/AP mode, traffic shaping must be removed from br0 (not the raw LAN member interface).
         const lanInterface = 'br0';
         const classId = `1:${tcClassId}`;
         const prio = tcClassId + 100;
-
         try { await sudoExec(`tc filter del dev ${lanInterface} parent 1: prio ${prio} 2>/dev/null || true`); } catch (e) {}
         try { await sudoExec(`tc class del dev ${lanInterface} parent 1: classid ${classId} 2>/dev/null || true`); } catch (e) {}
         try { await sudoExec(`tc filter del dev ifb0 parent 1: prio ${prio} 2>/dev/null || true`); } catch (e) {}
         try { await sudoExec(`tc class del dev ifb0 parent 1: classid ${classId} 2>/dev/null || true`); } catch (e) {}
-
         console.log(`Bandwidth limits removed for IP ${ip} (Class: ${classId})`);
     } catch (e) {
         console.error(`Failed to remove bandwidth limits for IP ${ip}:`, e.message);
@@ -386,15 +345,11 @@ async function initNetwork() {
     if (os.platform() !== 'linux') return;
     try {
         console.log('Initializing Network for Debian (Bridge AP)...');
-
         const settings = await loadNetworkSettings(db);
         const resolved = resolveNetworkSettings(settings, { bridge_interface_name: 'br0', portal_port: PORT });
-
         console.log(`[Network] Configuring: WAN=${resolved.wan_interface_name}, LAN=${resolved.lan_interface_name}, LAN CIDR=${resolved.lan_ip_address}, Bridge=${resolved.bridge_interface_name}`);
-
         await sudoExec('systemctl stop systemd-resolved || true');
         await sudoExec('systemctl disable systemd-resolved || true');
-
         await applyLanBridgeApSettings({
             ...resolved,
             wan_interface_name: resolved.wan_interface_name,
@@ -405,16 +360,14 @@ async function initNetwork() {
             bridge_interface_name: resolved.bridge_interface_name,
             portal_port: resolved.portal_port
         });
-
         await reapplyNatRulesFromDb(resolved);
-
         console.log('Network initialization complete (Bridge AP).');
     } catch (e) {
         console.error('Network init failed:', e.message);
     }
 }
 
-let nextTcClassId = 1; // To assign unique class IDs for traffic control
+let nextTcClassId = 1;
 
 async function initTrafficControl() {
     if (os.platform() !== 'linux') {
@@ -423,35 +376,18 @@ async function initTrafficControl() {
     }
     try {
         console.log('Initializing Traffic Control (TC)...');
-
-        // In bridge/AP mode, shape traffic on br0.
         const lanInterface = 'br0';
-
-        // Load IFB module for ingress shaping (Upload limit)
         try { await sudoExec('modprobe ifb numifbs=1'); } catch (e) {}
         try { await sudoExec('ip link set dev ifb0 up'); } catch (e) {}
-
-        // Clear existing qdisc, classes, and filters on LAN interface
         await sudoExec(`tc qdisc del dev ${lanInterface} root || true`);
         await sudoExec(`tc qdisc del dev ${lanInterface} ingress || true`);
         await sudoExec(`tc qdisc del dev ifb0 root || true`);
-
-        // 1. LAN Interface (Download/Egress)
-        // Add HTB root qdisc
         await sudoExec(`tc qdisc add dev ${lanInterface} root handle 1: htb default 10`);
-        // Add default class (unlimited)
         await sudoExec(`tc class add dev ${lanInterface} parent 1: classid 1:10 htb rate 1000mbit`);
-
-        // 2. LAN Interface (Upload/Ingress) -> Redirect to IFB0
         await sudoExec(`tc qdisc add dev ${lanInterface} handle ffff: ingress`);
-        // Redirect all ingress traffic to ifb0
         await sudoExec(`tc filter add dev ${lanInterface} parent ffff: protocol ip u32 match u32 0 0 action mirred egress redirect dev ifb0`);
-
-        // 3. IFB0 Interface (Upload Shaping)
         await sudoExec(`tc qdisc add dev ifb0 root handle 1: htb default 10`);
         await sudoExec(`tc class add dev ifb0 parent 1: classid 1:10 htb rate 1000mbit`);
-
-
         console.log('Traffic Control (TC) initialization complete.');
     } catch (e) {
         console.error('Traffic Control (TC) init failed:', e.message);
@@ -459,7 +395,6 @@ async function initTrafficControl() {
     }
 }
 
-// CPU Usage Tracking for Windows/Linux
 let lastCpuUsage = 0;
 function getCpuStats() {
     const cpus = os.cpus();
@@ -475,17 +410,14 @@ function getCpuStats() {
     return { idle, total };
 }
 
-// Get Unique Machine ID
 function getMachineId() {
     try {
         if (os.platform() === 'win32') {
             try {
-                // Try PowerShell first (modern Windows)
                 const output = execSync('powershell -command "(Get-CimInstance -Class Win32_ComputerSystemProduct).UUID"', { stdio: ['ignore', 'pipe', 'ignore'] }).toString();
                 return output.trim();
             } catch (psErr) {
                 try {
-                    // Fallback to wmic but suppress errors
                     const output = execSync('wmic csproduct get uuid', { stdio: ['ignore', 'pipe', 'ignore'] }).toString();
                     return output.split('\n')[1].trim();
                 } catch (wmicErr) {
@@ -493,7 +425,6 @@ function getMachineId() {
                 }
             }
         } else {
-            // For Orange Pi / Linux (CPU Serial)
             try {
                 const output = execSync("cat /proc/cpuinfo | grep Serial | cut -d ':' -f 2", { stdio: ['ignore', 'pipe', 'ignore'] }).toString();
                 return output.trim() || os.hostname();
@@ -506,7 +437,7 @@ function getMachineId() {
     }
 }
 
-let serverStartTime = new Date(); // Store the server start time
+let serverStartTime = new Date();
 function formatDuration(totalMinutes) {
     const mins = Math.max(0, Math.floor(Number(totalMinutes) || 0));
     const days = Math.floor(mins / 1440);
@@ -527,11 +458,8 @@ function getSystemUptimeSeconds() {
             if (!Number.isNaN(uptimeSeconds) && uptimeSeconds >= 0) {
                 return Math.floor(uptimeSeconds);
             }
-        } catch (e) {
-            // fall back below
-        }
+        } catch (e) {}
     }
-
     return Math.max(0, Math.floor((Date.now() - serverStartTime.getTime()) / 1000));
 }
 
@@ -546,6 +474,7 @@ function formatUptime(seconds) {
     if (minutes || parts.length === 0) parts.push(`${minutes} minute${minutes !== 1 ? 's' : ''}`);
     return parts.join(', ');
 }
+
 let startMeasure = getCpuStats();
 setInterval(() => {
     const endMeasure = getCpuStats();
@@ -557,25 +486,21 @@ setInterval(() => {
     startMeasure = endMeasure;
 }, 2000);
 
-// Database setup
-let db = new sqlite3.Database(DATABASE_PATH, (err) => {
+db = new sqlite3.Database(DATABASE_PATH, (err) => {
     if (err) console.error(err.message);
     console.log(`Connected to the database at ${DATABASE_PATH}`);
 });
 
-// Create tables and auto-generate admin
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS admins (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE,
         password TEXT
     )`);
-
     db.run(`CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,
         value TEXT
     )`);
-
     db.run(`CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE,
@@ -586,22 +511,16 @@ db.serialize(() => {
         tc_class_id INTEGER DEFAULT 0,
         tc_mark INTEGER DEFAULT 0
     )`);
-
-    // Add tc_class_id and tc_mark columns if they don't exist (for existing databases)
-    db.run(`ALTER TABLE users ADD COLUMN tc_class_id INTEGER DEFAULT 0`, (err) => { /* ignore error if column exists */ });
-    db.run(`ALTER TABLE users ADD COLUMN tc_mark INTEGER DEFAULT 0`, (err) => { /* ignore error if column exists */ });
-    
-    // Add per-user bandwidth limit columns if they don't exist
-    db.run(`ALTER TABLE users ADD COLUMN download_limit REAL DEFAULT 0`, (err) => { /* ignore error if column exists */ });
-    db.run(`ALTER TABLE users ADD COLUMN upload_limit REAL DEFAULT 0`, (err) => { /* ignore error if column exists */ });
-
+    db.run(`ALTER TABLE users ADD COLUMN tc_class_id INTEGER DEFAULT 0`, (err) => {});
+    db.run(`ALTER TABLE users ADD COLUMN tc_mark INTEGER DEFAULT 0`, (err) => {});
+    db.run(`ALTER TABLE users ADD COLUMN download_limit REAL DEFAULT 0`, (err) => {});
+    db.run(`ALTER TABLE users ADD COLUMN upload_limit REAL DEFAULT 0`, (err) => {});
     db.run(`CREATE TABLE IF NOT EXISTS rates (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         amount INTEGER,
         duration INTEGER,
         unit TEXT DEFAULT 'minutes'
     )`);
-
     db.run(`CREATE TABLE IF NOT EXISTS vouchers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         code TEXT UNIQUE,
@@ -611,12 +530,7 @@ db.serialize(() => {
         status TEXT DEFAULT 'unused',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
-
-    // Add amount column to vouchers if it doesn't exist (for existing databases)
-    db.run(`ALTER TABLE vouchers ADD COLUMN amount INTEGER DEFAULT 0`, (err) => {
-        // Ignore error if column already exists
-    });
-
+    db.run(`ALTER TABLE vouchers ADD COLUMN amount INTEGER DEFAULT 0`, (err) => {});
     db.run(`CREATE TABLE IF NOT EXISTS sales (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         amount INTEGER,
@@ -625,35 +539,23 @@ db.serialize(() => {
         user_mac TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
-
-    // Add type and description columns to sales if they don't exist
     db.run(`ALTER TABLE sales ADD COLUMN type TEXT`, (err) => {
-        // Populate missing types for old records if they exist
         db.run(`UPDATE sales SET type = 'voucher' WHERE type IS NULL AND description LIKE 'Voucher Used:%'`);
         db.run(`UPDATE sales SET type = 'coin' WHERE type IS NULL AND description LIKE 'Coin Insertion%'`);
     });
-
-    db.run(`ALTER TABLE sales ADD COLUMN description TEXT`, (err) => {
-        // Ignore error if column already exists
-    });
-
-    db.run(`ALTER TABLE sales ADD COLUMN user_mac TEXT`, (err) => {
-        // Ignore error if column already exists
-    });
-
+    db.run(`ALTER TABLE sales ADD COLUMN description TEXT`, (err) => {});
+    db.run(`ALTER TABLE sales ADD COLUMN user_mac TEXT`, (err) => {});
     db.run(`CREATE TABLE IF NOT EXISTS blocked_websites (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         domain TEXT UNIQUE,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
-
     db.run(`CREATE TABLE IF NOT EXISTS mac_filters (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         mac_address TEXT UNIQUE,
         description TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
-
     db.run(`CREATE TABLE IF NOT EXISTS port_triggers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT,
@@ -663,7 +565,6 @@ db.serialize(() => {
         open_proto TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
-
     db.run(`CREATE TABLE IF NOT EXISTS generated_licenses (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         key TEXT UNIQUE,
@@ -672,7 +573,6 @@ db.serialize(() => {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
 
-    // Default settings
     const defaultSettings = [
         ['wifi_name', 'PisoWiFi'],
         ['wifi_name_color', '#1a73e8'],
@@ -692,7 +592,7 @@ db.serialize(() => {
         ['maya_api_key', ''],
         ['merchant_id', ''],
         ['anti_tethering', 'false'],
-        ['mac_filter_mode', 'disabled'], // disabled, allow, block
+        ['mac_filter_mode', 'disabled'],
         ['qos_enabled', 'false'],
         ['qos_gaming_priority', 'high'],
         ['qos_streaming_priority', 'medium'],
@@ -713,14 +613,10 @@ db.serialize(() => {
         ['wan_dns_servers', '8.8.8.8,8.8.4.4'],
         ['lan_interface_name', 'enx00e04c680013'],
         ['lan_ip_address', '10.0.0.1/24'],
-        ['lan_dns_servers', '8.8.8.8,8.8.4.4'],
+        ['lan_dns_servers', '8.8.8.8,8.8.4.4']
     ];
+    defaultSettings.forEach(setting => db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)`, setting));
 
-    defaultSettings.forEach(setting => {
-        db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)`, setting);
-    });
-
-    // Add network interface settings to the database if they don't exist
     const networkInterfaceSettings = [
         ['wan_interface_name', 'enp1s0'],
         ['wan_config_type', 'dhcp'],
@@ -731,23 +627,15 @@ db.serialize(() => {
         ['lan_ip_address', '10.0.0.1/24'],
         ['lan_dns_servers', '8.8.8.8,8.8.4.4']
     ];
-    networkInterfaceSettings.forEach(setting => {
-        db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)`, setting);
-    });
+    networkInterfaceSettings.forEach(setting => db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)`, setting));
 
-    // Auto-fix removed: preserve saved network settings instead of overwriting them on every startup
-
-    // Ensure new audio settings exist for existing databases
     const newAudioSettings = [
         ['coin_drop_audio', '/media/coins.wav'],
         ['salamat_audio', '/media/Salamat .mp3'],
         ['countdown_tick_audio', '']
     ];
-    newAudioSettings.forEach(setting => {
-        db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)`, setting);
-    });
+    newAudioSettings.forEach(setting => db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)`, setting));
 
-    // Default rates
     db.get(`SELECT COUNT(*) as count FROM rates`, (err, row) => {
         if (row.count === 0) {
             const defaultRates = [
@@ -755,9 +643,7 @@ db.serialize(() => {
                 [5, 1, 'hour'],
                 [10, 3, 'hours']
             ];
-            defaultRates.forEach(rate => {
-                db.run(`INSERT INTO rates (amount, duration, unit) VALUES (?, ?, ?)`, rate);
-            });
+            defaultRates.forEach(rate => db.run(`INSERT INTO rates (amount, duration, unit) VALUES (?, ?, ?)`, rate));
         }
     });
 
@@ -769,7 +655,6 @@ db.serialize(() => {
         }
     });
 
-    // Re-enabled network init and traffic control init after disabling UFW
     initNetwork().then(() => {
         initTrafficControl();
         restoreOnlineUsers();
@@ -777,35 +662,23 @@ db.serialize(() => {
     restoreSavedNetworkSettings({ db }).catch((err) => {
         console.error('Failed to restore saved network settings on startup:', err.message);
     });
-    initSerialPort(); // Re-enabled automatic serial port initialization
+    initSerialPort();
 });
 
-// Function to send commands to NodeMCU
 function sendSerialCommand(command) {
     if (serialPort && serialPort.isOpen) {
         serialPort.write(command + '\n', (err) => {
-            if (err) {
-                console.error('Error writing to serial port:', err.message);
-            } else {
-                console.log(`Sent command to NodeMCU: ${command}`);
-            }
+            if (err) console.error('Error writing to serial port:', err.message);
+            else console.log(`Sent command to NodeMCU: ${command}`);
         });
     } else {
         console.warn(`Serial port not open. Cannot send command: ${command}`);
     }
 }
 
-// Function to initialize serial port
 function initSerialPort() {
     SerialPort.list().then(ports => {
-        const nodeMcuPort = ports.find(port => 
-            NODE_MCU_IDENTIFIERS.some(identifier => 
-                (port.manufacturer && port.manufacturer.includes(identifier)) || 
-                (port.pnpId && port.pnpId.includes(identifier)) ||
-                (port.friendlyName && port.friendlyName.includes(identifier)) ||
-                (port.path && port.path.includes('ttyUSB')) // Common Linux serial port pattern
-            )
-        );
+        const nodeMcuPort = ports.find(port => NODE_MCU_IDENTIFIERS.some(identifier => (port.manufacturer && port.manufacturer.includes(identifier)) || (port.pnpId && port.pnpId.includes(identifier)) || (port.friendlyName && port.friendlyName.includes(identifier)) || (port.path && port.path.includes('ttyUSB'))));
         if (nodeMcuPort) {
             console.log(`NodeMCU found on port: ${nodeMcuPort.path}`);
             if (serialPort && serialPort.isOpen) {
@@ -818,12 +691,11 @@ function initSerialPort() {
 
             serialPort.on('open', () => {
                 console.log(`Serial port ${nodeMcuPort.path} to NodeMCU opened automatically.`);
-                // Do not enable coinslot automatically here. It will be controlled by WebSocket events.
-                lastTotalCoinsFromMCU = 0; // Initialize lastTotalCoinsFromMCU on open
+                lastTotalCoinsFromMCU = 0;
             });
 
             parser.on('data', data => {
-                console.log('Data from NodeMCU:', data); // Keep this log for debugging
+                console.log('Data from NodeMCU:', data);
                 if (data.startsWith('Total Coins:')) {
                     const currentTotalFromMCU = parseInt(data.split(':')[1].trim());
                     if (!isNaN(currentTotalFromMCU)) {
@@ -832,32 +704,28 @@ function initSerialPort() {
                             currentSessionCoins += amountInserted;
                             io.emit('coinInserted', { amount: amountInserted, totalCoins: currentSessionCoins, mac: activeCoinInserterMac });
                             console.log(`Coin of ${amountInserted} detected. Total: ${currentSessionCoins}`);
-                            
-                            // Reset coinslot disable timeout on coin activity
                             if (coinslotEnableTimeout) {
                                 clearTimeout(coinslotEnableTimeout);
                                 coinslotEnableTimeout = setTimeout(() => {
-                                    if (!coinInsertionActive) { // Only disable if no user is actively inserting
+                                    if (!coinInsertionActive) {
                                         sendSerialCommand('D');
                                         console.log('Coinslot disabled due to inactivity timeout after coin drop.');
                                     }
                                 }, COINSLOT_INACTIVITY_TIMEOUT);
                             }
                         }
-                        lastTotalCoinsFromMCU = currentTotalFromMCU; // Update last known total
+                        lastTotalCoinsFromMCU = currentTotalFromMCU;
                     }
-                } else if (data.startsWith('COIN:')) { // Also handle the COIN:X format if NodeMCU sends it
+                } else if (data.startsWith('COIN:')) {
                     const amount = parseInt(data.split(':')[1]);
                     if (!isNaN(amount) && amount > 0) {
                         currentSessionCoins += amount;
                         io.emit('coinInserted', { amount: amount, totalCoins: currentSessionCoins, mac: activeCoinInserterMac });
                         console.log(`Coin of ${amount} detected. Total: ${currentSessionCoins}`);
-                        
-                        // Reset coinslot disable timeout on coin activity
                         if (coinslotEnableTimeout) {
                             clearTimeout(coinslotEnableTimeout);
                             coinslotEnableTimeout = setTimeout(() => {
-                                if (!coinInsertionActive) { // Only disable if no user is actively inserting
+                                if (!coinInsertionActive) {
                                     sendSerialCommand('D');
                                     console.log('Coinslot disabled due to inactivity timeout after coin drop.');
                                 }
@@ -870,10 +738,10 @@ function initSerialPort() {
             serialPort.on('close', () => {
                 console.log(`Serial port ${nodeMcuPort.path} to NodeMCU closed.`);
                 serialPort = null;
-                coinInsertionActive = false; // Reset state
+                coinInsertionActive = false;
                 activeCoinInserterMac = null;
                 if (coinslotEnableTimeout) clearTimeout(coinslotEnableTimeout);
-                sendSerialCommand('D'); // Ensure coinslot is disabled on close
+                sendSerialCommand('D');
             });
 
             serialPort.on('error', (err) => {
@@ -882,7 +750,6 @@ function initSerialPort() {
                     serialPort.close();
                 }
             });
-
         } else {
             console.warn('NodeMCU not found. Automatic serial port initialization skipped.');
         }
@@ -891,7 +758,6 @@ function initSerialPort() {
     });
 }
 
-// API to list available serial ports
 app.get('/api/serial-ports', isAuthenticated, async (req, res) => {
     try {
         const ports = await SerialPort.list();
@@ -899,9 +765,9 @@ app.get('/api/serial-ports', isAuthenticated, async (req, res) => {
             path: port.path,
             manufacturer: port.manufacturer || 'N/A',
             pnpId: port.pnpId || 'N/A',
-            friendlyName: port.friendlyName || 'N/A', // Add friendlyName
-            vendorId: port.vendorId || 'N/A',       // Add vendorId
-            productId: port.productId || 'N/A'      // Add productId
+            friendlyName: port.friendlyName || 'N/A',
+            vendorId: port.vendorId || 'N/A',
+            productId: port.productId || 'N/A'
         })));
     } catch (err) {
         console.error('Error listing serial ports:', err.message);
@@ -909,14 +775,12 @@ app.get('/api/serial-ports', isAuthenticated, async (req, res) => {
     }
 });
 
-// API to connect to a specific serial port
 app.post('/api/serial-port/connect', isAuthenticated, async (req, res) => {
     const { portPath } = req.body;
     if (!portPath) {
         return res.status(400).json({ error: 'Port path is required' });
     }
 
-    // Close existing port if open
     if (serialPort && serialPort.isOpen) {
         serialPort.close();
         serialPort = null;
@@ -926,65 +790,60 @@ app.post('/api/serial-port/connect', isAuthenticated, async (req, res) => {
         serialPort = new SerialPort({ path: portPath, baudRate: 115200 });
         const parser = serialPort.pipe(new ReadlineParser({ delimiter: '\n' }));
 
-            serialPort.on('open', () => {
-                console.log(`Serial port ${portPath} to NodeMCU opened.`);
-                // Do not enable coinslot automatically here. It will be controlled by WebSocket events.
-                lastTotalCoinsFromMCU = 0; // Initialize on connect
-                res.json({ success: true, message: `Connected to ${portPath}` });
-            });
+        serialPort.on('open', () => {
+            console.log(`Serial port ${portPath} to NodeMCU opened.`);
+            lastTotalCoinsFromMCU = 0;
+            res.json({ success: true, message: `Connected to ${portPath}` });
+        });
 
-            parser.on('data', data => {
-                console.log('Data from NodeMCU:', data); // Keep this log for debugging
-                if (data.startsWith('Total Coins:')) {
-                    const currentTotalFromMCU = parseInt(data.split(':')[1].trim());
-                    if (!isNaN(currentTotalFromMCU)) {
-                        if (currentTotalFromMCU > lastTotalCoinsFromMCU) {
-                            const amountInserted = currentTotalFromMCU - lastTotalCoinsFromMCU;
-                            currentSessionCoins += amountInserted;
-                            io.emit('coinInserted', { amount: amountInserted, totalCoins: currentSessionCoins, mac: activeCoinInserterMac });
-                            console.log(`Coin of ${amountInserted} detected. Total: ${currentSessionCoins}`);
-
-                            // Reset coinslot disable timeout on coin activity
-                            if (coinslotEnableTimeout) {
-                                clearTimeout(coinslotEnableTimeout);
-                                coinslotEnableTimeout = setTimeout(() => {
-                                    if (!coinInsertionActive) { // Only disable if no user is actively inserting
-                                        sendSerialCommand('D');
-                                        console.log('Coinslot disabled due to inactivity timeout after coin drop.');
-                                    }
-                                }, COINSLOT_INACTIVITY_TIMEOUT);
-                            }
-                        }
-                        lastTotalCoinsFromMCU = currentTotalFromMCU; // Update last known total
-                    }
-                } else if (data.startsWith('COIN:')) { // Also handle the COIN:X format if NodeMCU sends it
-                    const amount = parseInt(data.split(':')[1]);
-                    if (!isNaN(amount) && amount > 0) {
-                        currentSessionCoins += amount;
-                        io.emit('coinInserted', { amount: amount, totalCoins: currentSessionCoins, mac: activeCoinInserterMac });
-                        console.log(`Coin of ${amount} detected. Total: ${currentSessionCoins}`);
-                        
-                        // Reset coinslot disable timeout on coin activity
+        parser.on('data', data => {
+            console.log('Data from NodeMCU:', data);
+            if (data.startsWith('Total Coins:')) {
+                const currentTotalFromMCU = parseInt(data.split(':')[1].trim());
+                if (!isNaN(currentTotalFromMCU)) {
+                    if (currentTotalFromMCU > lastTotalCoinsFromMCU) {
+                        const amountInserted = currentTotalFromMCU - lastTotalCoinsFromMCU;
+                        currentSessionCoins += amountInserted;
+                        io.emit('coinInserted', { amount: amountInserted, totalCoins: currentSessionCoins, mac: activeCoinInserterMac });
+                        console.log(`Coin of ${amountInserted} detected. Total: ${currentSessionCoins}`);
                         if (coinslotEnableTimeout) {
                             clearTimeout(coinslotEnableTimeout);
                             coinslotEnableTimeout = setTimeout(() => {
-                                if (!coinInsertionActive) { // Only disable if no user is actively inserting
+                                if (!coinInsertionActive) {
                                     sendSerialCommand('D');
                                     console.log('Coinslot disabled due to inactivity timeout after coin drop.');
                                 }
                             }, COINSLOT_INACTIVITY_TIMEOUT);
                         }
                     }
+                    lastTotalCoinsFromMCU = currentTotalFromMCU;
                 }
-            });
+            } else if (data.startsWith('COIN:')) {
+                const amount = parseInt(data.split(':')[1]);
+                if (!isNaN(amount) && amount > 0) {
+                    currentSessionCoins += amount;
+                    io.emit('coinInserted', { amount: amount, totalCoins: currentSessionCoins, mac: activeCoinInserterMac });
+                    console.log(`Coin of ${amount} detected. Total: ${currentSessionCoins}`);
+                    if (coinslotEnableTimeout) {
+                        clearTimeout(coinslotEnableTimeout);
+                        coinslotEnableTimeout = setTimeout(() => {
+                            if (!coinInsertionActive) {
+                                sendSerialCommand('D');
+                                console.log('Coinslot disabled due to inactivity timeout after coin drop.');
+                            }
+                        }, COINSLOT_INACTIVITY_TIMEOUT);
+                    }
+                }
+            }
+        });
 
         serialPort.on('close', () => {
             console.log(`Serial port ${portPath} to NodeMCU closed.`);
             serialPort = null;
-            coinInsertionActive = false; // Reset state
+            coinInsertionActive = false;
             activeCoinInserterMac = null;
             if (coinslotEnableTimeout) clearTimeout(coinslotEnableTimeout);
-            sendSerialCommand('D'); // Ensure coinslot is disabled on close
+            sendSerialCommand('D');
         });
 
         serialPort.on('error', (err) => {
@@ -994,30 +853,25 @@ app.post('/api/serial-port/connect', isAuthenticated, async (req, res) => {
             }
             res.status(500).json({ error: `Serial port error: ${err.message}` });
         });
-
     } catch (err) {
         console.error('Error connecting to serial port:', err.message);
         res.status(500).json({ error: `Failed to connect to serial port: ${err.message}` });
     }
 });
 
-// Serve static files from the 'public' directory
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
-    setHeaders: (res, path) => {
-        // Disable cache for uploads to fix "picture not loading" issues
+    setHeaders: (res, p) => {
         res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
     }
 }));
 app.use('/media', express.static(path.join(__dirname, 'media')));
 
-// Ensure uploads directory exists
 const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir);
 }
 
-// Multer setup for wallpaper upload
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         cb(null, 'uploads/');
@@ -1031,36 +885,29 @@ const storage = multer.diskStorage({
 
 const upload = multer({
     storage: storage,
-    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+    limits: { fileSize: 10 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
         if (file.fieldname === 'audio') {
             const filetypes = /mp3|m4a|wav|ogg|mpeg/;
             const mimetype = filetypes.test(file.mimetype);
             const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
-            if (mimetype && extname) {
-                return cb(null, true);
-            }
+            if (mimetype && extname) return cb(null, true);
             return cb(new Error('Only audio files (MP3, M4A, WAV, OGG) are allowed!'));
         } else if (file.fieldname === 'database') {
-            return cb(null, true); // Allow .db files
+            return cb(null, true);
         } else if (file.fieldname === 'firmware') {
-            return cb(null, true); // Allow firmware files
+            return cb(null, true);
         } else {
             const filetypes = /jpeg|jpg|png|gif|webp/;
             const mimetype = filetypes.test(file.mimetype);
             const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
-            if (mimetype && extname) {
-                return cb(null, true);
-            }
+            if (mimetype && extname) return cb(null, true);
             return cb(new Error('Only images (including GIFs) are allowed!'));
         }
     }
 });
 
-// Global variable to track current session coins (simulated)
 let currentSessionCoins = 0;
-
-// Routes
 
 async function redirectToPortal(req, res) {
     const portalBaseUrl = await getPortalBaseUrl();
@@ -1070,17 +917,15 @@ async function redirectToPortal(req, res) {
 app.get('/generate_204', async (req, res) => redirectToPortal(req, res));
 app.get('/hotspot-detect.html', async (req, res) => redirectToPortal(req, res));
 app.get('/connecttest.txt', async (req, res) => redirectToPortal(req, res));
-app.get('/ncsi.txt', async (req, res) => redirectToPortal(req, res)); // Windows
-app.get('/canonical.html', async (req, res) => redirectToPortal(req, res)); // Android
-app.get('/success.txt', async (req, res) => redirectToPortal(req, res)); // Firefox
+app.get('/ncsi.txt', async (req, res) => redirectToPortal(req, res));
+app.get('/canonical.html', async (req, res) => redirectToPortal(req, res));
+app.get('/success.txt', async (req, res) => redirectToPortal(req, res));
 
 app.get('/', (req, res) => {
-    // Prevent caching to avoid loading glitches
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// API to get available network interfaces
 app.get('/api/network/available-interfaces', isAuthenticated, (req, res) => {
     if (os.platform() === 'linux') {
         exec('ls /sys/class/net', (error, stdout, stderr) => {
@@ -1089,12 +934,10 @@ app.get('/api/network/available-interfaces', isAuthenticated, (req, res) => {
                 console.error(`Stderr from ls /sys/class/net: ${stderr}`);
                 return res.status(500).json({ error: 'Failed to list network interfaces', details: stderr });
             }
-            console.log(`Stdout from ls /sys/class/net: ${stdout}`); // Idinagdag para sa debugging
-            const interfaces = stdout.split('\n').map(s => s.trim()).filter(s => s.length > 0 && s !== 'lo'); // Exclude loopback
+            const interfaces = stdout.split('\n').map(s => s.trim()).filter(s => s.length > 0 && s !== 'lo');
             res.json(interfaces);
         });
     } else if (os.platform() === 'win32') {
-        // For Windows, use PowerShell to get network adapter names
         exec('powershell -Command "Get-NetAdapter | Select-Object -ExpandProperty Name"', (error, stdout, stderr) => {
             if (error) {
                 console.error(`Error listing network interfaces on Windows: ${error.message}`);
@@ -1105,23 +948,19 @@ app.get('/api/network/available-interfaces', isAuthenticated, (req, res) => {
             res.json(interfaces);
         });
     } else {
-        // For other platforms, return mock data
         return res.json(['eth0', 'eth1', 'wlan0', 'lo']);
     }
 });
 
-// API to get client info (IP and MAC)
 app.get('/api/client-info', (req, res) => {
     const ip = req.ip || req.connection.remoteAddress;
     const mac = getMacFromIp(ip);
     res.json({ ip, mac });
 });
 
-// API to check current user status (Public)
 app.get('/api/my-status', (req, res) => {
     const ip = req.ip || req.connection.remoteAddress;
     const mac = getMacFromIp(ip);
-    
     console.log(`[Status Check] IP: ${ip}, MAC: ${mac}`);
 
     if (!mac) {
@@ -1143,12 +982,10 @@ app.get('/api/my-status', (req, res) => {
     });
 });
 
-// Public API to check current session coins
 app.get('/api/current-coins', (req, res) => {
     res.json({ amount: currentSessionCoins });
 });
 
-// API to simulate/register coin insertion (usually called by hardware script)
 app.post('/api/insert-coin', (req, res) => {
     const { amount } = req.body;
     const ip = req.ip || req.connection.remoteAddress;
@@ -1156,24 +993,17 @@ app.post('/api/insert-coin', (req, res) => {
 
     if (amount) {
         currentSessionCoins += parseFloat(amount);
-        
-        // If we have a MAC, we can automatically update or create a user session
         if (mac && mac !== "00:00:00:00:00:00") {
             db.get(`SELECT * FROM users WHERE mac_address = ?`, [mac], (err, user) => {
-                if (user) {
-                    // User exists, we'll add time later when they click "Use Time"
-                    // For now just track the coins
-                }
+                if (user) {}
             });
         }
-
         res.json({ success: true, total: currentSessionCoins, mac });
     } else {
         res.status(400).json({ error: 'Amount is required' });
     }
 });
 
-// Helper to calculate minutes from duration and unit
 function calculateMinutes(duration, unit) {
     let mins = parseInt(duration);
     if (unit === 'hour' || unit === 'hours') mins *= 60;
@@ -1181,11 +1011,10 @@ function calculateMinutes(duration, unit) {
     return mins;
 }
 
-// API to convert coins to time and activate internet
 app.post('/api/use-time', (req, res) => {
     const ip = req.ip || req.connection.remoteAddress;
     const mac = getMacFromIp(ip);
-    
+
     if (!mac) {
         return res.status(400).json({ error: 'Could not detect your device MAC address. Please try refreshing the page.' });
     }
@@ -1194,7 +1023,6 @@ app.post('/api/use-time', (req, res) => {
         return res.status(400).json({ error: 'No coins inserted.' });
     }
 
-    // Calculate total minutes based on rates
     db.all(`SELECT * FROM rates ORDER BY amount DESC`, [], (err, rates) => {
         let remainingCoins = currentSessionCoins;
         let totalMinutes = 0;
@@ -1214,7 +1042,6 @@ app.post('/api/use-time', (req, res) => {
             if (err) return res.status(500).json({ error: 'Database error' });
 
             if (user) {
-                // User exists, update their time
                 const newTime = user.time_left + totalMinutes;
                 db.run(`UPDATE users SET time_left = ?, status = 'Online', ip_address = ? WHERE mac_address = ?`,
                     [newTime, ip, mac], (err) => {
@@ -1223,22 +1050,21 @@ app.post('/api/use-time', (req, res) => {
                         handleAllowMac(mac, ip);
                         db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'coin', ?, ?)`,
                             [currentSessionCoins - remainingCoins, `Coin Insertion (${mac})`, mac]);
-                        currentSessionCoins = remainingCoins; // Update session coins
+                        currentSessionCoins = remainingCoins;
                         res.json({ success: true, minutesAdded: totalMinutes, totalTime: newTime });
                     });
             } else {
-                // User does not exist, create a new one
                 const username = `User-${mac.replace(/:/g, '').slice(-4)}-${Math.floor(Math.random() * 1000)}`;
                 db.run(`INSERT INTO users (username, ip_address, mac_address, time_left, status) VALUES (?, ?, ?, ?, 'Online')`,
                     [username, ip, mac, totalMinutes], (err) => {
                         if (err) {
                             return res.status(500).json({ error: 'Failed to create new user.' });
                         }
-                        
-                            handleAllowMac(mac, ip);
+
+                        handleAllowMac(mac, ip);
                         db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'coin', ?, ?)`,
                             [currentSessionCoins - remainingCoins, `Coin Insertion (${mac})`, mac]);
-                        currentSessionCoins = remainingCoins; // Update session coins
+                        currentSessionCoins = remainingCoins;
                         res.json({ success: true, minutesAdded: totalMinutes, totalTime: totalMinutes });
                     });
             }
@@ -1246,13 +1072,11 @@ app.post('/api/use-time', (req, res) => {
     });
 });
 
-// Reset session coins
 app.post('/api/reset-coins', (req, res) => {
     currentSessionCoins = 0;
     res.json({ success: true });
 });
 
-// API to use a voucher code
 app.post('/api/use-voucher', (req, res) => {
     const { code } = req.body;
     const ip = req.ip || req.connection.remoteAddress;
@@ -1273,10 +1097,7 @@ app.post('/api/use-voucher', (req, res) => {
         let totalMinutes = calculateMinutes(voucher.duration, voucher.unit);
 
         db.serialize(() => {
-            // Mark voucher as used
             db.run(`UPDATE vouchers SET status = 'used' WHERE id = ?`, [voucher.id]);
-            
-            // Record sale using the amount stored in the voucher
             db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'voucher', ?, ?)`, 
                 [voucher.amount || 0, `Voucher Used: ${voucher.code}`, mac]);
 
@@ -1299,11 +1120,11 @@ app.post('/api/use-voucher', (req, res) => {
                                 db.run(`UPDATE users SET time_left = time_left + ?, status = 'Online' WHERE mac_address = ?`,
                                     [totalMinutes, ip, mac], (err2) => {
                                         if (err2) return res.status(500).json({ error: 'Failed to create user' });
-                            handleAllowMac(mac, ip);
+                                        handleAllowMac(mac, ip);
                                         res.json({ success: true, minutesAdded: totalMinutes, totalTime: totalMinutes });
                                     });
                             } else {
-                                allowMac(mac, ip);
+                                handleAllowMac(mac, ip);
                                 res.json({ success: true, minutesAdded: totalMinutes, totalTime: totalMinutes });
                             }
                         });
@@ -1321,7 +1142,6 @@ app.get('/admin', isAuthenticated, (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
-// API Login
 app.post('/api/login', (req, res) => {
     const { username, password } = req.body;
     db.get(`SELECT * FROM admins WHERE username = ?`, [username], async (err, admin) => {
@@ -1343,7 +1163,6 @@ app.get('/api/logout', (req, res) => {
     res.redirect('/login');
 });
 
-// API Logo Upload
 app.post('/api/upload-logo', isAuthenticated, (req, res) => {
     upload.single('logo')(req, res, (err) => {
         if (err) {
@@ -1374,9 +1193,6 @@ app.post('/api/clear-logo', isAuthenticated, (req, res) => {
     });
 });
 
-
-
-// API Audio Upload
 app.post('/api/upload-audio', isAuthenticated, (req, res) => {
     upload.single('audio')(req, res, (err) => {
         if (err) {
@@ -1403,7 +1219,6 @@ app.post('/api/upload-audio', isAuthenticated, (req, res) => {
         } else if (type === 'countdown_tick') {
             key = 'countdown_tick_audio';
         }
-        // Removed background_music_audio handling
         
         console.log(`Server: Updating setting key '${key}' with path '${audioPath}'`);
 
@@ -1431,9 +1246,8 @@ app.post('/api/clear-audio', isAuthenticated, (req, res) => {
         defaultValue = '/media/Salamat .mp3';
     } else if (type === 'countdown_tick') {
         key = 'countdown_tick_audio';
-        defaultValue = ''; // No default audio for tick sound
+        defaultValue = '';
     }
-    // Removed background_music_audio handling
 
     db.run(`UPDATE settings SET value = ? WHERE key = ?`, [defaultValue, key], (err) => {
         if (err) return res.status(500).json({ error: 'Database error' });
@@ -1441,7 +1255,6 @@ app.post('/api/clear-audio', isAuthenticated, (req, res) => {
     });
 });
 
-// API Settings
 app.get('/api/settings', isAuthenticated, (req, res) => {
     db.all(`SELECT * FROM settings`, [], (err, rows) => {
         if (err) return res.status(500).json({ error: 'Database error' });
@@ -1457,14 +1270,12 @@ app.post('/api/settings', isAuthenticated, async (req, res) => {
     db.serialize(() => {
         const stmt = db.prepare(`UPDATE settings SET value = ? WHERE key = ?`);
         Object.keys(settings).forEach(key => {
-            // Skip landing_logo if it is not in the body to avoid overwriting with empty
             if (key === 'landing_logo' && !settings[key]) return;
             stmt.run(settings[key], key);
         });
         stmt.finalize();
     });
 
-    // If bandwidth limits are updated, re-apply to all active users
     if (settings.download_limit !== undefined || settings.upload_limit !== undefined) {
         const downloadLimit = parseFloat(settings.download_limit || '0');
         const uploadLimit = parseFloat(settings.upload_limit || '0');
@@ -1477,9 +1288,7 @@ app.post('/api/settings', isAuthenticated, async (req, res) => {
             users.forEach(user => {
                 if (user.ip_address) {
                     const classId = user.tc_class_id || (user.id + 100);
-                    // Remove existing limits first
                     removeBandwidthLimits(user.ip_address, classId);
-                    // Apply new limits
                     applyBandwidthLimits(user.ip_address, downloadLimit, uploadLimit, classId);
                 }
             });
@@ -1488,7 +1297,6 @@ app.post('/api/settings', isAuthenticated, async (req, res) => {
     res.json({ success: true });
 });
 
-// API Rates
 app.get('/api/rates', (req, res) => {
     db.all(`SELECT * FROM rates ORDER BY amount ASC`, [], (err, rows) => {
         if (err) return res.status(500).json({ error: 'Database error' });
@@ -1520,7 +1328,6 @@ app.put('/api/rates/:id', isAuthenticated, (req, res) => {
     });
 });
 
-// API Vouchers
 app.get('/api/vouchers', isAuthenticated, (req, res) => {
     db.all(`SELECT * FROM vouchers ORDER BY created_at DESC`, [], (err, rows) => {
         if (err) return res.status(500).json({ error: 'Database error' });
@@ -1541,7 +1348,6 @@ app.post('/api/vouchers', isAuthenticated, (req, res) => {
         let voucherAmount = parseInt(amount);
         if (isNaN(voucherAmount)) voucherAmount = 0;
 
-        // If amount is 0, try to find a matching rate to automatically set the price
         if (voucherAmount === 0 && duration && unit) {
             const unitSingular = unit.endsWith('s') ? unit.slice(0, -1) : unit;
             const unitPlural = unitSingular + 's';
@@ -1583,18 +1389,15 @@ app.delete('/api/vouchers/:id', isAuthenticated, (req, res) => {
     });
 });
 
-// Public API for WiFi Name and Rates
 app.get('/api/config', (req, res) => {
         db.all(`SELECT * FROM settings`, [], (err, settingsRows) => {
             if (err) return res.status(500).json({ error: 'Database error' });
             const config = {};
             settingsRows.forEach(row => config[row.key] = row.value);
 
-            // Ensure insert_coin_audio defaults to /media/Maaari.m4a if empty
             if (!config.insert_coin_audio || config.insert_coin_audio === '') {
                 config.insert_coin_audio = '/media/Maaari.m4a';
             }
-            // Removed background_music_audio handling
             console.log(`Server: Sending insert_coin_audio as '${config.insert_coin_audio}' to frontend.`);
             
             db.all(`SELECT * FROM rates ORDER BY amount ASC`, [], (err, ratesRows) => {
@@ -1605,7 +1408,6 @@ app.get('/api/config', (req, res) => {
         });
 });
 
-// API to get users
 app.get('/api/users', isAuthenticated, async (req, res) => {
     try {
         const settings = await new Promise((resolve, reject) => {
@@ -1625,7 +1427,6 @@ app.get('/api/users', isAuthenticated, async (req, res) => {
             
             const usersWithBandwidth = rows.map(user => ({
                 ...user,
-                // Use user-specific limit if set, otherwise use global limit for online users
                 download_limit: user.download_limit > 0 ? user.download_limit : (user.status === 'Online' ? globalDownloadLimit : 0),
                 upload_limit: user.upload_limit > 0 ? user.upload_limit : (user.status === 'Online' ? globalUploadLimit : 0)
             }));
@@ -1637,7 +1438,6 @@ app.get('/api/users', isAuthenticated, async (req, res) => {
     }
 });
 
-// API to get a specific user's transaction history
 app.get('/api/users/:mac/history', isAuthenticated, (req, res) => {
     const userMac = req.params.mac;
     db.all(`SELECT * FROM sales WHERE user_mac = ? ORDER BY created_at DESC`, [userMac], (err, rows) => {
@@ -2136,7 +1936,6 @@ app.post('/api/network/clear', isAuthenticated, (req, res) => {
         });
     });
 });
-
 
 app.get('/api/network/interfaces', isAuthenticated, (req, res) => {
     db.all(`SELECT key, value FROM settings WHERE key LIKE 'wan_%' OR key LIKE 'lan_%'`, [], (err, rows) => {
