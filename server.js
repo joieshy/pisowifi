@@ -12,57 +12,37 @@ const { exec, execSync } = require('child_process');
 const https = require('https');
 const axios = require('axios');
 const { SerialPort, ReadlineParser } = require('serialport'); // Import serialport
-const { applyNetworkConfig, applyAllNetworkSettings, applyLanBridgeApSettings, sudoExec, autoConfigureNetwork, getNetworkStatus, getCurrentLanSettings, applyDynamicLanIp, loadNetworkSettings, resolveNetworkSettings, restoreSavedNetworkSettings, persistRuntimeNetworkSettings } = require('./services/networkService'); // Idinagdag ito
+const { applyNetworkConfig, applyLanBridgeApSettings, sudoExec, autoConfigureNetwork, getNetworkStatus, getCurrentLanSettings, applyDynamicLanIp, loadNetworkSettings, resolveNetworkSettings, restoreSavedNetworkSettings, persistRuntimeNetworkSettings, initializeNetwork, reapplyNatRulesFromDb, allowMac, blockMac } = require('./services/networkService');
 const app = express();
 app.set('trust proxy', true);
 
 const IPTABLES = '/usr/sbin/iptables';
 
-// --- DYNAMIC NETWORK INITIALIZATION ---
-// Ito ang magpapatakbo ng internet sharing pag-start ng app
-async function initializeNetwork() {
-    if (os.platform() !== 'linux') return;
-
+const startApp = async () => {
     try {
-        const settings = await new Promise((resolve) => {
-            db.all(`SELECT key, value FROM settings WHERE key IN ('wan_interface_name','lan_interface_name')`, [], (err, rows) => {
+        const settings = await new Promise((resolve, reject) => {
+            db.all(`SELECT key, value FROM settings WHERE key IN ('wan_interface_name','lan_interface_name','lan_ip_address')`, [], (err, rows) => {
+                if (err) return reject(err);
                 const s = {};
                 if (rows) rows.forEach(r => s[r.key] = r.value);
                 resolve(s);
             });
         });
 
-        const wan = settings.wan_interface_name || 'end0';
-        const lan = settings.lan_interface_name || 'enx00e04c680013';
+        await initializeNetwork(settings);
 
-        console.log(`[Network] Initializing: WAN=${wan}, LAN=${lan}`);
-
-        // 1. Enable IP Forwarding
-        execSync('sudo /usr/sbin/sysctl -w net.ipv4.ip_forward=1');
-
-        // 2. Linisin ang NAT at Forward rules para iwas double entries
-        // Inalis natin ang blanket DROP para hindi ma-lock out ang admin
-        execSync(`sudo ${IPTABLES} -t nat -F`);
-        execSync(`sudo ${IPTABLES} -F FORWARD`);
-
-        // 3. Setup NAT (Internet Sharing)
-        execSync(`sudo ${IPTABLES} -t nat -A POSTROUTING -o ${wan} -j MASQUERADE`);
-
-        // 4. Forwarding Permission
-        execSync(`sudo ${IPTABLES} -A FORWARD -i ${lan} -o ${wan} -j ACCEPT`);
-        execSync(`sudo ${IPTABLES} -A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT`);
-
-        // 5. Global Captive Portal Redirect (Port 80 -> Port 3000)
-        execSync(`sudo ${IPTABLES} -t nat -A PREROUTING -i ${lan} -p tcp --dport 80 -j REDIRECT --to-port ${PORT}`);
-
-        console.log(`[Network] System Setup Complete on ${lan}`);
+        server.listen(PORT, HOST, () => {
+            console.log(`PisoWiFi running on port ${PORT}`);
+            console.log(`WAN: ${settings.wan_interface_name || 'end0'}`);
+            console.log(`LAN: ${settings.lan_interface_name || 'enx00e04c680013'}`);
+        });
     } catch (err) {
-        console.error('[Network] Startup Error:', err.message);
+        console.error('Failed to start app due to network error:', err);
+        server.listen(PORT, HOST, () => console.log(`Server started with network errors on port ${PORT}`));
     }
-}
+};
 
-// Patakbuhin ang network setup
-initializeNetwork();
+startApp();
 if (os.platform() === 'linux') {
     try {
         // IMPORTANT:
@@ -248,63 +228,6 @@ function getMacFromIp(ip) {
     }
 }
 
-async function allowMac(mac, ip) {
-    if (os.platform() !== 'linux') return;
-
-    try {
-        const settings = await new Promise((resolve) => {
-            db.all(
-                `SELECT key, value FROM settings 
-                 WHERE key IN ('wan_interface_name','lan_interface_name', 'lan_ip_address')`,
-                [],
-                (err, rows) => {
-                    const s = {};
-                    if (rows) rows.forEach(r => s[r.key] = r.value);
-                    resolve(s);
-                }
-            );
-        });
-
-        const lan = settings.lan_interface_name || 'enx00e04c680013';
-        const lanIp = normalizeLanIp(settings.lan_ip_address || '10.0.0.1/24');
-
-        // INSERT 'RETURN' rule sa taas ng PREROUTING para ma-bypass ang redirect
-        // Ang '! -d ${lanIp}' ay sinisiguro na ang portal interface mismo ay reachable pa rin
-        await sudoExec(`sudo ${IPTABLES} -t nat -I PREROUTING 1 -i ${lan} -m mac --mac-source ${mac} ! -d ${lanIp} -j RETURN`);
-
-        console.log(`[Auth] Internet Access GRANTED for MAC: ${mac}`);
-    } catch (e) {
-        console.error('[Auth] Error in allowMac:', e.message);
-    }
-}
-
-async function blockMac(mac) {
-    if (os.platform() !== 'linux') return;
-
-    try {
-        const settings = await new Promise((resolve) => {
-            db.all(
-                `SELECT key, value FROM settings WHERE key IN ('lan_interface_name', 'lan_ip_address')`,
-                [],
-                (err, rows) => {
-                    const s = {};
-                    if (rows) rows.forEach(r => s[r.key] = r.value);
-                    resolve(s);
-                }
-            );
-        });
-
-        const lan = settings.lan_interface_name || 'enx00e04c680013';
-        const lanIp = normalizeLanIp(settings.lan_ip_address || '10.0.0.1/24');
-
-        // Delete ang RETURN rule para bumalik sa redirect state
-        await sudoExec(`sudo ${IPTABLES} -t nat -D PREROUTING -i ${lan} -m mac --mac-source ${mac} ! -d ${lanIp} -j RETURN || true`);
-
-        console.log(`[Auth] Internet Access REVOKED for MAC: ${mac}`);
-    } catch (e) {
-        // Error is expected if rule doesn't exist
-    }
-}
 
 async function applyBandwidthLimits(ip, downloadLimitMbps, uploadLimitMbps, tcClassId) {
     if (os.platform() !== 'linux') {
@@ -1268,7 +1191,7 @@ app.post('/api/use-time', (req, res) => {
                             return res.status(500).json({ error: 'Failed to create new user.' });
                         }
                         
-                        allowMac(mac, ip);
+            allowMac(mac, ip);
                         db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'coin', ?, ?)`,
                             [currentSessionCoins - remainingCoins, `Coin Insertion (${mac})`, mac]);
                         currentSessionCoins = remainingCoins; // Update session coins
@@ -2170,59 +2093,6 @@ app.post('/api/network/clear', isAuthenticated, (req, res) => {
     });
 });
 
-async function reapplyNatRulesFromDb(runtimeSettings = null) {
-    if (os.platform() !== 'linux') return;
-
-    const hasIptables = (() => {
-        try {
-            execSync('command -v iptables', { stdio: 'ignore' });
-            return true;
-        } catch (e) {
-            return false;
-        }
-    })();
-
-    if (!hasIptables) {
-        console.warn('[Network] iptables not found. Skipping NAT/firewall apply. Install iptables to enable captive portal + NAT.');
-        return;
-    }
-
-    const settings = runtimeSettings || await loadNetworkSettings(db);
-    const resolved = resolveNetworkSettings(settings, { bridge_interface_name: 'br0', portal_port: PORT });
-
-    const wanInterface = resolved.wan_interface_name;
-    const lanInterface = resolved.bridge_interface_name;
-    const lanIpAddress = resolved.lan_ip_address.split('/')[0];
-
-    await sudoExec('iptables -t nat -F PREROUTING || true');
-    await sudoExec('iptables -t nat -F POSTROUTING || true');
-
-    await sudoExec(`iptables -D INPUT -i ${lanInterface} -j ACCEPT || true`);
-    await sudoExec(`iptables -A INPUT -i ${lanInterface} -j ACCEPT`);
-    await sudoExec('iptables -D INPUT -i lo -j ACCEPT || true');
-    await sudoExec('iptables -A INPUT -i lo -j ACCEPT');
-
-    await sudoExec(`iptables -t nat -A POSTROUTING -o ${wanInterface} -j MASQUERADE`);
-
-    await sudoExec('iptables -D FORWARD -p udp --dport 53 -j ACCEPT || true');
-    await sudoExec('iptables -D FORWARD -p udp --sport 53 -j ACCEPT || true');
-    await sudoExec('iptables -I FORWARD -p udp --dport 53 -j ACCEPT');
-    await sudoExec('iptables -I FORWARD -p udp --sport 53 -j ACCEPT');
-
-    await sudoExec(`iptables -D FORWARD -i ${wanInterface} -o ${lanInterface} -m state --state RELATED,ESTABLISHED -j ACCEPT || true`);
-    await sudoExec(`iptables -A FORWARD -i ${wanInterface} -o ${lanInterface} -m state --state RELATED,ESTABLISHED -j ACCEPT`);
-
-    await sudoExec(`iptables -D FORWARD -i ${lanInterface} -o ${wanInterface} -j DROP || true`);
-    await sudoExec(`iptables -A FORWARD -i ${lanInterface} -o ${wanInterface} -j DROP`);
-
-    await sudoExec(`iptables -t nat -D PREROUTING -i ${lanInterface} -p tcp --dport 80 -j REDIRECT --to-port ${resolved.portal_port} || true`);
-    await sudoExec(`iptables -t nat -A PREROUTING -i ${lanInterface} -p tcp --dport 80 -j REDIRECT --to-port ${resolved.portal_port}`);
-
-    await sudoExec(`iptables -t nat -D PREROUTING -i ${lanInterface} -p udp --dport 53 ! -s ${lanIpAddress} -j DNAT --to-destination ${lanIpAddress}:53 || true`);
-    await sudoExec(`iptables -t nat -A PREROUTING -i ${lanInterface} -p udp --dport 53 ! -s ${lanIpAddress} -j DNAT --to-destination ${lanIpAddress}:53`);
-
-    console.log(`[Network] Re-applied NAT rules: WAN=${wanInterface}, LAN=${lanInterface}`);
-}
 
 app.get('/api/network/interfaces', isAuthenticated, (req, res) => {
     db.all(`SELECT key, value FROM settings WHERE key LIKE 'wan_%' OR key LIKE 'lan_%'`, [], (err, rows) => {
@@ -3222,6 +3092,9 @@ app.get('/redirect', async (req, res) => {
 });
 
 const HOST = '0.0.0.0';
-server.listen(PORT, HOST, () => {
-    console.log(`Server running on http://${HOST}:${PORT}`);
-});
+
+if (require.main === module) {
+    server.listen(PORT, HOST, () => {
+        console.log(`Server listening on http://${HOST}:${PORT}`);
+    });
+}
