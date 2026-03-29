@@ -26,9 +26,14 @@ function withFullPath(command) {
 
 async function sudoExec(command) {
     const secureCommand = withFullPath(String(command).trim());
+
+    if (os.platform() !== 'linux') {
+        return '';
+    }
+
     const sudoPrefix = SUDO_PASSWORD
         ? `echo "${SUDO_PASSWORD.replace(/"/g, '\\"')}" | sudo -S -p ""`
-        : 'sudo -n';
+        : 'sudo';
 
     try {
         const { stdout } = await execPromise(`${sudoPrefix} ${secureCommand}`);
@@ -89,6 +94,10 @@ async function initializeNetwork(settings = {}) {
     }
 
     try {
+        if (os.platform() !== 'linux') {
+            return;
+        }
+
         await sudoExec('sysctl -w net.ipv4.ip_forward=1');
 
         await sudoExec('iptables -F');

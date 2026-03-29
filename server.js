@@ -20,6 +20,8 @@ app.set('trust proxy', true);
 let db;
 let serverStarted = false;
 let startupInProgress = false;
+let startupCompleted = false;
+let appStartupQueued = false;
 
 const IPTABLES = '/usr/sbin/iptables';
 const PORT = process.env.PORT || 3000;
@@ -30,17 +32,43 @@ const http = require('http');
 const server = http.createServer(app);
 const io = require('socket.io')(server);
 
+server.on('error', (err) => {
+    console.error('Server error:', err.message);
+    if (err.code === 'EADDRINUSE') {
+        console.error(`Port ${PORT} is already in use. Reusing the existing process is required.`);
+    }
+});
+
 function startServerOnce(onStarted) {
     if (serverStarted) return;
     serverStarted = true;
-    server.listen(PORT, HOST, onStarted);
+    if (!server.listening) {
+        try {
+            server.listen(PORT, HOST, onStarted);
+        } catch (err) {
+            console.error('Failed to start server:', err.message);
+        }
+    } else if (typeof onStarted === 'function') {
+        onStarted();
+    }
 }
 
 const startApp = async () => {
-    if (startupInProgress) return;
+    if (startupInProgress || startupCompleted) return;
     startupInProgress = true;
+    appStartupQueued = false;
+
+    if (!db) {
+        console.log('Database not ready yet, deferring startup...');
+        startupInProgress = false;
+        setTimeout(() => {
+            runStartupAfterDatabaseReady();
+        }, 100);
+        return;
+    }
     try {
         const settings = await new Promise((resolve, reject) => {
+            if (!db) return reject(new Error('Database is not initialized yet'));
             db.all(`SELECT key, value FROM settings WHERE key IN ('wan_interface_name','lan_interface_name','lan_ip_address')`, [], (err, rows) => {
                 if (err) return reject(err);
                 const s = {};
@@ -77,16 +105,40 @@ const startApp = async () => {
             console.log(`LAN (Clients): ${settings.lan_interface_name || 'enx00e04c680013'}`);
             console.log(`Portal IP: ${settings.lan_ip_address || '10.0.0.1/24'}`);
             console.log(`=========================================`);
+            startupCompleted = true;
         });
     } catch (err) {
         console.error('CRITICAL: Startup Network Error:', err);
-        startServerOnce(() => console.log(`Server started with errors.`));
+        startServerOnce(() => {
+            console.log(`Server started with errors.`);
+            startupCompleted = true;
+        });
     } finally {
         startupInProgress = false;
     }
 };
 
-startApp();
+function runStartupAfterDatabaseReady() {
+    if (appStartupQueued || startupCompleted) return;
+    appStartupQueued = true;
+
+    const waitForDatabase = () => {
+        if (db && db.open) {
+            startApp().catch((err) => {
+                console.error('Startup retry failed:', err);
+            });
+            return;
+        }
+        setTimeout(waitForDatabase, 100);
+    };
+
+    waitForDatabase();
+}
+
+if (require.main === module) {
+    runStartupAfterDatabaseReady();
+}
+
 if (os.platform() === 'linux') {
     try {
         console.log('Firewall reset on startup: skipped hardcoded rules (bridge mode uses dynamic rules).');
@@ -489,6 +541,7 @@ setInterval(() => {
 db = new sqlite3.Database(DATABASE_PATH, (err) => {
     if (err) console.error(err.message);
     console.log(`Connected to the database at ${DATABASE_PATH}`);
+    runStartupAfterDatabaseReady();
 });
 
 db.serialize(() => {
