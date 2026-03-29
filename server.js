@@ -24,20 +24,32 @@ const DATABASE_PATH = process.env.DATABASE_PATH || './pisowifi.db';
 const startApp = async () => {
     try {
         const settings = await new Promise((resolve, reject) => {
-            db.all(`SELECT key, value FROM settings WHERE key IN ('wan_interface_name','lan_interface_name','lan_ip_address')`, [], (err, rows) => {
-                if (err) return reject(err);
-                const s = {};
-                if (rows) rows.forEach(r => s[r.key] = r.value);
-                resolve(s);
-            });
+            db.all(
+                `SELECT key, value FROM settings WHERE key IN ('wan_interface_name','lan_interface_name','lan_ip_address','portal_port')`,
+                [],
+                (err, rows) => {
+                    if (err) return reject(err);
+                    const s = {};
+                    if (rows) rows.forEach((r) => { s[r.key] = r.value; });
+                    resolve(s);
+                }
+            );
         });
 
-        await initializeNetwork(settings);
+        const runtimeSettings = {
+            wan_interface_name: settings.wan_interface_name || process.env.WAN_INTERFACE_NAME || 'enp1s0',
+            lan_interface_name: settings.lan_interface_name || process.env.LAN_INTERFACE_NAME || 'enx00e04c680013',
+            lan_ip_address: settings.lan_ip_address || process.env.LAN_IP_ADDRESS || '10.0.0.1/24',
+            portal_port: Number(settings.portal_port || process.env.PORT || PORT) || PORT,
+        };
+
+        await initializeNetwork(runtimeSettings);
 
         server.listen(PORT, HOST, () => {
-            console.log(`PisoWiFi running on port ${PORT}`);
-            console.log(`WAN: ${settings.wan_interface_name || 'end0'}`);
-            console.log(`LAN: ${settings.lan_interface_name || 'enx00e04c680013'}`);
+            console.log(`Server running and Network Configured!`);
+            console.log(`WAN: ${runtimeSettings.wan_interface_name}`);
+            console.log(`LAN: ${runtimeSettings.lan_interface_name}`);
+            console.log(`LAN IP: ${runtimeSettings.lan_ip_address}`);
         });
     } catch (err) {
         console.error('Failed to start app due to network error:', err);
