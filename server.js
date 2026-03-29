@@ -222,7 +222,7 @@ async function allowMac(mac, ip) {
         });
 
         const wan = settings.wan_interface_name || 'enp1s0';
-        const lan = 'br0';
+        const lan = settings.lan_interface_name;
 
         // REMOVE existing rule first (important)
         await sudoExec(`iptables -D FORWARD -i ${lan} -o ${wan} -s ${ip} -j ACCEPT || true`);
@@ -359,7 +359,7 @@ async function blockMac(mac) {
         });
         
         const wan = settings.wan_interface_name || 'enp1s0';
-        const lan = 'br0';
+        const lan = settings.lan_interface_name;
 
         const user = await new Promise((resolve, reject) => {
             db.get(
@@ -2433,7 +2433,7 @@ app.post('/api/apply-wan-settings', isAuthenticated, async (req, res) => {
             });
         });
 
-        const lan_interface_name = lanSettings.lan_interface_name || 'enx00e04c680013';
+        const lan_interface_name = lanSettings.lan_interface_name;
         const lan_ip_address = lanSettings.lan_ip_address || '10.0.0.1/24';
         const lan_dns_servers = lanSettings.lan_dns_servers ? lanSettings.lan_dns_servers.split(',').map(s => s.trim()).filter(s => s) : [];
 
@@ -2630,7 +2630,7 @@ app.post('/api/superadmin/internet/allow', isAuthenticated, async (req, res) => 
         });
 
         const wan = settings.wan_interface_name || 'enp1s0';
-        const lan = 'br0';
+        const lan = settings.lan_interface_name;
         const lanIp = (settings.lan_ip_address || '10.0.0.1/24').split('/')[0];
 
         await sudoExec('sysctl -w net.ipv4.ip_forward=1');
@@ -2698,7 +2698,7 @@ app.post('/api/superadmin/internet/captive', isAuthenticated, async (req, res) =
         });
 
         const wan = settings.wan_interface_name || 'enp1s0';
-        const lan = 'br0';
+        const lan = settings.lan_interface_name;
         const lanIp = (settings.lan_ip_address || '10.0.0.1/24').split('/')[0];
 
         await sudoExec('sysctl -w net.ipv4.ip_forward=1');
