@@ -2729,25 +2729,22 @@ app.post('/api/superadmin/internet/allow', isAuthenticated, async (req, res) => 
         })();
 
         if (!hasIptables) {
-            return res.status(500).json({
-                success: false,
-                error:
-                    'iptables is not installed on this Linux system.\n' +
-                    'Fix (Debian/Ubuntu): sudo apt-get update && sudo apt-get install -y iptables\n' +
-                    'Note: If your distro uses nftables, install iptables-nft/iptables package that provides the iptables command.'
-            });
-        }
-
-        try {
-            await sudoExec('apt-get update');
-            await sudoExec('DEBIAN_FRONTEND=noninteractive apt-get install -y iptables');
-        } catch (installErr) {
-            return res.status(500).json({
-                success: false,
-                error:
-                    'iptables is missing and automatic installation failed.\n' +
-                    'Run manually: sudo apt-get update && sudo apt-get install -y iptables'
-            });
+            try {
+                await sudoExec('apt-get update');
+                await sudoExec('DEBIAN_FRONTEND=noninteractive apt-get install -y iptables');
+            } catch (installErr) {
+                try {
+                    await sudoExec('DEBIAN_FRONTEND=noninteractive apt-get install -y iptables-nft || DEBIAN_FRONTEND=noninteractive apt-get install -y iptables');
+                } catch (fallbackErr) {
+                    return res.status(500).json({
+                        success: false,
+                        error:
+                            'iptables is not installed on this Linux system.\n' +
+                            'Fix (Debian/Ubuntu): sudo apt-get update && sudo apt-get install -y iptables\n' +
+                            'Note: If your distro uses nftables, install iptables-nft/iptables package that provides the iptables command.'
+                    });
+                }
+            }
         }
 
         const settings = await new Promise((resolve, reject) => {
