@@ -17,6 +17,9 @@ const app = express();
 app.set('trust proxy', true);
 
 const IPTABLES = '/usr/sbin/iptables';
+const PORT = process.env.PORT || 3000;
+const HOST = '0.0.0.0';
+const DATABASE_PATH = process.env.DATABASE_PATH || './pisowifi.db';
 
 const startApp = async () => {
     try {
@@ -92,6 +95,28 @@ async function getPortalBaseUrl() {
     return `http://${lanIp}:${getPortalHostPort()}`;
 }
 
+async function handleAllowMac(mac, ip = '0.0.0.0') {
+    if (os.platform() !== 'linux') return;
+    try {
+        const lanInterface = await getSettingValue('lan_interface_name', 'enx00e04c680013');
+        await allowMac(mac, lanInterface);
+        console.log(`[Network] Internet access granted to ${mac} on ${lanInterface}`);
+    } catch (err) {
+        console.error(`[Network] Failed to allow MAC: ${mac}`, err.message);
+    }
+}
+
+async function handleBlockMac(mac) {
+    if (os.platform() !== 'linux') return;
+    try {
+        const lanInterface = await getSettingValue('lan_interface_name', 'enx00e04c680013');
+        await blockMac(mac, lanInterface);
+        console.log(`[Network] Internet access revoked from ${mac} on ${lanInterface}`);
+    } catch (err) {
+        console.error(`[Network] Failed to block MAC: ${mac}`, err.message);
+    }
+}
+
 // LAN-only force redirect to dynamic portal URL
 // - Uses the DB-backed LAN IP and runtime PORT
 // - Keeps WAN access untouched
@@ -140,9 +165,6 @@ const isAuthenticated = (req, res, next) => {
         res.redirect('/login');
     }
 };
-
-const PORT = process.env.PORT || 3000;
-const DATABASE_PATH = process.env.DATABASE_PATH || './pisowifi.db';
 
 let serialPort = null;
 // Common identifiers for NodeMCU (CH340G chip) across different OS
@@ -1176,7 +1198,7 @@ app.post('/api/use-time', (req, res) => {
                     [newTime, ip, mac], (err) => {
                         if (err) return res.status(500).json({ error: 'Failed to update user' });
 
-                        allowMac(mac, ip);
+                        handleAllowMac(mac, ip);
                         db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'coin', ?, ?)`,
                             [currentSessionCoins - remainingCoins, `Coin Insertion (${mac})`, mac]);
                         currentSessionCoins = remainingCoins; // Update session coins
@@ -1191,7 +1213,7 @@ app.post('/api/use-time', (req, res) => {
                             return res.status(500).json({ error: 'Failed to create new user.' });
                         }
                         
-            allowMac(mac, ip);
+                            handleAllowMac(mac, ip);
                         db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'coin', ?, ?)`,
                             [currentSessionCoins - remainingCoins, `Coin Insertion (${mac})`, mac]);
                         currentSessionCoins = remainingCoins; // Update session coins
@@ -1244,7 +1266,7 @@ app.post('/api/use-voucher', (req, res) => {
                     db.run(`UPDATE users SET time_left = ?, status = 'Online', ip_address = ? WHERE mac_address = ?`, 
                         [newTime, ip, mac], (err) => {
                             if (err) return res.status(500).json({ error: 'Failed to update user' });
-                            allowMac(mac, ip);
+                            handleAllowMac(mac, ip);
                             res.json({ success: true, minutesAdded: totalMinutes, totalTime: newTime });
                         });
                 } else {
@@ -1255,7 +1277,7 @@ app.post('/api/use-voucher', (req, res) => {
                                 db.run(`UPDATE users SET time_left = time_left + ?, status = 'Online' WHERE mac_address = ?`,
                                     [totalMinutes, ip, mac], (err2) => {
                                         if (err2) return res.status(500).json({ error: 'Failed to create user' });
-                                        allowMac(mac, ip);
+                            handleAllowMac(mac, ip);
                                         res.json({ success: true, minutesAdded: totalMinutes, totalTime: totalMinutes });
                                     });
                             } else {
@@ -1619,7 +1641,7 @@ app.post('/api/users/allow', isAuthenticated, (req, res) => {
     const { mac, ip } = req.body;
     if (!mac) return res.status(400).json({ error: 'MAC is required' });
     const userIp = ip || req.ip || req.connection.remoteAddress;
-    allowMac(mac, userIp);
+    handleAllowMac(mac, userIp);
     db.run(`UPDATE users SET status = 'Online', ip_address = ? WHERE mac_address = ?`, [userIp, mac]);
     res.json({ success: true });
 });
@@ -1627,7 +1649,7 @@ app.post('/api/users/allow', isAuthenticated, (req, res) => {
 app.post('/api/users/block', isAuthenticated, (req, res) => {
     const { mac } = req.body;
     if (!mac) return res.status(400).json({ error: 'MAC is required' });
-    blockMac(mac);
+    handleBlockMac(mac);
     db.run(`UPDATE users SET status = 'Blocked' WHERE mac_address = ?`, [mac]);
     res.json({ success: true });
 });
@@ -2616,7 +2638,7 @@ setInterval(() => {
             const newTime = user.time_left - 1;
             if (newTime <= 0) {
                 db.run(`UPDATE users SET time_left = 0, status = 'Expired' WHERE id = ?`, [user.id], (err) => {
-                    if (!err) blockMac(user.mac_address);
+                    if (!err) handleBlockMac(user.mac_address);
                 });
             } else {
                 db.run(`UPDATE users SET time_left = ? WHERE id = ?`, [newTime, user.id]);
@@ -2759,7 +2781,7 @@ app.post('/api/maya/webhook', async (req, res) => {
                                         console.error('Webhook IP Lookup Error:', ipErr || 'IP not found for MAC');
                                         return;
                                     }
-                                    allowMac(mac, ipRow.ip_address);
+                                    handleAllowMac(mac, ipRow.ip_address);
                                     db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'maya', ?, ?)`,
                                         [amount, `Maya Payment (${mac})`, mac]);
                                     console.log(`Successfully added ${totalMinutes} mins to existing user ${mac} via Maya`);
@@ -2773,13 +2795,13 @@ app.post('/api/maya/webhook', async (req, res) => {
                                     db.run(`UPDATE users SET time_left = time_left + ?, status = 'Online' WHERE mac_address = ?`,
                                         [totalMinutes, mac], (err2) => {
                                             if (err2) return console.error('Webhook User Create Fallback Error:', err2);
-                                            allowMac(mac, '0.0.0.0');
+                                            handleAllowMac(mac, '0.0.0.0');
                                             db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'maya', ?, ?)`,
                                                 [amount, `Maya Payment (${mac})`, mac]);
                                             console.log(`Successfully added ${totalMinutes} mins to new user ${mac} via Maya (fallback)`);
                                         });
                                 } else {
-                                    allowMac(mac, '0.0.0.0');
+                                    handleAllowMac(mac, '0.0.0.0');
                                     db.run(`INSERT INTO sales (amount, type, description, user_mac) VALUES (?, 'maya', ?, ?)`,
                                         [amount, `Maya Payment (${mac})`, mac]);
                                     console.log(`Successfully added ${totalMinutes} mins to new user ${mac} via Maya`);
@@ -2808,7 +2830,7 @@ app.post('/api/connect-internet', (req, res) => {
             return res.status(400).json({ error: 'You have no remaining time or are not a registered user.' });
         }
 
-        allowMac(mac, ip);
+        handleAllowMac(mac, ip);
         db.run(`UPDATE users SET status = 'Online', ip_address = ? WHERE mac_address = ?`, [ip, mac], (err) => {
             if (err) return res.status(500).json({ error: 'Failed to update user status.' });
             res.json({ success: true, message: 'Successfully connected to the internet.' });
@@ -3090,8 +3112,6 @@ app.get('/redirect', async (req, res) => {
     const portalBaseUrl = await getPortalBaseUrl();
     res.redirect(portalBaseUrl);
 });
-
-const HOST = '0.0.0.0';
 
 if (require.main === module) {
     server.listen(PORT, HOST, () => {
