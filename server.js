@@ -1822,47 +1822,7 @@ app.get('/api/diagnostics/logs', isAuthenticated, (req, res) => {
 });
 
 app.post('/api/diagnostics/terminal', isAuthenticated, (req, res) => {
-    const { command } = req.body;
-
-    if (!command) {
-        return res.status(400).json({ error: 'Command is required' });
-    }
-
-    const dangerousPatterns = [
-        /rm\s+.*-rf/, /rm\s+.*\//, /rm\s+.*\.\./,
-        /dd\s+/, /fdisk\s+/, /mkfs\s+/, /format\s+/,
-        /sudo\s+/, /su\s+/, /passwd\s+/, /useradd\s+/, /userdel\s+/, /usermod\s+/,
-        /groupadd\s+/, /groupdel\s+/, /groupmod\s+/,
-        /chmod\s+.*777/, /chmod\s+.*\//, /chown\s+.*\//,
-        /iptables\s+.*-F/, /iptables\s+.*-X/, /iptables\s+.*-Z/,
-        /route\s+del/, /ip\s+route\s+del/, /ifconfig\s+.*down/,
-        /reboot\s*/, /shutdown\s*/, /halt\s*/, /poweroff\s*/,
-        /apt\s+.*install/, /apt\s+.*remove/, /apt\s+.*purge/,
-        /yum\s+.*install/, /yum\s+.*remove/,
-        /dnf\s+.*install/, /dnf\s+.*remove/,
-        /pacman\s+.*-S/, /pacman\s+.*-R/,
-        /bash\s+/, /sh\s+/, /zsh\s+/, /fish\s+/, /python\s+/, /perl\s+/, /ruby\s+/,
-        /\.\/.*\.sh/, /\.\/.*\.py/, /\.\/.*\.pl/, /\.\/.*\.rb/,
-        /echo\s+.*>>\s+\/etc\//, /echo\s+.*>\s+\/etc\//,
-        /cat\s+.*>\s+\/etc\//, /cat\s+.*>>\s+\/etc\//
-    ];
-
-    for (const pattern of dangerousPatterns) {
-        if (pattern.test(command)) {
-            return res.status(400).json({
-                error: `Command contains potentially dangerous operations and is not allowed: ${pattern}`
-            });
-        }
-    }
-
-    exec(command, { timeout: 30000, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
-        res.json({
-            command: command,
-            output: stdout || stderr || '',
-            error: error ? error.message : null,
-            timestamp: new Date().toISOString()
-        });
-    });
+    return res.status(404).json({ error: 'Terminal diagnostics are disabled.' });
 });
 
 app.get('/api/security/websites', isAuthenticated, (req, res) => {

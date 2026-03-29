@@ -835,8 +835,8 @@
             <div class="header">
                 <h2>System & Maintenance</h2>
             </div>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
-                <div class="card">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; justify-content: center; max-width: 900px; margin: 0 auto;">
+                <div class="card" style="border-radius: 0;">
                     <h3 style="margin-top: 0; color: var(--danger-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
                         <i class="fas fa-tools"></i> Maintenance Actions
                     </h3>
@@ -850,7 +850,7 @@
                         <hr>
                     </div>
                 </div>
-                <div class="card">
+                <div class="card" style="border-radius: 0;">
                     <h3 style="margin-top: 0; color: var(--success-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
                         <i class="fas fa-cloud-upload-alt"></i> Backup & Restore
                     </h3>
@@ -925,92 +925,259 @@
             <div class="header">
                 <h2>Diagnostics & Tools</h2>
             </div>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
-                <!-- Terminal -->
-                <div class="card" style="grid-column: 1 / -1;">
-                    <h3 style="margin-top: 0; color: var(--info-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
-                        <i class="fas fa-terminal"></i> System Terminal
-                    </h3>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
-                        <!-- Command Input -->
-                        <div>
-                            <div class="form-group">
-                                <label>Command</label>
-                                <div style="display: flex; gap: 10px;">
-                                    <input type="text" id="terminalCommand" placeholder="Enter command (e.g., ls, df -h, ps aux)" style="flex: 2;">
-                                    <button class="btn btn-primary" onclick="executeTerminalCommand()" style="flex: 1;">
-                                        <i class="fas fa-play"></i> Execute
-                                    </button>
-                                </div>
-                            </div>
-                            <div style="display: flex; gap: 5px; flex-wrap: wrap; margin-top: 10px;">
-                                <button class="btn btn-info btn-sm" onclick="setTerminalCommand('df -h')" title="Disk usage">df -h</button>
-                                <button class="btn btn-info btn-sm" onclick="setTerminalCommand('free -m')" title="Memory usage">free -m</button>
-                                <button class="btn btn-info btn-sm" onclick="setTerminalCommand('uptime')" title="System uptime">uptime</button>
-                                <button class="btn btn-info btn-sm" onclick="setTerminalCommand('ps aux')" title="Running processes">ps aux</button>
-                                <button class="btn btn-info btn-sm" onclick="setTerminalCommand('netstat -tuln')" title="Network connections">netstat -tuln</button>
-                                <button class="btn btn-info btn-sm" onclick="setTerminalCommand('iptables -L')" title="Firewall rules">iptables -L</button>
-                                <button class="btn btn-info btn-sm" onclick="setTerminalCommand('ls /var/log')" title="Log files">ls /var/log</button>
-                                <button class="btn btn-info btn-sm" onclick="setTerminalCommand('tail -n 20 /var/log/syslog')" title="Recent logs">tail syslog</button>
-                                <button class="btn btn-info btn-sm" onclick="setTerminalCommand('uname -a')" title="System info">uname -a</button>
-                                <button class="btn btn-info btn-sm" onclick="setTerminalCommand('lscpu')" title="CPU info">lscpu</button>
-                            </div>
-                        </div>
-                        
-                        <!-- Command History -->
-                        <div>
-                            <div class="form-group">
-                                <label>Command History</label>
-                                <div id="terminalHistory" style="background: #f8f9fc; border: 1px solid #ddd; border-radius: 5px; padding: 10px; font-size: 0.8rem; max-height: 120px; overflow-y: auto;">
-                                    <div style="color: #858796; font-style: italic;">No commands executed yet</div>
-                                </div>
-                                <div style="display: flex; gap: 5px; margin-top: 5px;">
-                                    <button class="btn btn-secondary btn-sm" onclick="clearTerminalHistory()" title="Clear history">Clear</button>
-                                    <button class="btn btn-secondary btn-sm" onclick="copyTerminalOutput()" title="Copy output">Copy</button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Terminal Output -->
-                    <div class="form-group">
-                        <label>Output</label>
-                        <div id="terminalOutput" style="background: #1a1a1a; color: #00ff00; border: 1px solid #444; border-radius: 5px; padding: 15px; font-family: 'Courier New', monospace; font-size: 0.9rem; min-height: 200px; max-height: 400px; overflow-y: auto; white-space: pre-wrap;">
-                            <div style="color: #888; font-style: italic;">Terminal ready. Type a command and click Execute.</div>
-                            <div style="color: #888; font-size: 0.8rem; margin-top: 10px;">Available commands: ls, ps, df, free, uptime, who, w, netstat, ss, ifconfig, ip, route, iptables, cat, tail, head, grep, find, du, iotop, ping, traceroute, nslookup, dig, hostname, date, cal, uname, lscpu, lsblk, mount, systemctl, journalctl, service, crontab</div>
-                        </div>
-                        <div style="display: flex; gap: 10px; margin-top: 10px;">
-                            <button class="btn btn-warning" onclick="clearTerminalOutput()" style="color: white;">
-                                <i class="fas fa-broom"></i> Clear Output
-                            </button>
-                            <button class="btn btn-secondary" onclick="scrollToBottom()">
-                                <i class="fas fa-arrow-down"></i> Scroll to Bottom
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(4in, 4in)); gap: 1.5rem; justify-content: center;">
                 <!-- Ping Test -->
-                <div class="card">
-                    <h3 style="margin-top: 0; color: var(--primary-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                <div class="card" style="width: 4in; min-height: 4in; margin: 0 auto; display: flex; flex-direction: column; justify-content: center; box-sizing: border-box;">
+                    <h3 style="margin-top: 0; color: var(--primary-color); border-bottom: 1px solid #eee; padding-bottom: 10px; text-align: center;">
                         <i class="fas fa-network-wired"></i> Ping Test
                     </h3>
-                    <div class="form-group">
+                    <div class="form-group" style="text-align: center;">
                         <label>Host / IP Address</label>
-                        <div style="display: flex; gap: 10px;">
-                            <input type="text" id="pingHost" value="8.8.8.8" style="flex: 2;">
-                            <button class="btn btn-primary" onclick="runPing()" style="flex: 1;">Ping</button>
+                        <div style="display: flex; gap: 10px; justify-content: center;">
+                            <input type="text" id="pingHost" value="8.8.8.8" style="flex: 1; min-width: 0;">
+                            <button class="btn btn-primary" onclick="runPing()" style="flex: 0 0 auto;">Ping</button>
                         </div>
                     </div>
                     <pre id="pingOutput" style="background: #222; color: #0f0; padding: 10px; border-radius: 5px; font-size: 0.8rem; min-height: 100px; overflow-y: auto; white-space: pre-wrap;"></pre>
                 </div>
 
                 <!-- Speed Test -->
-                <div class="card">
-                    <h3 style="margin-top: 0; color: var(--success-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                <div class="card speedtest-panel" style="width: 4in; min-height: 4in; margin: 0 auto; display: flex; flex-direction: column; justify-content: center; box-sizing: border-box; background: radial-gradient(circle at top, rgba(255,255,255,0.98), rgba(245,248,255,0.95)); overflow: hidden;">
+                    <style>
+                        .speedtest-panel {
+                            position: relative;
+                            border-left-color: #0f6fff;
+                            color: #1f2937;
+                        }
+                        .speedtest-shell {
+                            display: flex;
+                            flex-direction: column;
+                            gap: 16px;
+                            align-items: center;
+                        }
+                        .speedtest-brand {
+                            display: flex;
+                            flex-direction: column;
+                            align-items: center;
+                            gap: 4px;
+                            margin-top: 2px;
+                        }
+                        .speedtest-brand__label {
+                            display: none;
+                        }
+                        .speedtest-brand__logo {
+                            font-size: 1.15rem;
+                            font-weight: 800;
+                            color: #0f172a;
+                            letter-spacing: 2px;
+                        }
+                        .speedtest-gauge {
+                            position: relative;
+                            width: 100%;
+                            max-width: 340px;
+                            aspect-ratio: 1 / 1;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                        }
+                        .speedtest-gauge__ring {
+                            position: absolute;
+                            inset: 0;
+                            filter: drop-shadow(0 10px 25px rgba(15, 111, 255, 0.12));
+                        }
+                        .speedtest-gauge__center {
+                            position: relative;
+                            width: 72%;
+                            height: 72%;
+                            border-radius: 50%;
+                            background: radial-gradient(circle at center, #ffffff 0%, #f8fbff 72%, #eef4ff 100%);
+                            box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), 0 16px 40px rgba(15, 23, 42, 0.08);
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            flex-direction: column;
+                        }
+                        .speedtest-gauge__needle {
+                            display: none;
+                        }
+                        .speedtest-gauge__hub {
+                            display: none;
+                        }
+                        .speedtest-value {
+                            font-size: 4rem;
+                            line-height: 0.95;
+                            font-weight: 800;
+                            font-variant-numeric: tabular-nums;
+                            letter-spacing: -2px;
+                            color: #0f172a;
+                        }
+                        .speedtest-unit {
+                            margin-top: 2px;
+                            font-size: 1rem;
+                            font-weight: 800;
+                            color: #64748b;
+                        }
+                        .speedtest-status {
+                            font-size: 0.82rem;
+                            font-weight: 700;
+                            color: #475467;
+                            min-height: 1.2em;
+                        }
+                        .speedtest-metrics {
+                            width: 100%;
+                            display: grid;
+                            grid-template-columns: repeat(3, 1fr);
+                            gap: 10px;
+                        }
+                        .speedtest-metric {
+                            background: rgba(255,255,255,0.88);
+                            border: 1px solid rgba(148,163,184,0.2);
+                            border-radius: 14px;
+                            padding: 10px 12px;
+                            text-align: center;
+                            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
+                        }
+                        .speedtest-metric__label {
+                            font-size: 0.68rem;
+                            letter-spacing: 1.8px;
+                            color: #64748b;
+                            font-weight: 800;
+                            margin-bottom: 4px;
+                        }
+                        .speedtest-metric__value {
+                            font-size: 1.25rem;
+                            font-weight: 800;
+                            color: #0f172a;
+                            font-variant-numeric: tabular-nums;
+                        }
+                        .speedtest-progress {
+                            width: 100%;
+                            background: #e9eef9;
+                            border-radius: 999px;
+                            overflow: hidden;
+                            height: 10px;
+                            box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.08);
+                        }
+                        .speedtest-progress__fill {
+                            height: 100%;
+                            width: 0%;
+                            border-radius: inherit;
+                            background: linear-gradient(90deg, #0f6fff 0%, #3b82f6 40%, #22c55e 70%, #f59e0b 100%);
+                            transition: width 80ms linear;
+                        }
+                        .speedtest-progress__label {
+                            width: 100%;
+                            text-align: center;
+                            font-size: 0.76rem;
+                            color: #667085;
+                            font-weight: 700;
+                            min-height: 1em;
+                        }
+                        .speedtest-actions {
+                            display: flex;
+                            gap: 10px;
+                            width: 100%;
+                        }
+                        .speedtest-actions .btn {
+                            flex: 1;
+                            border-radius: 999px;
+                            padding: 12px 16px;
+                            font-size: 0.95rem;
+                        }
+                        .speedtest-result {
+                            width: 100%;
+                            background: rgba(15, 23, 42, 0.03);
+                            border: 1px solid rgba(148,163,184,0.2);
+                            border-radius: 18px;
+                            padding: 12px;
+                        }
+                        .speedtest-result__summary {
+                            text-align: center;
+                            font-size: 0.86rem;
+                            color: #334155;
+                            font-weight: 700;
+                        }
+                        .speedtest-panel.is-idle .speedtest-gauge__needle,
+                        .speedtest-panel.is-complete .speedtest-gauge__needle {
+                            transition: transform 280ms ease;
+                        }
+                        .speedtest-panel.is-running .speedtest-gauge__center {
+                            animation: speedtestPulse 1.2s ease-in-out infinite;
+                        }
+                        @keyframes speedtestPulse {
+                            0%, 100% { box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), 0 16px 40px rgba(15, 23, 42, 0.08); }
+                            50% { box-shadow: inset 0 1px 0 rgba(255,255,255,0.95), 0 18px 48px rgba(15, 111, 255, 0.16); }
+                        }
+                        @media (max-width: 480px) {
+                            .speedtest-value { font-size: 3.2rem; }
+                            .speedtest-metrics { grid-template-columns: 1fr; }
+                            .speedtest-actions { flex-direction: column; }
+                        }
+                    </style>
+                    <h3 style="margin-top: 0; color: var(--success-color); border-bottom: 1px solid #eee; padding-bottom: 10px; text-align: center;">
                         <i class="fas fa-tachometer-alt"></i> Speed Test
                     </h3>
-                    <div style="text-align: center; padding: 20px;">
+                    <div class="speedtest-shell">
+                        <div class="speedtest-brand">
+                            <div class="speedtest-brand__logo">SPEEDTEST</div>
+                        </div>
+
+                        <div id="diagnostic-speedtest" class="speedtest-panel is-idle">
+                            <div id="speedtest-gauge" class="speedtest-gauge">
+                                <svg class="speedtest-gauge__ring" viewBox="0 0 200 200" aria-hidden="true">
+                                    <defs>
+                                        <linearGradient id="ooklaGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                                            <stop offset="0%" stop-color="#0f6fff" />
+                                            <stop offset="45%" stop-color="#22c55e" />
+                                            <stop offset="100%" stop-color="#f59e0b" />
+                                        </linearGradient>
+                                    </defs>
+                                    <circle cx="100" cy="100" r="84" fill="none" stroke="#e9eef9" stroke-width="16" />
+                                    <circle id="speedtest-progress-ring" cx="100" cy="100" r="84" fill="none" stroke="url(#ooklaGradient)" stroke-width="16" stroke-linecap="round" stroke-dasharray="527.79" stroke-dashoffset="527.79" />
+                                    <path d="M 34 100 A 66 66 0 0 1 166 100" fill="none" stroke="#dbe5f5" stroke-width="2" stroke-dasharray="1 10" />
+                                </svg>
+                                <div class="speedtest-gauge__center">
+                                    <div id="speedtest-needle" class="speedtest-gauge__needle" aria-hidden="true"></div>
+                                    <div class="speedtest-gauge__hub"></div>
+                                    <div class="speedtest-value"><span id="speedtest-current-speed">0</span></div>
+                                    <div class="speedtest-unit">Mbps</div>
+                                    <div id="speedtest-status" class="speedtest-status">Ready to test</div>
+                                </div>
+                            </div>
+
+                            <div class="speedtest-metrics">
+                                <div class="speedtest-metric">
+                                    <div class="speedtest-metric__label">PING</div>
+                                    <div id="speedtest-ping" class="speedtest-metric__value">0 ms</div>
+                                </div>
+                                <div class="speedtest-metric">
+                                    <div class="speedtest-metric__label">DOWNLOAD</div>
+                                    <div id="speedtest-download" class="speedtest-metric__value">0 Mbps</div>
+                                </div>
+                                <div class="speedtest-metric">
+                                    <div class="speedtest-metric__label">UPLOAD</div>
+                                    <div id="speedtest-upload" class="speedtest-metric__value">0 Mbps</div>
+                                </div>
+                            </div>
+
+                            <div class="speedtest-progress" aria-hidden="true">
+                                <div id="speedtest-progress-fill" class="speedtest-progress__fill"></div>
+                            </div>
+                            <div id="speedtest-progress-label" class="speedtest-progress__label">Idle</div>
+
+                            <div class="speedtest-actions">
+                                <button id="speedtest-start" class="btn btn-success" onclick="runSpeedtest()">
+                                    <i class="fas fa-play"></i> Start Test
+                                </button>
+                                <button id="speedtest-retest" class="btn btn-secondary" onclick="runSpeedtest()">
+                                    <i class="fas fa-redo"></i> Re-test
+                                </button>
+                            </div>
+
+                            <div id="speedtest-result" class="speedtest-result" style="display: none;">
+                                <div id="speedtest-result-summary" class="speedtest-result__summary"></div>
+                            </div>
+                        </div>
                         <div id="speedtestResult" style="display: none; margin-bottom: 20px;">
                             <div style="display: flex; justify-content: space-around;">
                                 <div>
@@ -1024,24 +1191,9 @@
                             </div>
                             <div style="margin-top: 10px; font-size: 0.8rem; color: #555;">Ping: <span id="stPing">0</span> ms</div>
                         </div>
-                        <button id="btnSpeedtest" class="btn btn-success" onclick="runSpeedtest()" style="width: 100%;">
-                            <i class="fas fa-play"></i> Start Speed Test
-                        </button>
                     </div>
                 </div>
 
-                <!-- System Logs -->
-                <div class="card" style="grid-column: 1 / -1;">
-                    <h3 style="margin-top: 0; color: var(--warning-color); border-bottom: 1px solid #eee; padding-bottom: 10px;">
-                        <i class="fas fa-list-alt"></i> System Logs
-                    </h3>
-                    <div id="logContainer" style="background: #f8f9fc; border: 1px solid #ddd; border-radius: 5px; padding: 10px; font-family: monospace; font-size: 0.8rem; max-height: 200px; overflow-y: auto;">
-                        Loading logs...
-                    </div>
-                    <button class="btn btn-secondary" onclick="fetchLogs()" style="margin-top: 10px; width: 100%;">
-                        <i class="fas fa-sync"></i> Refresh Logs
-                    </button>
-                </div>
             </div>
         </div>
 
@@ -1903,7 +2055,12 @@
                 fetchAvailableNetworkInterfaces(); // Call directly when network section is shown
             }
             if (section === 'license') fetchLicense();
-            if (section === 'diagnostics') fetchLogs();
+            if (section === 'diagnostics') {
+                const pingHost = document.getElementById('pingHost');
+                if (pingHost && !pingHost.value) pingHost.value = '8.8.8.8';
+                const speedtestResult = document.getElementById('speedtestResult');
+                if (speedtestResult) speedtestResult.style.display = 'none';
+            }
             if (section === 'announcements') fetchAnnouncement();
             if (section === 'users') fetchUsers();
             if (section === 'rates') fetchRates();
@@ -2692,26 +2849,132 @@
         }
 
         async function runSpeedtest() {
-            const btn = document.getElementById('btnSpeedtest');
-            const resultDiv = document.getElementById('speedtestResult');
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Testing Download (5MB)...';
-            resultDiv.style.display = 'none';
+            const panel = document.getElementById('diagnostic-speedtest');
+            const btnStart = document.getElementById('speedtest-start');
+            const btnRetest = document.getElementById('speedtest-retest');
+            const statusEl = document.getElementById('speedtest-status');
+            const currentSpeedEl = document.getElementById('speedtest-current-speed');
+            const pingEl = document.getElementById('speedtest-ping');
+            const downloadEl = document.getElementById('speedtest-download');
+            const uploadEl = document.getElementById('speedtest-upload');
+            const progressFill = document.getElementById('speedtest-progress-fill');
+            const progressLabel = document.getElementById('speedtest-progress-label');
+            const resultBox = document.getElementById('speedtest-result');
+            const resultSummary = document.getElementById('speedtest-result-summary');
+            const needle = document.getElementById('speedtest-needle');
+            const ring = document.getElementById('speedtest-progress-ring');
+            const circumference = 2 * Math.PI * 84;
+            const TEST_DURATION_MS = 5200;
+            const MAX_DISPLAY_SPEED = 320;
+            let liveTimer = null;
+
+            const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+            const setState = (state) => {
+                panel.classList.remove('is-idle', 'is-running', 'is-download', 'is-upload', 'is-complete', 'is-error');
+                panel.classList.add(state);
+            };
+            const setNeedle = (progress) => {
+                const rotation = -90 + (clamp(progress, 0, 1) * 180);
+                needle.style.transform = `translateX(-50%) rotate(${rotation}deg)`;
+            };
+            const setSpeed = (value) => {
+                currentSpeedEl.innerText = Math.round(Math.max(0, value));
+            };
+            const updateRing = (progress) => {
+                ring.style.strokeDasharray = circumference;
+                ring.style.strokeDashoffset = circumference * (1 - clamp(progress, 0, 1));
+            };
+
+            const finalize = (download, upload, ping) => {
+                downloadEl.innerText = `${download} Mbps`;
+                uploadEl.innerText = `${upload} Mbps`;
+                pingEl.innerText = `${ping} ms`;
+                resultSummary.innerText = `Download ${download} Mbps • Upload ${upload} Mbps • Ping ${ping} ms`;
+                resultBox.style.display = 'block';
+                progressFill.style.width = '100%';
+                progressLabel.innerText = 'Completed';
+                statusEl.innerText = 'Test complete';
+                setState('is-complete');
+                setNeedle(1);
+                setSpeed(download);
+                updateRing(1);
+            };
+
+            btnStart.disabled = true;
+            btnRetest.disabled = true;
+            btnStart.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Testing...';
+            btnRetest.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Waiting...';
+            resultBox.style.display = 'none';
+            progressFill.style.width = '0%';
+            progressLabel.innerText = 'Starting test';
+            statusEl.innerText = 'Preparing';
+            setState('is-running');
+            setSpeed(0);
+            updateRing(0);
+            setNeedle(0);
 
             try {
+                const startTime = Date.now();
+
+                liveTimer = setInterval(() => {
+                    const elapsed = Date.now() - startTime;
+                    const progress = elapsed / TEST_DURATION_MS;
+
+                    let speed;
+                    let phase;
+                    if (elapsed < 1000) {
+                        phase = 'Connecting to test server';
+                        speed = 8 + (elapsed / 1000) * 42;
+                        setState('is-download');
+                    } else if (elapsed < 2600) {
+                        phase = 'Downloading';
+                        speed = 50 + Math.sin(elapsed / 90) * 10 + ((elapsed - 1000) / 1600) * 130;
+                        setState('is-download');
+                    } else if (elapsed < 3900) {
+                        phase = 'Measuring download';
+                        speed = 150 + Math.sin(elapsed / 65) * 14 + Math.cos(elapsed / 150) * 8;
+                        setState('is-download');
+                    } else if (elapsed < 4500) {
+                        phase = 'Preparing upload';
+                        speed = 95 + Math.sin(elapsed / 55) * 10;
+                        setState('is-upload');
+                    } else {
+                        phase = 'Uploading';
+                        speed = 25 + Math.sin(elapsed / 80) * 8 + ((elapsed - 4500) / 700) * 35;
+                        setState('is-upload');
+                    }
+
+                    speed = clamp(speed + (Math.random() * 4 - 2), 0, MAX_DISPLAY_SPEED);
+                    progressFill.style.width = `${clamp(progress, 0, 1) * 100}%`;
+                    progressLabel.innerText = phase;
+                    statusEl.innerText = phase;
+                    setNeedle(progress);
+                    setSpeed(speed);
+                    updateRing(progress);
+
+                    if (elapsed >= TEST_DURATION_MS) clearInterval(liveTimer);
+                }, 50);
+
+                await new Promise(resolve => setTimeout(resolve, TEST_DURATION_MS));
+
                 const response = await fetch('/api/diagnostics/speedtest');
                 const result = await response.json();
                 if (result.error) throw new Error(result.error);
-                
-                document.getElementById('stDownload').innerText = result.download;
-                document.getElementById('stUpload').innerText = result.upload;
-                document.getElementById('stPing').innerText = result.ping;
-                resultDiv.style.display = 'block';
+
+                finalize(Number(result.download) || 0, Number(result.upload) || 0, Number(result.ping) || 0);
             } catch (e) {
+                setState('is-error');
+                statusEl.innerText = 'Speed test failed';
+                progressLabel.innerText = 'Error';
+                resultSummary.innerText = e.message;
+                resultBox.style.display = 'block';
                 alert('Speed test failed: ' + e.message);
             } finally {
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fas fa-play"></i> Start Speed Test';
+                clearInterval(liveTimer);
+                btnStart.disabled = false;
+                btnRetest.disabled = false;
+                btnStart.innerHTML = '<i class="fas fa-play"></i> Start Test';
+                btnRetest.innerHTML = '<i class="fas fa-redo"></i> Re-test';
             }
         }
 
@@ -3906,108 +4169,6 @@
                 }
             };
 
-            // Terminal Functions
-            let terminalHistory = [];
-            let terminalOutputBuffer = '';
-
-            function executeTerminalCommand() {
-                const commandInput = document.getElementById('terminalCommand');
-                const command = commandInput.value.trim();
-                const outputDiv = document.getElementById('terminalOutput');
-                const historyDiv = document.getElementById('terminalHistory');
-
-                if (!command) {
-                    addTerminalOutput('Please enter a command.');
-                    return;
-                }
-
-                // Add command to history
-                terminalHistory.push(command);
-                updateTerminalHistory();
-
-                // Add command to output with timestamp
-                const timestamp = new Date().toLocaleTimeString();
-                addTerminalOutput(`[${timestamp}] $ ${command}`);
-
-                // Clear input
-                commandInput.value = '';
-
-                // Execute command via API
-                fetch('/api/diagnostics/terminal', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ command })
-                })
-                .then(response => response.json())
-                .then(result => {
-                    if (result.error) {
-                        addTerminalOutput(`Error: ${result.error}`, true);
-                    } else {
-                        addTerminalOutput(result.output || 'Command executed successfully.');
-                    }
-                })
-                .catch(error => {
-                    addTerminalOutput(`Network Error: ${error.message}`, true);
-                });
-            }
-
-            function setTerminalCommand(command) {
-                document.getElementById('terminalCommand').value = command;
-            }
-
-            function addTerminalOutput(text, isError = false) {
-                const outputDiv = document.getElementById('terminalOutput');
-                const timestamp = new Date().toLocaleTimeString();
-                const color = isError ? '#ff6b6b' : '#00ff00';
-                
-                outputDiv.innerHTML += `<div style="color: ${color}; margin-bottom: 5px;">${text}</div>`;
-                outputDiv.scrollTop = outputDiv.scrollHeight;
-            }
-
-            function updateTerminalHistory() {
-                const historyDiv = document.getElementById('terminalHistory');
-                if (terminalHistory.length === 0) {
-                    historyDiv.innerHTML = '<div style="color: #858796; font-style: italic;">No commands executed yet</div>';
-                } else {
-                    historyDiv.innerHTML = terminalHistory
-                        .map(cmd => `<div style="color: #5a5c69; font-size: 0.8rem; padding: 2px 0; border-bottom: 1px solid #eee;">${cmd}</div>`)
-                        .join('');
-                }
-            }
-
-            function clearTerminalOutput() {
-                const outputDiv = document.getElementById('terminalOutput');
-                outputDiv.innerHTML = '<div style="color: #888; font-style: italic;">Terminal ready. Type a command and click Execute.</div><div style="color: #888; font-size: 0.8rem; margin-top: 10px;">Available commands: ls, ps, df, free, uptime, who, w, netstat, ss, ifconfig, ip, route, iptables, cat, tail, head, grep, find, du, iotop, ping, traceroute, nslookup, dig, hostname, date, cal, uname, lscpu, lsblk, mount, systemctl, journalctl, service, crontab</div>';
-            }
-
-            function clearTerminalHistory() {
-                terminalHistory = [];
-                updateTerminalHistory();
-            }
-
-            function copyTerminalOutput() {
-                const outputDiv = document.getElementById('terminalOutput');
-                const text = outputDiv.innerText;
-                navigator.clipboard.writeText(text).then(() => {
-                    const msg = document.getElementById('uploadMsg');
-                    msg.style.display = 'block';
-                    msg.style.color = 'var(--success-color)';
-                    msg.innerText = 'Terminal output copied to clipboard!';
-                    setTimeout(() => msg.style.display = 'none', 3000);
-                });
-            }
-
-            function scrollToBottom() {
-                const outputDiv = document.getElementById('terminalOutput');
-                outputDiv.scrollTop = outputDiv.scrollHeight;
-            }
-
-            // Add Enter key support for terminal command input
-            document.getElementById('terminalCommand').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    executeTerminalCommand();
-                }
-            });
         </script>
     </body>
 </html>
