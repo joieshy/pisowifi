@@ -133,7 +133,13 @@ async function blockMac(mac, lanInterface = 'enx00e04c680013') {
     if (os.platform() !== 'linux') return { success: true, skipped: true };
 
     try {
-        await sudoExec(`iptables -t nat -D PREROUTING -i ${lanInterface} -m mac --mac-source ${mac} -j RETURN || true`);
+        await sudoExec(`iptables -t nat -D PREROUTING -i ${lanInterface} -m mac --mac-source ${mac} -j RETURN`);
+    } catch (err) {
+        // Safe to ignore if rule doesn't exist
+    }
+
+    try {
+        await sudoExec(`iptables -t nat -I PREROUTING 1 -i ${lanInterface} -m mac --mac-source ${mac} -p tcp -j REDIRECT --to-port 3000`);
         console.log(`[Auth] Revoked internet from MAC: ${mac}`);
         return { success: true };
     } catch (err) {
