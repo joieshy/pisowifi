@@ -77,36 +77,41 @@ async function loadNetworkConfig(db, overrides = {}) {
     return config;
 }
 
-async function initializeNetwork(config = {}) {
-    if (os.platform() !== 'linux') return { success: true, skipped: true };
+async function initializeNetwork(settings = {}) {
+    // KUKUHA LANG SA SETTINGS, WALANG FALLBACK NA ENP1S0
+    const wan = settings.wan_interface_name; 
+    const lan = settings.lan_interface_name;
+    const lanIpFull = settings.lan_ip_address || '10.0.0.1/24';
+    const lanIp = lanIpFull.split('/')[0];
+    const port = process.env.PORT || 3000;
 
-    const wan = normalizeInterfaceName(config.wan_interface_name, 'enp1s0');
-    const lan = normalizeInterfaceName(config.lan_interface_name, 'enx00e04c680013');
-    const lanCidr = normalizeLanIp(config.lan_ip_address, '10.0.0.1/24');
-    const lanIp = lanCidr.split('/')[0];
-    const port = Number(config.portal_port || 3000);
-
-    console.log(`[Network] Starting dynamic setup: WAN=${wan}, LAN=${lan}, Portal=${lanIp}:${port}`);
+    if (!wan || !lan) {
+        throw new Error("Missing WAN or LAN interface settings in Database!");
+    }
 
     try {
-        await sudoExec('sysctl -w net.ipv4.ip_forward=1');
-        await sudoExec('iptables -F || true');
-        await sudoExec('iptables -t nat -F || true');
-        await sudoExec('iptables -F FORWARD || true');
+        // 1. Forwarding ON
+        await sudoExec(`sysctl -w net.ipv4.ip_forward=1`);
 
+        // 2. Clean EVERYTHING (Para mawala yung enp1s0 rules)
+        await sudoExec(`iptables -F`);
+        await sudoExec(`iptables -t nat -F`);
+
+        // 3. Dynamic NAT (Gagamit ng 'end0' galing sa DB)
         await sudoExec(`iptables -t nat -A POSTROUTING -o ${wan} -j MASQUERADE`);
+
+        // 4. Forwarding Permission
         await sudoExec(`iptables -A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT`);
         await sudoExec(`iptables -A FORWARD -i ${lan} -o ${wan} -j ACCEPT`);
 
+        // 5. Global Portal Redirect (Gagamit ng 'enx...' galing sa DB)
         await sudoExec(`iptables -t nat -A PREROUTING -i ${lan} -p tcp --dport 80 -j REDIRECT --to-port ${port}`);
-        await sudoExec(`iptables -t nat -A PREROUTING -i ${lan} -p udp --dport 53 -j DNAT --to-destination ${lanIp}`);
-        await sudoExec(`iptables -t nat -A PREROUTING -i ${lan} -p tcp --dport 53 -j DNAT --to-destination ${lanIp}`);
-        await sudoExec(`iptables -A FORWARD -i ${lan} -p tcp --dport 443 -j REJECT`);
 
-        console.log('[Network] Captive portal redirect is active.');
-        return { success: true };
+        // 6. DNS Hijack (Para sa Auto-Popup)
+        await sudoExec(`iptables -t nat -A PREROUTING -i ${lan} -p udp --dport 53 -j DNAT --to-destination ${lanIp}`);
+
     } catch (err) {
-        console.error('[Network] Failed to initialize:', err.message);
+        console.error(`[NetworkService] Error:`, err.message);
         throw err;
     }
 }
