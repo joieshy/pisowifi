@@ -38,7 +38,7 @@ class InterfaceDetector {
                 return this.cachedInterfaces;
             } else if (os.platform() === 'win32') {
                 const output = execSync('powershell -Command "Get-NetAdapter | Where-Object {$_.Status -ne \'Disabled\'} | Select-Object -ExpandProperty Name"', { encoding: 'utf8' });
-                const interfaceNames = output.split('\n').map(name => name.trim()).filter(name => name);
+                const interfaceNames = output.split('\n').map(name => name.trim()).filter(name => name && name.toLowerCase() !== 'eth1');
 
                 const interfaces = await Promise.all(
                     interfaceNames.map(async (name) => {
